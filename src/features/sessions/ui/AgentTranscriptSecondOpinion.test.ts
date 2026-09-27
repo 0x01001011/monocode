@@ -33,12 +33,10 @@ describe("second opinion with only one harness installed", () => {
       }),
     );
 
-    // Before the fix, the button say "Install another provider for a
-    // second opinion" and is disabled, even though the same harness has
-    // other models it could use. After the fix, it stay enabled.
+    // The button stays enabled when the same harness has another model.
     expect(markup).toContain('aria-label="Second opinion"');
     expect(markup).not.toContain(
-      'aria-label="Install another provider for a second opinion"',
+      'aria-label="No different model available for a second opinion"',
     );
   });
 });

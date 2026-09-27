@@ -210,7 +210,7 @@ describe("secondary model target picker", () => {
     );
 
     const button = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Install another provider for a second opinion"]',
+      '[aria-label="No different model available for a second opinion"]',
     );
     expect(button).toBeTruthy();
     expect(button?.disabled).toBe(true);

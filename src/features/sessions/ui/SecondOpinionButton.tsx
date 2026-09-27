@@ -131,7 +131,7 @@ export function SecondOpinionButton({
   onPick,
   icon: Icon = MessageMultiple,
   title = "Second opinion",
-  disabledTitle = "Install another provider for a second opinion",
+  disabledTitle = "No different model available for a second opinion",
   description = "Send this turn to another agent to review the work.",
   menuLabel = "Send this turn to another agent",
   includeCurrent = false,
