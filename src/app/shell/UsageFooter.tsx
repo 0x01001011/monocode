@@ -29,6 +29,7 @@ import {
 } from "../../features/terminal/model/terminalTab";
 import { MOD } from "../../platform/tauri/platform";
 import { UsageProviderChip } from "./UsageProviderChip";
+import { PiUsage } from "./PiUsage";
 import {
   ProviderSignInPanel,
   type ProviderSignInState,
@@ -49,6 +50,7 @@ const CLOCK_MS = 30_000;
 export type UsageFooterSession = {
   id?: string;
   harness: HarnessId;
+  model?: string;
   authRequired?: boolean;
   providerAccountId?: string;
 };
@@ -297,7 +299,7 @@ export function UsageFooter({
   const onTerminalClick = projectTerminalActive
     ? (onShowTerminal ?? onNewTerminal)
     : (onNewTerminal ?? onShowTerminal);
-  const ariaLabel = showUsage
+  const ariaLabel = showUsage || session?.harness === "pi"
     ? "Provider usage"
     : showTerminals || showTerminalButton
       ? "Terminals"
@@ -310,7 +312,9 @@ export function UsageFooter({
       aria-label={ariaLabel}
       className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto border-t border-stroke px-3 text-[11px] text-content/55"
     >
-      {showUsage ? (
+      {session?.harness === "pi" ? (
+        <PiUsage key={`${session.id}:${session.model}`} model={session.model} now={now} />
+      ) : showUsage ? (
         <>
           {wantClaude ? (
             <UsageProviderChip
