@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-28
+
+### Fixed
+
+- Reopening the project rail with Command/Ctrl+B keeps its project list and scroll position mounted, avoiding repeated Git-stat subscriptions and the delay of rebuilding the rail.
+- The macOS Toggle Sidebar menu command affects only the focused window.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added

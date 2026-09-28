@@ -83,6 +83,7 @@ import { GithubStarPrompt } from "./GithubStarPrompt";
 import { useProjectMenu } from "./useProjectMenu";
 
 type Props = {
+  visible?: boolean;
   cwd: string;
   recents: RecentProject[];
   inboxUnseen?: boolean;
@@ -119,6 +120,7 @@ type Props = {
 };
 
 export function ProjectRail({
+  visible = true,
   cwd,
   recents,
   inboxUnseen = false,
@@ -196,6 +198,11 @@ export function ProjectRail({
     onOpenNotificationSettings,
     onOpen: () => setInboxMenu(null),
   });
+  useEffect(() => {
+    if (visible) return;
+    projectMenu.dismiss();
+    setInboxMenu(null);
+  }, [visible]);
   const notificationPreferences = useProjectNotificationPreferences();
   const allProjects = useMemo(
     () => collectRailProjects(recents, cwd),
@@ -318,7 +325,7 @@ export function ProjectRail({
     <nav
       ref={resize.setPaneRef}
       aria-label="Projects"
-      className="sidebar-glass relative flex shrink-0 flex-col border-r border-stroke"
+      className={`sidebar-glass relative shrink-0 flex-col border-r border-stroke ${visible ? "flex" : "hidden"}`}
     >
       <div
         className="flex h-10 shrink-0 select-none items-center pr-1.5"
@@ -522,8 +529,8 @@ export function ProjectRail({
           </div>
         </>
       )}
-      {projectMenu.element}
-      {inboxMenu ? (
+      {visible ? projectMenu.element : null}
+      {visible && inboxMenu ? (
         <InboxNotificationMenu
           {...inboxMenu}
           projectPaths={[...allProjects.keys()]}
