@@ -4157,22 +4157,20 @@ fn git_cmd() -> Command {
     cmd
 }
 
-fn git_cmd_with_gui_path() -> Command {
+fn git_cmd_for_args_with_path(args: &[&str], gui_path: impl FnOnce() -> String) -> Command {
     let mut cmd = git_cmd();
-    // Signers, hooks, credential helpers, and git-lfs may need the login-shell PATH.
-    cmd.env("PATH", crate::harness::gui_search_path());
+    if matches!(
+        args.first().copied(),
+        Some("commit" | "push" | "pull" | "fetch" | "clone")
+    ) {
+        // Signers, hooks, credential helpers, and git-lfs may need the login-shell PATH.
+        cmd.env("PATH", gui_path());
+    }
     cmd
 }
 
 fn git_cmd_for_args(args: &[&str]) -> Command {
-    if matches!(
-        args.first().copied(),
-        Some("commit" | "push" | "pull" | "fetch")
-    ) {
-        git_cmd_with_gui_path()
-    } else {
-        git_cmd()
-    }
+    git_cmd_for_args_with_path(args, crate::harness::gui_search_path)
 }
 
 pub(crate) fn git_checked(root: &Path, args: &[&str]) -> Result<(), String> {
@@ -5058,7 +5056,7 @@ fn clone_repo_sync(url: &str, parent: &str) -> Result<String, String> {
         return Err(format!("{} already exists", dest.display()));
     }
     let dest_str = dest.to_str().ok_or("Invalid destination path")?;
-    let output = git_cmd_with_gui_path()
+    let output = git_cmd_for_args(&["clone"])
         .args(["clone", "--", url, dest_str])
         .output()
         .map_err(|e| {
@@ -8348,6 +8346,29 @@ mod tests {
         assert!(!git_cmd()
             .get_envs()
             .any(|(key, _)| key == std::ffi::OsStr::new("PATH")));
+    }
+
+    #[test]
+    fn read_only_git_never_resolves_login_shell_path() {
+        for action in ["status", "diff", "rev-parse", "ls-files", "cat-file"] {
+            let cmd = git_cmd_for_args_with_path(&[action], || {
+                panic!("read-only git must not resolve the login-shell PATH")
+            });
+            assert!(!cmd
+                .get_envs()
+                .any(|(key, _)| key == std::ffi::OsStr::new("PATH")));
+        }
+    }
+
+    #[test]
+    fn git_actions_that_need_helpers_use_login_shell_path() {
+        for action in ["commit", "push", "pull", "fetch", "clone"] {
+            let cmd = git_cmd_for_args_with_path(&[action], || "gui-git-path".into());
+            assert!(cmd.get_envs().any(|(key, value)| {
+                key == std::ffi::OsStr::new("PATH")
+                    && value == Some(std::ffi::OsStr::new("gui-git-path"))
+            }));
+        }
     }
 
     #[test]
