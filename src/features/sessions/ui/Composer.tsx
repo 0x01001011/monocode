@@ -39,7 +39,11 @@ import {
   revokeAttachment,
 } from "../model/attachments";
 import { resizeComposer } from "../model/composerResize";
-import { messageFilesFromClipboard } from "../../../platform/tauri/clipboard";
+import {
+  isFileReferenceText,
+  messageFilesFromClipboard,
+  nativeClipboardAttachments,
+} from "../../../platform/tauri/clipboard";
 import {
   EXPLORER_FILE_POINTER_DRAG_EVENT,
   type ExplorerFilePointerDragDetail,
@@ -87,6 +91,11 @@ import type {
   UserQuestionReply,
 } from "../model/userQuestion";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import {
+  captureDraft,
+  dropPastedText,
+  insertRestoredText,
+} from "../../../shared/lib/draftRestore";
 import {
   createBlankSkill,
   rankSkills,
@@ -550,6 +559,11 @@ export function Composer({
   const consumedQuoteId = useRef<number | null>(null);
   const draftRevisionRef = useRef(0);
   const draftResetTokenRef = useRef(draftResetToken);
+  /** Bumped when the draft is cleared, so a late paste cannot land on the next one. */
+  const pasteGenerationRef = useRef(0);
+  /** Native and file pastes still reading when Send is pressed. */
+  const pasteFlightRef = useRef<Promise<void> | null>(null);
+  const submitLockRef = useRef(false);
   const positionedInitialDraft = useRef(false);
   const slashRef = useRef<SlashToken | null>(null);
   const mentionRef = useRef<MentionToken | null>(null);
@@ -586,6 +600,7 @@ export function Composer({
       !!handoffCard,
   );
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [pasteError, setPasteError] = useState<string | null>(null);
   const [fileDrag, setFileDrag] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
   const [planSelected, setPlanSelected] = useState(false);
@@ -724,6 +739,7 @@ export function Composer({
       const next = mergeAttachments(attachmentsRef.current, incoming);
       attachmentsRef.current = next;
       setAttachments(next);
+      setPasteError(null);
       draftRevisionRef.current += 1;
       syncHasValue(ref.current?.value ?? "", next);
       ref.current?.focus();
@@ -742,6 +758,7 @@ export function Composer({
       attachmentsRef.current = next;
       draftRevisionRef.current += 1;
       setAttachments(next);
+      setPasteError(null);
       syncHasValue(ref.current?.value ?? "", next);
       ref.current?.focus();
     },
@@ -884,6 +901,7 @@ export function Composer({
       return;
     }
     draftResetTokenRef.current = draftResetToken;
+    pasteGenerationRef.current += 1;
     draftRevisionRef.current += 1;
     if (ref.current) {
       ref.current.value = "";
@@ -1279,6 +1297,7 @@ export function Composer({
 
   const exitEditMode = useCallback(() => {
     draftRevisionRef.current += 1;
+    pasteGenerationRef.current += 1;
     if (ref.current) {
       ref.current.value = "";
       ref.current.style.height = "auto";
@@ -1341,13 +1360,42 @@ export function Composer({
     onRecallLastTurnReady(recallLastTurn);
   }, [editLastTurnSupported, onRecallLastTurnReady, recallLastTurn]);
 
+  const rememberPaste = (work: Promise<void>) => {
+    const flight = work.then(
+      () => undefined,
+      () => undefined,
+    );
+    const previous = pasteFlightRef.current;
+    const joined = previous ? previous.then(() => flight) : flight;
+    pasteFlightRef.current = joined;
+    void joined.finally(() => {
+      if (pasteFlightRef.current === joined) pasteFlightRef.current = null;
+    });
+  };
   const submit = (value: string) => {
+    if (disabled || worktreeRemoved || submitLockRef.current) return;
+    submitLockRef.current = true;
+    void completeSubmit(value).finally(() => {
+      submitLockRef.current = false;
+    });
+  };
+  const completeSubmit = async (submittedValue: string) => {
+    let pending = pasteFlightRef.current;
+    const generation = pasteGenerationRef.current;
+    while (pending) {
+      await pending;
+      // A reset or an earlier send retired this draft while the read was out.
+      if (pasteGenerationRef.current !== generation) return;
+      pending = pasteFlightRef.current;
+    }
+    const value = ref.current?.value ?? submittedValue;
     if (disabled || worktreeRemoved) return;
     if (draftSelected && onSaveDraft) {
-      const files = attachments;
+      const files = attachmentsRef.current;
       if (!value.trim() && files.length === 0) return;
       const accepted = onSaveDraft(value, files);
       if (accepted === false || !ref.current) return;
+      pasteGenerationRef.current += 1;
       ref.current.value = "";
       ref.current.style.height = "auto";
       setDraft("");
@@ -1367,13 +1415,14 @@ export function Composer({
     if (
       btwCommand.matched &&
       onBtwCommand &&
-      attachments.length === 0 &&
+      attachmentsRef.current.length === 0 &&
       !inboxCard &&
       !noteCard &&
       !handoffCard
     ) {
       const accepted = onBtwCommand(btwCommand.text);
       if (accepted === false) return;
+      pasteGenerationRef.current += 1;
       if (ref.current) {
         ref.current.value = "";
         ref.current.style.height = "auto";
@@ -1396,6 +1445,7 @@ export function Composer({
     if (isCompactCommand(value)) {
       if (!onCompactContext?.()) return;
       if (!ref.current) return;
+      pasteGenerationRef.current += 1;
       ref.current.value = "";
       ref.current.style.height = "auto";
       setDraft("");
@@ -1405,7 +1455,7 @@ export function Composer({
       setMention(null);
       setCreatingSkill(false);
       setCreateError(null);
-      syncHasValue("", attachments);
+      syncHasValue("", attachmentsRef.current);
       return;
     }
 
@@ -1421,7 +1471,7 @@ export function Composer({
       operatorSelected && !consumeOperatorCommand(text).matched
         ? `/operator ${text}`
         : text;
-    const files = attachments;
+    const files = attachmentsRef.current;
     if (!text && files.length === 0 && !noteCard && !handoffCard) return;
     // Clear the parent draft before onSubmit. The app can synchronously remount
     // the composer when the first message leaves an empty session (EmptySession →
@@ -1458,6 +1508,7 @@ export function Composer({
       restoreDraft(text, files);
       return;
     }
+    pasteGenerationRef.current += 1;
     if (ref.current) {
       ref.current.value = "";
       ref.current.style.height = "auto";
@@ -1479,6 +1530,7 @@ export function Composer({
     setMention(null);
     setCreatingSkill(false);
     setCreateError(null);
+    setPasteError(null);
     syncHasValue("", []);
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1643,26 +1695,80 @@ export function Composer({
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    setPasteError(null);
     const messageFiles = messageFilesFromClipboard(e.clipboardData);
     if (messageFiles) {
       e.preventDefault();
-      const el = e.currentTarget;
-      el.setRangeText(
-        e.clipboardData.getData("text/plain"),
-        el.selectionStart,
-        el.selectionEnd,
-        "end",
+      const generation = pasteGenerationRef.current;
+      const captured = captureDraft(e.currentTarget);
+      const text = e.clipboardData.getData("text/plain");
+      if (captured) insertRestoredText(captured, text);
+      if (!attachmentsSupported) return;
+      rememberPaste(
+        attachmentsFromFiles(messageFiles).then((pasted) => {
+          if (pasteGenerationRef.current !== generation) {
+            pasted.forEach(revokeAttachment);
+            return;
+          }
+          addAttachments(pasted);
+        }),
       );
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      if (attachmentsSupported)
-        void attachmentsFromFiles(messageFiles).then(addAttachments);
       return;
     }
     const files = filesFromClipboard(e.clipboardData);
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      // A webview reports a paste as text only, so a screenshot or a file
+      // copied in a file manager arrives with nothing to attach; both live on
+      // the native clipboard.
+      if (!attachmentsSupported) return;
+      const text = e.clipboardData.getData("text/plain");
+      // Prose and whitespace alike are the webview's to insert.
+      if (text && !isFileReferenceText(text)) return;
+      // A file URI becomes a chip, so it is kept out of the draft; with no text
+      // at all the paste carried an image the webview cannot see.
+      e.preventDefault();
+      // Captured before the read crosses an IPC hop. Send and draft reset bump
+      // the generation, so a finished read cannot attach onto a draft that is gone.
+      const generation = pasteGenerationRef.current;
+      const captured = isFileReferenceText(text)
+        ? captureDraft(e.currentTarget)
+        : null;
+      rememberPaste(
+        nativeClipboardAttachments(text)
+          .then(({ files: pasted, warning }) => {
+            if (pasteGenerationRef.current !== generation) {
+              pasted.forEach(revokeAttachment);
+              return;
+            }
+            if (pasted.length) {
+              // WebKit can insert the URI after preventDefault. The chip
+              // replaces it, so the draft must not keep that text.
+              if (captured) dropPastedText(captured, text);
+              addAttachments(pasted);
+            } else if (captured) insertRestoredText(captured, text);
+            if (warning) setPasteError(warning);
+          })
+          .catch((reason: unknown) => {
+            if (pasteGenerationRef.current !== generation) return;
+            setPasteError(
+              reason instanceof Error ? reason.message : String(reason),
+            );
+          }),
+      );
+      return;
+    }
     e.preventDefault();
     if (!attachmentsSupported) return;
-    void attachmentsFromFiles(files).then(addAttachments);
+    const generation = pasteGenerationRef.current;
+    rememberPaste(
+      attachmentsFromFiles(files).then((pasted) => {
+        if (pasteGenerationRef.current !== generation) {
+          pasted.forEach(revokeAttachment);
+          return;
+        }
+        addAttachments(pasted);
+      }),
+    );
   };
 
   const attachFromPicker = () => {
@@ -1920,6 +2026,12 @@ export function Composer({
             </div>
           ) : null}
 
+          {pasteError ? (
+            <p role="alert" className="px-3 pt-2 text-xs text-red-400">
+              {pasteError}
+            </p>
+          ) : null}
+
           {inboxCard ? (
             <InboxMiniCard card={inboxCard} onDismiss={onInboxCardDismiss} />
           ) : null}
@@ -1987,6 +2099,7 @@ export function Composer({
                 resizeComposer(el);
                 draftRevisionRef.current += 1;
                 setDraft(el.value);
+                setPasteError(null);
                 if (
                   sessionFolderSelected &&
                   !consumeSessionFolderCommand(el.value).matched
