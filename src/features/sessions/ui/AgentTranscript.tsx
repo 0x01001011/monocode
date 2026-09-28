@@ -30,6 +30,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { AttachmentChip } from "./AttachmentChip";
+import { GeneratedImage } from "./GeneratedImage";
 import { MonocodeSparkles } from "./MonocodeSparkles";
 import { FilePreview } from "../../files/ui/FilePreview";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
@@ -1455,6 +1456,10 @@ const TranscriptBlock = memo(function TranscriptBlock({
         onRemoveDraft={onRemoveDraft}
       />
     );
+  }
+
+  if (block.role === "image") {
+    return block.image ? <GeneratedImage image={block.image} /> : null;
   }
 
   if (block.role === "tool") {
