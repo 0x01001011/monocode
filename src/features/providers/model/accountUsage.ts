@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   clampUsedPercent,
   exhaustedWindowResetAt,
-  fetchingRateLimits,
   formatResetDuration,
-  RATE_LIMIT_MIN_REFETCH_MS,
   type ProviderRateLimits,
 } from "./rateLimits";
-import { fetchClaudeRateLimits, fetchCodexRateLimits } from "./rateLimitsFetch";
+import {
+  getAllRateLimits,
+  loadRateLimits,
+  subscribeRateLimits,
+} from "./rateLimitsCache";
 import {
   PROVIDER_ACCOUNT_PROVIDERS,
   providerAccounts,
@@ -118,14 +120,6 @@ function accountsFor(provider?: ProviderAccountProvider): ProviderAccount[] {
     : PROVIDER_ACCOUNT_PROVIDERS.flatMap((entry) => providerAccounts(entry));
 }
 
-function fetchAccountUsage(
-  account: ProviderAccount,
-): Promise<ProviderRateLimits> {
-  return account.provider === "claude"
-    ? fetchClaudeRateLimits(account.id)
-    : fetchCodexRateLimits(account.id);
-}
-
 export type AccountUsage = {
   usage: Record<string, ProviderRateLimits>;
   now: number;
@@ -137,8 +131,8 @@ export type AccountUsage = {
  * Usage windows for every account of `provider` (or of every provider), so
  * Settings and the footer account picker can show which account has
  * headroom. `accountsVersion` should change when accounts are added or
- * removed. While `enabled`, missing snapshots and ones older than the
- * footer's refetch floor load; `refresh` reloads every account.
+ * removed. While `enabled`, accounts without a window snapshot load once;
+ * `refresh` explicitly reloads every account.
  */
 export function useProviderAccountUsage(
   accountsVersion: unknown,
@@ -147,67 +141,50 @@ export function useProviderAccountUsage(
     enabled = true,
   }: { provider?: ProviderAccountProvider; enabled?: boolean } = {},
 ): AccountUsage {
-  const [usage, setUsage] = useState<Record<string, ProviderRateLimits>>({});
+  const usage = useSyncExternalStore(
+    subscribeRateLimits,
+    getAllRateLimits,
+    getAllRateLimits,
+  );
   const [inflight, setInflight] = useState(0);
   const [now, setNow] = useState(() => Date.now());
-  const requestedAt = useRef(new Map<string, number>());
-  const sequence = useRef(new Map<string, number>());
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), CLOCK_MS);
     return () => window.clearInterval(timer);
   }, []);
 
-  const load = useCallback(async (targets: ProviderAccount[]) => {
-    if (targets.length === 0) return;
-    const started = Date.now();
-    const tickets = new Map<string, number>();
-    for (const account of targets) {
-      const key = accountUsageKey(account);
-      const ticket = (sequence.current.get(key) ?? 0) + 1;
-      sequence.current.set(key, ticket);
-      tickets.set(key, ticket);
-      requestedAt.current.set(key, started);
-    }
-    setInflight((count) => count + 1);
-    setUsage((current) => {
-      const next = { ...current };
-      for (const account of targets) {
-        const key = accountUsageKey(account);
-        next[key] = fetchingRateLimits(account.provider, current[key]);
+  const load = useCallback(
+    async (targets: ProviderAccount[], force = false) => {
+      if (targets.length === 0) return;
+      setInflight((count) => count + 1);
+      try {
+        await Promise.allSettled(
+          targets.map((account) =>
+            loadRateLimits(account.provider, account.id, force),
+          ),
+        );
+      } finally {
+        setInflight((count) => count - 1);
+        setNow(Date.now());
       }
-      return next;
-    });
-    try {
-      await Promise.allSettled(
-        targets.map(async (account) => {
-          const key = accountUsageKey(account);
-          const value = await fetchAccountUsage(account);
-          // A later refresh for this account supersedes this response.
-          if (sequence.current.get(key) !== tickets.get(key)) return;
-          setUsage((current) => ({ ...current, [key]: value }));
-        }),
-      );
-    } finally {
-      setInflight((count) => count - 1);
-      setNow(Date.now());
-    }
-  }, []);
+    },
+    [],
+  );
 
-  // Renames also bump the version; only fetch accounts missing or stale.
+  // Renames also bump the version; the shared cache prevents repeat probes.
   useEffect(() => {
     if (!enabled) return;
-    const cutoff = Date.now() - RATE_LIMIT_MIN_REFETCH_MS;
+    const cached = getAllRateLimits();
     void load(
       accountsFor(provider).filter(
-        (account) =>
-          (requestedAt.current.get(accountUsageKey(account)) ?? 0) < cutoff,
+        (account) => !cached[accountUsageKey(account)],
       ),
     );
   }, [accountsVersion, enabled, load, provider]);
 
   const refresh = useCallback(
-    () => void load(accountsFor(provider)),
+    () => void load(accountsFor(provider), true),
     [load, provider],
   );
 

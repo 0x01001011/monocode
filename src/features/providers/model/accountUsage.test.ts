@@ -22,6 +22,7 @@ import {
   useProviderAccountUsage,
   type AccountUsage,
 } from "./accountUsage";
+import { clearCachedRateLimits, loadRateLimits } from "./rateLimitsCache";
 import type { ProviderAccount } from "./providerAccounts";
 
 const now = Date.parse("2026-09-25T12:00:00Z");
@@ -62,9 +63,9 @@ describe("accountHeadroom", () => {
   });
 
   it("treats a window past its reset time as available", () => {
-    expect(
-      accountHeadroom(limits(window(100, now - 1), window(40)), now),
-    ).toBe(60);
+    expect(accountHeadroom(limits(window(100, now - 1), window(40)), now)).toBe(
+      60,
+    );
   });
 
   it("is null without usage windows", () => {
@@ -172,6 +173,14 @@ describe("useProviderAccountUsage", () => {
 
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+      clear: () => values.clear(),
+    });
+    clearCachedRateLimits();
     localStorage.setItem(
       "monocode.providerAccounts.v1",
       JSON.stringify({
@@ -204,26 +213,64 @@ describe("useProviderAccountUsage", () => {
     ]);
     expect(latest.usage["claude:account-work"]?.session?.usedPercent).toBe(12);
     expect(latest.refreshing).toBe(false);
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => render());
+    expect(fetches.claude).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the newest response when refreshes overlap", async () => {
-    const pending: ((value: ProviderRateLimits) => void)[] = [];
-    fetches.claude.mockImplementation(
-      (id) =>
-        id === "default"
-          ? new Promise((resolve) => pending.push(resolve))
-          : Promise.resolve(limits(window(1))),
-    );
-    render();
+  it("only reloads cached accounts when the user refreshes", async () => {
+    fetches.claude
+      .mockResolvedValueOnce(limits(window(10)))
+      .mockResolvedValueOnce(limits(window(10)))
+      .mockResolvedValueOnce(limits(window(70)))
+      .mockResolvedValueOnce(limits(window(70)));
+    await act(async () => render());
+    expect(fetches.claude).toHaveBeenCalledTimes(2);
+
     await act(async () => latest.refresh());
-    expect(pending).toHaveLength(2);
-
-    // The refresh answers first; the original load answers late.
-    await act(async () => pending[1](limits(window(70))));
-    expect(latest.refreshing).toBe(true);
-    await act(async () => pending[0](limits(window(10))));
-
+    expect(fetches.claude).toHaveBeenCalledTimes(4);
     expect(latest.usage["claude:default"]?.session?.usedPercent).toBe(70);
     expect(latest.refreshing).toBe(false);
+  });
+
+  it("shares an in-flight account request between views", async () => {
+    let complete: ((value: ProviderRateLimits) => void) | undefined;
+    fetches.claude.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const first = loadRateLimits("claude", "default");
+    const second = loadRateLimits("claude", "default");
+    expect(fetches.claude).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+
+    complete?.(limits(window(15)));
+    await Promise.all([first, second]);
+    await loadRateLimits("claude", "default");
+    expect(fetches.claude).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs an explicit refresh after an in-flight first load", async () => {
+    let complete: ((value: ProviderRateLimits) => void) | undefined;
+    fetches.claude
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(limits(window(75)));
+
+    const first = loadRateLimits("claude", "default");
+    const refreshed = loadRateLimits("claude", "default", true);
+    expect(fetches.claude).toHaveBeenCalledTimes(1);
+    complete?.(limits(window(10)));
+    await first;
+    expect((await refreshed).session?.usedPercent).toBe(75);
+    expect(fetches.claude).toHaveBeenCalledTimes(2);
   });
 });

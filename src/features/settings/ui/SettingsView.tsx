@@ -228,6 +228,7 @@ import {
   accountUsageKey,
   useProviderAccountUsage,
 } from "../../providers/model/accountUsage";
+import { clearCachedRateLimits } from "../../providers/model/rateLimitsCache";
 import {
   AccountStatusLabel,
   AccountUsageMeters,
@@ -2781,10 +2782,6 @@ function ProviderBinaryControl({
   );
 
   useEffect(() => {
-    void inspect(loadProviderBinaryPath(provider));
-  }, [inspect, provider]);
-
-  useEffect(() => {
     if (editing) editInput.current?.focus();
   }, [editing]);
 
@@ -2850,6 +2847,9 @@ function ProviderBinaryControl({
         aria-haspopup="dialog"
         title={`${title} CLI path${restartRequired ? " — restart required" : ""}`}
         onClick={() => {
+          if (!open && !inspection && !working && !error) {
+            void inspect(loadProviderBinaryPath(provider));
+          }
           setOpen((value) => !value);
           setEditing(false);
         }}
@@ -3315,6 +3315,7 @@ function ProviderAccountsSettings() {
     try {
       await removeProviderAccountCredentials(account.provider, account.id);
       removeProviderAccount(account.provider, account.id);
+      clearCachedRateLimits(account.provider, account.id);
       if (
         editor?.provider === account.provider &&
         editor.accountId === account.id

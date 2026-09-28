@@ -46,47 +46,6 @@ export const SESSION_WINDOW_MINUTES = 300;
 export const WEEKLY_WINDOW_MINUTES = 10_080;
 export const MONTHLY_WINDOW_MINUTES = 43_200;
 
-/** Background poll while the window is visible. */
-export const RATE_LIMIT_POLL_MS = 15 * 60 * 1000;
-/** Skip focus/restore and timer refetches until the snapshot is this old. */
-export const RATE_LIMIT_MIN_REFETCH_MS = 5 * 60 * 1000;
-
-export function isRateLimitSnapshotStale(
-  limits: ProviderRateLimits | null | undefined,
-  now: number,
-  minAgeMs = RATE_LIMIT_MIN_REFETCH_MS,
-): boolean {
-  if (!limits || limits.status === "idle") return true;
-  if (limits.status === "unavailable") return false;
-  if (limits.updatedAt <= 0) return true;
-  return now - limits.updatedAt >= minAgeMs;
-}
-
-export function shouldFetchProvider(
-  limits: ProviderRateLimits,
-  input: { force?: boolean; visible: boolean; now?: number },
-): boolean {
-  if (input.force) return true;
-  if (!input.visible) return false;
-  if (limits.status === "unavailable") return false;
-  return isRateLimitSnapshotStale(limits, input.now ?? Date.now());
-}
-
-export function shouldFetchRateLimits(input: {
-  force?: boolean;
-  visible: boolean;
-  claude: ProviderRateLimits;
-  codex: ProviderRateLimits;
-  opencode?: ProviderRateLimits;
-  now?: number;
-}): boolean {
-  return (
-    shouldFetchProvider(input.claude, input) ||
-    shouldFetchProvider(input.codex, input) ||
-    (input.opencode ? shouldFetchProvider(input.opencode, input) : false)
-  );
-}
-
 const WINDOW_DURATION_TOLERANCE_MINUTES = 1;
 
 export function idleRateLimits(
@@ -110,7 +69,10 @@ export function fetchingRateLimits(
 ): ProviderRateLimits {
   if (
     previous &&
-    (previous.session || previous.weekly || previous.monthly || previous.resetCredits)
+    (previous.session ||
+      previous.weekly ||
+      previous.monthly ||
+      previous.resetCredits)
   ) {
     return { ...previous, status: "fetching" };
   }
@@ -149,7 +111,10 @@ export function errorRateLimits(
 ): ProviderRateLimits {
   if (
     previous &&
-    (previous.session || previous.weekly || previous.monthly || previous.resetCredits)
+    (previous.session ||
+      previous.weekly ||
+      previous.monthly ||
+      previous.resetCredits)
   ) {
     return {
       ...previous,
@@ -253,7 +218,8 @@ export function exhaustedWindowResetAt(
 ): number | null {
   let latest: number | null = null;
   for (const window of [limits.session, limits.weekly, limits.monthly]) {
-    if (!window || window.usedPercent < 100 || window.resetsAt == null) continue;
+    if (!window || window.usedPercent < 100 || window.resetsAt == null)
+      continue;
     latest = Math.max(latest ?? 0, window.resetsAt);
   }
   return latest;
