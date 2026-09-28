@@ -405,6 +405,14 @@ export function resolveModel(harness: HarnessId, id?: string): AgentModel {
     }
     const bundled = bundledById.get(id);
     if (bundled && bundled.harness === harness) return bundled;
+
+    // A saved concrete Claude version may be absent from both catalogs.
+    // Keep the requested id so a new session does not silently switch models.
+    const requested = id.trim();
+    if (harness === "claude" && /^claude:[a-z][a-z0-9-]*-\d/.test(requested)) {
+      const nativeId = nativeIdForUnknownKey(requested);
+      return { id: requested, harness, name: nativeId, nativeId };
+    }
   }
   // Codex has no built-in catalog. During startup, retain the saved model
   // until discovery finishes instead of borrowing another provider's model.
@@ -470,7 +478,11 @@ function nativeIdForUnknownKey(id: string): string {
   const slug = nativeIdFrom(trimmed);
   const colon = trimmed.indexOf(":");
   const harness = colon >= 0 ? trimmed.slice(0, colon).toLowerCase() : "";
-  return harness === "claude" ? claudeNativeId("claude", slug) : slug;
+  // Picker keys can use dotted versions (`opus-4.8`), while Claude's CLI
+  // expects hyphenated native ids (`claude-opus-4-8`).
+  return harness === "claude"
+    ? claudeNativeId("claude", slug.replace(/\.(?=\d)/g, "-"))
+    : slug;
 }
 
 /**

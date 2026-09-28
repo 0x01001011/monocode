@@ -503,6 +503,41 @@ describe("live catalog overlays", () => {
     );
   });
 
+  it("keeps a saved Claude version missing from both catalogs", () => {
+    setHarnessModels("claude", [
+      {
+        id: "claude:sonnet",
+        harness: "claude",
+        name: "Sonnet",
+        nativeId: "sonnet",
+      },
+      {
+        id: "claude:opus-5",
+        harness: "claude",
+        name: "Opus 5",
+        nativeId: "claude-opus-5",
+      },
+    ]);
+
+    const model = resolveModel("claude", "claude:opus-5-6");
+    expect(model).toMatchObject({
+      id: "claude:opus-5-6",
+      harness: "claude",
+      nativeId: "claude-opus-5-6",
+    });
+    expect(newSession("claude", "/repo", "claude:opus-5-6").model).toBe(
+      "claude:opus-5-6",
+    );
+    expect(nativeModelId(model)).toBe("claude-opus-5-6");
+
+    const dotted = resolveModel("claude", "claude:opus-4.8");
+    expect(dotted).toMatchObject({
+      id: "claude:opus-4.8",
+      nativeId: "claude-opus-4-8",
+    });
+    expect(nativeModelId("claude:opus-4.8")).toBe("claude-opus-4-8");
+  });
+
   it("prefixes a short live-catalog native id before launching", () => {
     setHarnessModels("claude", [
       {
