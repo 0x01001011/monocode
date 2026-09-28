@@ -409,6 +409,7 @@ export function ProjectRail({
                 muteStatuses={muteStatuses}
                 cwd={cwd}
                 busy={busy}
+                statsEnabled={visible}
                 sortable={pinnedSortable}
                 pinned
                 searchActive={
@@ -444,6 +445,7 @@ export function ProjectRail({
                       muteStatuses={muteStatuses}
                       cwd={cwd}
                       busy={busy}
+                      statsEnabled={visible}
                       searchActive={
                         searchActive ||
                         inboxActive ||
@@ -487,6 +489,7 @@ export function ProjectRail({
               onAdd={onOpenProject}
               cwd={cwd}
               busy={busy}
+              statsEnabled={visible}
               sortable={projectSortable}
               pinned={false}
               searchActive={
@@ -568,6 +571,7 @@ function ProjectSection({
   onAdd,
   cwd,
   busy,
+  statsEnabled,
   sortable,
   pinned,
   searchActive,
@@ -588,6 +592,7 @@ function ProjectSection({
   onAdd?: () => void;
   cwd: string;
   busy: Set<string>;
+  statsEnabled: boolean;
   sortable: SortableHandle;
   pinned: boolean;
   searchActive: boolean;
@@ -617,6 +622,7 @@ function ProjectSection({
             muteStatus={muteStatuses.get(pathKey(item.path)) ?? undefined}
             selected={!searchActive && sameProjectPath(item.path, cwd)}
             busy={isBusyPath(item.path, busy)}
+            statsEnabled={statsEnabled}
             pinned={pinned}
             sortable={sortable}
             onSelect={onSelect}
@@ -684,6 +690,7 @@ function ProjectGroupSection({
   muteStatuses,
   cwd,
   busy,
+  statsEnabled,
   searchActive,
   onSelect,
   onTogglePin,
@@ -703,6 +710,7 @@ function ProjectGroupSection({
   muteStatuses: ReadonlyMap<string, string | null>;
   cwd: string;
   busy: Set<string>;
+  statsEnabled: boolean;
   searchActive: boolean;
   onSelect: (path: string) => void;
   onTogglePin: (path: string) => void;
@@ -809,6 +817,7 @@ function ProjectGroupSection({
               muteStatus={muteStatuses.get(pathKey(item.path)) ?? undefined}
               selected={!searchActive && sameProjectPath(item.path, cwd)}
               busy={isBusyPath(item.path, busy)}
+              statsEnabled={statsEnabled}
               pinned={false}
               sortable={sortable}
               onSelect={onSelect}
@@ -836,6 +845,7 @@ function ProjectCard({
   muteStatus,
   selected,
   busy,
+  statsEnabled,
   pinned,
   sortable,
   onSelect,
@@ -852,6 +862,7 @@ function ProjectCard({
   muteStatus?: string;
   selected: boolean;
   busy: boolean;
+  statsEnabled: boolean;
   pinned: boolean;
   sortable: SortableHandle;
   onSelect: (path: string) => void;
@@ -870,7 +881,7 @@ function ProjectCard({
   const name = resolveTabGroupLabel(key, groupLabels, fallbackName);
   const logoPath = resolveTabGroupLogo(key, groupLogos);
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
-  const diffEnabled = Boolean(item.path) && item.path !== "~";
+  const diffEnabled = statsEnabled && Boolean(item.path) && item.path !== "~";
   const stats = useProjectDiffStats(item.path, diffEnabled);
   const files = stats?.files ?? 0;
   const additions = stats?.additions ?? 0;

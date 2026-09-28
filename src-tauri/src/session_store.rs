@@ -70,35 +70,11 @@ impl SessionStore {
             .lock()
             .map_err(|_| "Session store is locked".into())
     }
-
-    pub(crate) fn generated_image_paths(&self) -> Result<Vec<String>, String> {
-        let conn = self.lock_conn()?;
-        let mut statement = conn
-            .prepare("SELECT blocks_json FROM sessions")
-            .map_err(|error| error.to_string())?;
-        let rows = statement
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|error| error.to_string())?;
-        let mut paths = Vec::new();
-        for row in rows {
-            let blocks_json = row.map_err(|error| error.to_string())?;
-            let blocks: Value =
-                serde_json::from_str(&blocks_json).map_err(|error| error.to_string())?;
-            paths.extend(generated_image_paths(&blocks));
-        }
-        Ok(paths)
-    }
 }
 
 pub fn init(app: &AppHandle) -> Result<(), String> {
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let store = SessionStore::open(data_dir.join("monocode.db"))?;
-    let cleanup = store
-        .generated_image_paths()
-        .and_then(|paths| crate::fs::cleanup_orphaned_generated_images(app, &paths));
-    if let Err(error) = cleanup {
-        eprintln!("Generated image cleanup will need a retry: {error}");
-    }
     app.manage(store);
     Ok(())
 }
@@ -211,7 +187,6 @@ pub struct SessionRecord {
 
 #[tauri::command(async)]
 pub fn session_upsert(
-    app: AppHandle,
     store: State<'_, SessionStore>,
     session: SessionUpsert,
 ) -> Result<SessionSummary, String> {
@@ -242,23 +217,7 @@ pub fn session_upsert(
     }
 
     let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    let previous_paths = get_session(&conn, &session.id)
-        .ok()
-        .flatten()
-        .map(|record| generated_image_paths(&record.blocks))
-        .unwrap_or_default();
-    let next_paths = generated_image_paths(&session.blocks);
-    let removed_paths = previous_paths
-        .into_iter()
-        .filter(|path| !next_paths.contains(path))
-        .collect::<Vec<_>>();
     let summary = upsert_session(&conn, &session).map_err(|e| e.to_string())?;
-    drop(conn);
-    if !removed_paths.is_empty() {
-        if let Err(error) = crate::fs::delete_generated_images_sync(&app, &removed_paths) {
-            eprintln!("Generated image cleanup will need a retry: {error}");
-        }
-    }
     Ok(summary)
 }
 

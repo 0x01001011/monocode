@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Read-only Git checks no longer resolve the login-shell path, which could delay project stats and session saves after a Finder launch. Commits, sync, fetch, and clone still use that path when needed.
+- The hidden project rail suspends its Git-stat listeners and reuses recent stats when reopened.
+- Transcript updates no longer make the composer mascot measure layout on every animation frame.
+- Startup and transcript saves no longer scan or reparse saved sessions for orphaned generated images; deleting a session still removes its referenced image files.
+
 ## [0.4.1] - 2026-09-28
 
 ### Fixed
