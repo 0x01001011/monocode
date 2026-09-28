@@ -116,9 +116,15 @@ Actions:
                   Reuse --request-id on retries.
   sessions.start {"prompt":"...","harness":"codex","model":"codex:...",
                   "effort":"high","reveal":false,
-                  "workspaceMode":"current","draft":false}
-                  Create a tab with the prompt. Set draft:true to save it
-                  unsent; no agent turn runs. Otherwise the turn is submitted.
+                  "workspaceMode":"current","draft":false,
+                  "placement":"right",
+                  "besideSessionId":"<visible session ID>"}
+                  Create a tab with the prompt, or set placement to right or
+                  down to split a visible session pane. A split defaults to the
+                  calling session; besideSessionId chooses another visible
+                  session in this project, including one just created. Set
+                  draft:true to save the prompt unsent; no agent turn runs.
+                  Otherwise the turn is submitted.
                   Returns after creation/acceptance, not agent completion;
                   use its ID with folders.move immediately. Optional model,
                   effort, modelSettings, permission mode and workspace choice

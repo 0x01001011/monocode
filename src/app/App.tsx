@@ -2,6 +2,7 @@ import { acceptQuickLaunch } from "./model/quickLaunchSession";
 import {
   handleAgentApp,
   type AppSessionListing,
+  type AppSessionPlacement,
 } from "../features/agent-app/model/agentApp";
 import { submitWithSettlement } from "./model/managedSubmission";
 import {
@@ -6627,7 +6628,7 @@ export default function App({
           );
           if (operatorCommand.matched) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
-            sendText += `\n\n<monocode_app>\nThe user's Operator command enables app access in this thread, including later turns without the command. You can start session tabs, read and continue other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` for exact commands and JSON fields, then use it as needed for the user's request. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</monocode_app>`;
+            sendText += `\n\n<monocode_app>\nThe user's Operator command enables app access in this thread, including later turns without the command. You can start session tabs or split session panes right or down, read and continue other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` for exact commands and JSON fields, then use it as needed for the user's request. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</monocode_app>`;
           }
           await sendTurn(sendText);
           acceptEditedResend();
@@ -6977,7 +6978,7 @@ export default function App({
   );
 
   const launchQuickSession = useCallback(
-    (launch: QuickLaunch, deliveryId: string) =>
+    (launch: QuickLaunch, deliveryId: string, placement?: AppSessionPlacement) =>
       acceptQuickLaunch(launch, deliveryId, {
         getSessions: () => sessionsRef.current,
         updateSessions: (update) => {
@@ -6986,6 +6987,34 @@ export default function App({
           setSessions(update);
         },
         appendTab,
+        placeSession: (sessionId, target, cwd) => {
+          const anchor = sessionsRef.current.find(
+            (session) => session.id === target.besideSessionId,
+          );
+          const tab = tabsRef.current.find((entry) =>
+            leafIds(entry.layout).includes(target.besideSessionId),
+          );
+          if (!anchor || !sameProjectPath(anchor.cwd, cwd) || !tab)
+            throw new Error("The target session must be open in this project");
+          const nextTabs = tabsRef.current.map((entry) =>
+            entry.id === tab.id
+              ? {
+                  ...entry,
+                  layout: splitPane(
+                    entry.layout,
+                    target.besideSessionId,
+                    target.direction,
+                    sessionId,
+                  ),
+                  focusedId: launch.reveal ? sessionId : entry.focusedId,
+                  diffFocused: launch.reveal ? false : entry.diffFocused,
+                }
+              : entry,
+          );
+          tabsRef.current = nextTabs;
+          setTabs(nextTabs);
+          return tab.id;
+        },
         setProjectCwd,
         setRecents,
         revealTab: (id, cwd) => {
@@ -7002,7 +7031,7 @@ export default function App({
           flushSync(() =>
             onSaveDraft(id, prompt, attachments, requestId),
           ),
-      }),
+      }, placement),
     [appendTab, submitSession, onSaveDraft],
   );
   useQuickComposerLaunches(launchQuickSession);
@@ -8797,7 +8826,7 @@ export default function App({
           payload.action,
           payload.input,
           {
-            start: async (launch, id) => {
+            start: async (launch, id, placement) => {
               const open = sessionsRef.current.find(
                 (session) => session.id === id,
               );
@@ -8822,7 +8851,7 @@ export default function App({
                 return;
               if (existing && sessionDraftBlock(existing))
                 throw new Error("Session ID already has a different draft");
-              await launchQuickSessionRef.current(launch, id);
+              await launchQuickSessionRef.current(launch, id, placement);
             },
             sessions: async (cwd): Promise<AppSessionListing[]> => {
               const stored = await listSessionsByProject(cwd);

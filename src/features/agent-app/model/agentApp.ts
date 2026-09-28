@@ -27,6 +27,7 @@ import {
   type NoteUpsert,
 } from "../../notes";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
+import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage } from "./sessionConversation";
 
@@ -39,8 +40,17 @@ export type AppSessionListing = {
   hasDraft: boolean;
 };
 
+export type AppSessionPlacement = {
+  direction: SplitDir;
+  besideSessionId: string;
+};
+
 export type AgentAppHost = {
-  start(launch: QuickLaunch, id: string): Promise<void>;
+  start(
+    launch: QuickLaunch,
+    id: string,
+    placement?: AppSessionPlacement,
+  ): Promise<void>;
   sessions(cwd: string): Promise<AppSessionListing[]>;
   session(id: string): Promise<Session | null>;
   send(
@@ -77,6 +87,8 @@ const FIELDS = new Map<string, readonly string[]>([
       "reveal",
       "workspaceMode",
       "worktreeBase",
+      "placement",
+      "besideSessionId",
     ],
   ],
   ["folders.list", []],
@@ -332,8 +344,23 @@ export async function handleAgentApp(
           "request ID must use letters, digits, underscores or hyphens",
         );
       const launch = startLaunch(source, input);
+      const placement = input.placement ?? "tab";
+      if (placement !== "tab" && placement !== "right" && placement !== "down")
+        throw new Error("placement must be tab, right or down");
+      if (input.besideSessionId !== undefined && placement === "tab")
+        throw new Error("besideSessionId requires placement right or down");
+      const besideSessionId =
+        placement === "tab"
+          ? undefined
+          : (optionalString(input.besideSessionId, "besideSessionId", 256) ??
+            source.id);
       const id = `app-${source.id}-${requestId}`;
-      await host.start(launch, id);
+      if (besideSessionId)
+        await host.start(launch, id, {
+          direction: placement as SplitDir,
+          besideSessionId,
+        });
+      else await host.start(launch, id);
       return {
         id,
         cwd: launch.cwd,

@@ -254,6 +254,52 @@ describe("agent app commands", () => {
     expect(result).toMatchObject({ id: "app-lead-request-1", submitted: true });
   });
 
+  it("starts a pane beside the caller or another session in either direction", async () => {
+    const { source, host } = fixture();
+    await handleAgentApp(
+      source,
+      "right",
+      "sessions.start",
+      { prompt: "Inspect the API", placement: "right", draft: true },
+      host,
+    );
+    expect(host.start).toHaveBeenLastCalledWith(
+      expect.objectContaining({ draft: true }),
+      "app-lead-right",
+      { direction: "right", besideSessionId: "lead" },
+    );
+    await handleAgentApp(
+      source,
+      "down",
+      "sessions.start",
+      {
+        prompt: "Review the UI",
+        placement: "down",
+        besideSessionId: "app-lead-right",
+      },
+      host,
+    );
+    expect(host.start).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "app-lead-down",
+      { direction: "down", besideSessionId: "app-lead-right" },
+    );
+  });
+
+  it("rejects invalid pane placement before starting", async () => {
+    const { source, host } = fixture();
+    for (const input of [
+      { prompt: "A", placement: "left" },
+      { prompt: "A", besideSessionId: "other" },
+      { prompt: "A", placement: "down", besideSessionId: 42 },
+    ]) {
+      await expect(
+        handleAgentApp(source, "invalid", "sessions.start", input, host),
+      ).rejects.toThrow();
+    }
+    expect(host.start).not.toHaveBeenCalled();
+  });
+
   it("inherits the caller's permission mode unless start overrides it", async () => {
     const { source, host } = fixture();
     source.runtimeMode = "auto";
