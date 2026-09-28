@@ -6096,6 +6096,7 @@ export default function App({
         ...(rawCommand ? undefined : userTurnCards(noteCard, card)),
         ...(ciContext ? { ciContext } : {}),
         ...(operatorCommand.matched ? { monocode: true } : {}),
+        ...(intent === "plan" || intent === "orchestrate" ? { intent } : {}),
         ...(options?.appRequestId ? { appRequestId: options.appRequestId } : {}),
         // The orchestrator writes these turns, not the user; hide them.
         ...(options?.managed ? { internal: true } : {}),

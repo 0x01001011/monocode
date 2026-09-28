@@ -591,6 +591,11 @@ function sanitizeBlock(
   if (block.role === "user" && block.monocode) next.monocode = true;
   if (
     block.role === "user" &&
+    (block.intent === "plan" || block.intent === "orchestrate")
+  )
+    next.intent = block.intent;
+  if (
+    block.role === "user" &&
     typeof block.appRequestId === "string" &&
     /^[A-Za-z0-9_-]{1,512}$/.test(block.appRequestId)
   )

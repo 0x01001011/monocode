@@ -302,6 +302,8 @@ export type Block = {
   draft?: boolean;
   /** This user turn activated MonoCode app access for its thread. */
   monocode?: boolean;
+  /** The Plan or Orchestrator mode this user turn was sent in. */
+  intent?: Extract<TurnIntent, "plan" | "orchestrate">;
   /** Stable CLI request that submitted this turn, for safe retries. */
   appRequestId?: string;
   /** Provider-reported token metrics for this user turn, when available. */
