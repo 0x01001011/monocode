@@ -73,16 +73,23 @@ impl SessionStore {
 }
 
 pub fn init(app: &AppHandle) -> Result<(), String> {
-    init_with(app, SessionStore::open)
+    init_with(
+        || app.path().app_data_dir().map_err(|e| e.to_string()),
+        SessionStore::open,
+        |store| {
+            app.manage(store);
+        },
+    )
 }
 
-fn init_with<R: tauri::Runtime>(
-    app: &AppHandle<R>,
+// Keep the complete startup path here so the transcript-read test covers it.
+fn init_with(
+    data_dir: impl FnOnce() -> Result<PathBuf, String>,
     open: impl FnOnce(PathBuf) -> Result<SessionStore, String>,
+    manage: impl FnOnce(SessionStore),
 ) -> Result<(), String> {
-    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    let store = open(data_dir.join("monocode.db"))?;
-    app.manage(store);
+    let store = open(data_dir()?.join("monocode.db"))?;
+    manage(store);
     Ok(())
 }
 
@@ -2000,36 +2007,38 @@ mod tests {
             .unwrap();
         }
 
-        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
-        context.config_mut().identifier = data_dir.to_string_lossy().into_owned();
-        let app = tauri::test::mock_builder().build(context).unwrap();
         let transcript_reads = Arc::new(AtomicUsize::new(0));
         let reads = Arc::clone(&transcript_reads);
-        init_with(app.handle(), |requested_path| {
-            assert_eq!(requested_path, path);
-            let store = SessionStore::open(requested_path)?;
-            store
-                .lock_conn()?
-                .authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
-                    if matches!(
-                        context.action,
-                        AuthAction::Read {
-                            table_name: "sessions",
-                            column_name: "blocks_json"
+        let mut managed = None;
+        init_with(
+            || Ok(data_dir.clone()),
+            |requested_path| {
+                assert_eq!(requested_path, path);
+                let store = SessionStore::open(requested_path)?;
+                store
+                    .lock_conn()?
+                    .authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
+                        if matches!(
+                            context.action,
+                            AuthAction::Read {
+                                table_name: "sessions",
+                                column_name: "blocks_json"
+                            }
+                        ) {
+                            reads.fetch_add(1, Ordering::Relaxed);
+                            Authorization::Deny
+                        } else {
+                            Authorization::Allow
                         }
-                    ) {
-                        reads.fetch_add(1, Ordering::Relaxed);
-                        Authorization::Deny
-                    } else {
-                        Authorization::Allow
-                    }
-                }))
-                .map_err(|error| error.to_string())?;
-            Ok(store)
-        })
+                    }))
+                    .map_err(|error| error.to_string())?;
+                Ok(store)
+            },
+            |store| managed = Some(store),
+        )
         .unwrap();
         assert_eq!(transcript_reads.load(Ordering::Relaxed), 0);
-        drop(app);
+        drop(managed);
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
