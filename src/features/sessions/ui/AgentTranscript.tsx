@@ -27,6 +27,7 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { flushSync } from "react-dom";
 import { AttachmentChip } from "./AttachmentChip";
@@ -467,6 +468,8 @@ function AgentTranscriptComponent({
     onResize();
     return () => observer.disconnect();
   }, [scrollerEl, setShowJump, visible]);
+
+  useTurnScrollAnchor(scrollerEl, visible, stickToBottom);
 
   const turns = groupTurns(blocks, managed);
   const firstVisibleTurn = Math.max(0, turns.length - visibleTurnCount);
@@ -2054,6 +2057,68 @@ function sameActivity(a: ActivityPhasesProps, b: ActivityPhasesProps): boolean {
     a.blocks.length === b.blocks.length &&
     a.blocks.every((block, index) => block === b.blocks[index])
   );
+}
+
+/**
+ * Hold the reader's place while turns above the viewport change height. An
+ * off-screen turn keeps its content-visibility placeholder until it is first
+ * laid out, and the scroller opts out of native scroll anchoring, so scrolling
+ * up through a freshly opened chat would otherwise shove the view down by
+ * each turn's correction.
+ */
+function useTurnScrollAnchor(
+  el: HTMLDivElement | null,
+  enabled: boolean,
+  stickToBottom: RefObject<boolean>,
+) {
+  useLayoutEffect(() => {
+    const inner = el?.firstElementChild;
+    if (!enabled || !el || !inner) return;
+    const heights = new WeakMap<Element, number>();
+    const resize = new ResizeObserver((entries) => {
+      // A parked transcript's scroller is detached and measures zero.
+      if (!el.isConnected) return;
+      const viewportTop = el.getBoundingClientRect().top;
+      let shift = 0;
+      for (const entry of entries) {
+        const height =
+          entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        const previous = heights.get(entry.target);
+        heights.set(entry.target, height);
+        if (previous === undefined || stickToBottom.current) continue;
+        // Only turns that sat wholly above the view. A turn the reader is
+        // looking at grows downward from where they are reading.
+        const top = entry.target.getBoundingClientRect().top;
+        if (top + previous <= viewportTop) shift += height - previous;
+      }
+      if (shift) el.scrollTop += shift;
+    });
+    const observed = new WeakSet<Element>();
+    const observeTurns = () => {
+      for (const turn of inner.children) {
+        if (observed.has(turn) || !turn.classList.contains("transcript-turn"))
+          continue;
+        observed.add(turn);
+        resize.observe(turn);
+      }
+    };
+    const mutations = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.removedNodes) {
+          if (!(node instanceof Element)) continue;
+          observed.delete(node);
+          resize.unobserve(node);
+        }
+      }
+      observeTurns();
+    });
+    mutations.observe(inner, { childList: true });
+    observeTurns();
+    return () => {
+      mutations.disconnect();
+      resize.disconnect();
+    };
+  }, [el, enabled, stickToBottom]);
 }
 
 /**

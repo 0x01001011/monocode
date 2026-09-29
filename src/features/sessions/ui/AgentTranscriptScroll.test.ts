@@ -7,7 +7,10 @@ import { AgentTranscript } from "./AgentTranscript";
 
 let container: HTMLDivElement;
 let root: Root;
-let observers: Array<{ targets: Element[]; resize: () => void }>;
+let observers: Array<{
+  targets: Element[];
+  resize: (entries?: unknown[]) => void;
+}>;
 
 beforeEach(() => {
   observers = [];
@@ -16,7 +19,7 @@ beforeEach(() => {
     "ResizeObserver",
     class {
       targets: Element[] = [];
-      constructor(readonly resize: () => void) {
+      constructor(readonly resize: (entries?: unknown[]) => void) {
         observers.push(this);
       }
       observe(target: Element) {
@@ -174,5 +177,51 @@ describe("transcript scrolling", () => {
     height = 1080;
     act(() => observer.resize());
     expect(top).toBe(680);
+  });
+
+  it("holds the reader's place when a turn above the view lays out", () => {
+    const blocks: Block[] = Array.from({ length: 3 }, (_, index) => [
+      { id: `user-${index}`, role: "user" as const, text: `Question ${index}` },
+      { id: `reply-${index}`, role: "assistant" as const, text: "Answer" },
+    ]).flat();
+    act(() => root.render(createElement(AgentTranscript, { blocks })));
+    const scroller =
+      container.querySelector<HTMLDivElement>(".agent-transcript")!;
+    let height = 3000;
+    let top = 0;
+    Object.defineProperties(scroller, {
+      scrollHeight: { get: () => height },
+      clientHeight: { get: () => 400 },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => {
+          top = Math.max(0, Math.min(value, height - 400));
+        },
+      },
+    });
+    act(() => {
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+      top = 1000;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    const [above, reading] = scroller.querySelectorAll(".transcript-turn");
+    const observer = observers.find((item) => item.targets.includes(above))!;
+    expect(observer).toBeDefined();
+    above.getBoundingClientRect = () => ({ top: -800 }) as DOMRect;
+    reading.getBoundingClientRect = () => ({ top: -100 }) as DOMRect;
+    const size = (target: Element, blockSize: number) => ({
+      target,
+      borderBoxSize: [{ blockSize }],
+      contentRect: { height: blockSize },
+    });
+    // Off-screen turns report their placeholder size first.
+    act(() => observer.resize([size(above, 240), size(reading, 240)]));
+    expect(top).toBe(1000);
+
+    // Scrolling up lays them out. Only the turn wholly above the view moves
+    // the reader; the one on screen grows below where they are reading.
+    height = 4420;
+    act(() => observer.resize([size(above, 900), size(reading, 1000)]));
+    expect(top).toBe(1660);
   });
 });
