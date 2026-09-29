@@ -322,10 +322,14 @@ function AgentTranscriptComponent({
 
   const syncPinned = useCallback(
     (el: HTMLElement) => {
-      const near = isNearBottom(el);
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      // Scrolling up inside the bottom margin is the reader leaving. Pinning
+      // again here would snap each streamed chunk back down under the wheel.
+      const leaving =
+        !stickToBottom.current && distance > distanceFromBottom.current;
+      const near = isNearBottom(el) && !leaving;
       stickToBottom.current = near;
-      distanceFromBottom.current =
-        el.scrollHeight - el.scrollTop - el.clientHeight;
+      distanceFromBottom.current = distance;
       setShowJump(!near);
     },
     [setShowJump],
@@ -2084,8 +2088,14 @@ function useLivePhaseScroll(
     const pin = () => {
       if (stickToBottom.current) el.scrollTop = el.scrollHeight;
     };
+    let lastDistance = 0;
     const onScroll = () => {
-      if (isNearBottom(el)) stickToBottom.current = true;
+      // Only a scroll toward the end re-pins; one leaving it must not.
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (isNearBottom(el) && distance <= lastDistance) {
+        stickToBottom.current = true;
+      }
+      lastDistance = distance;
     };
     const onWheel = (e: WheelEvent) => {
       if (!nestedScrollAbsorbsWheel(el, e.deltaY)) return;

@@ -118,3 +118,61 @@ describe("subagent scrolling", () => {
     expect(top).toBe(300);
   });
 });
+
+describe("transcript scrolling", () => {
+  it("lets a wheel up inside the bottom margin leave a streaming reply", () => {
+    const blocks = (text: string): Block[] => [
+      { id: "user", role: "user", text: "Explain auth" },
+      { id: "reply", role: "assistant", text },
+    ];
+    act(() =>
+      root.render(
+        createElement(AgentTranscript, { blocks: blocks("One"), busy: true }),
+      ),
+    );
+    const scroller =
+      container.querySelector<HTMLDivElement>(".agent-transcript")!;
+    let height = 1000;
+    let top = 0;
+    Object.defineProperties(scroller, {
+      scrollHeight: { get: () => height },
+      clientHeight: { get: () => 400 },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => {
+          top = Math.max(0, Math.min(value, height - 400));
+        },
+      },
+    });
+    const observer = observers.find((item) => item.targets.includes(scroller))!;
+    act(() => observer.resize());
+    expect(top).toBe(600);
+
+    // A trackpad's first ticks move only a few pixels.
+    act(() => {
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+      top = 596;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    height = 1040;
+    act(() =>
+      root.render(
+        createElement(AgentTranscript, {
+          blocks: blocks("One\n\nTwo"),
+          busy: true,
+        }),
+      ),
+    );
+    act(() => observer.resize());
+    expect(top).toBe(596);
+
+    // Scrolling back down to the end follows the stream again.
+    act(() => {
+      top = 640;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    height = 1080;
+    act(() => observer.resize());
+    expect(top).toBe(680);
+  });
+});
