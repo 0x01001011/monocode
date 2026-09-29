@@ -2093,7 +2093,7 @@ function useTurnScrollAnchor(
       }
       if (shift) el.scrollTop += shift;
     });
-    const observed = new WeakSet<Element>();
+    let observed = new WeakSet<Element>();
     const observeTurns = () => {
       for (const turn of inner.children) {
         if (observed.has(turn) || !turn.classList.contains("transcript-turn"))
@@ -2103,12 +2103,11 @@ function useTurnScrollAnchor(
       }
     };
     const mutations = new MutationObserver((records) => {
-      for (const record of records) {
-        for (const node of record.removedNodes) {
-          if (!(node instanceof Element)) continue;
-          observed.delete(node);
-          resize.unobserve(node);
-        }
+      // Removal is rare (a rewind or edit), so start over rather than hold
+      // detached turns. Re-observed turns report the height already stored.
+      if (records.some((record) => record.removedNodes.length > 0)) {
+        resize.disconnect();
+        observed = new WeakSet();
       }
       observeTurns();
     });
