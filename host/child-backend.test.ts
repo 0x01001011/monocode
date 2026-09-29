@@ -97,6 +97,10 @@ setInterval(() => {}, 1000);
       windowsHide: true,
     },
   );
+  let guardClosed = false;
+  guard.once("close", () => {
+    guardClosed = true;
+  });
   let tree: { provider: number; descendant: number } | undefined;
   try {
     await vi.waitFor(() => expect(existsSync(treeFile)).toBe(true));
@@ -109,6 +113,8 @@ setInterval(() => {}, 1000);
       },
       { timeout: 5_000 },
     );
+    // The guard's cwd keeps this directory locked on Windows until it exits.
+    await vi.waitFor(() => expect(guardClosed).toBe(true), { timeout: 5_000 });
   } finally {
     guard.stdio[3]?.destroy();
     guard.kill("SIGKILL");
@@ -120,6 +126,12 @@ setInterval(() => {}, 1000);
           /* gone */
         }
     }
-    rmSync(directory, { recursive: true, force: true });
+    await vi.waitFor(() => expect(guardClosed).toBe(true), { timeout: 5_000 });
+    rmSync(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
   }
 }, 10_000);
