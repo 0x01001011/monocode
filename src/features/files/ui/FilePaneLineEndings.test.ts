@@ -34,6 +34,9 @@ describe("file editor line endings", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    // CodeMirror schedules timers while mounting. Keep those callbacks on the
+    // same clock as the autosave debounce instead of switching clocks afterward.
+    vi.useFakeTimers();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal("localStorage", new Storage());
     invoke.mockClear();
@@ -104,7 +107,6 @@ describe("file editor line endings", () => {
   it("automatically saves after typing stops", async () => {
     disk.content = "alpha\n";
     const view = await renderEditor("/repo/notes.txt");
-    vi.useFakeTimers();
 
     await act(async () => {
       view.dispatch({ changes: { from: 0, insert: "first " } });
@@ -128,7 +130,6 @@ describe("file editor line endings", () => {
     disk.content = "alpha\n";
     saveAutosave(false);
     const view = await renderEditor("/repo/notes.txt");
-    vi.useFakeTimers();
 
     await act(async () => {
       view.dispatch({ changes: { from: 0, insert: "changed " } });
@@ -142,7 +143,6 @@ describe("file editor line endings", () => {
     disk.content = "alpha\n";
     const path = "/repo/notes.txt";
     const view = await renderEditor(path);
-    vi.useFakeTimers();
 
     await act(async () => {
       view.dispatch({ changes: { from: 0, insert: "local " } });
@@ -169,7 +169,6 @@ describe("file editor line endings", () => {
         }),
     );
     const view = await renderEditor(path);
-    vi.useFakeTimers();
 
     await act(async () => {
       view.dispatch({ changes: { from: 0, insert: "local " } });
@@ -198,7 +197,6 @@ describe("file editor line endings", () => {
       return defaultInvoke(command, args);
     });
     const view = await renderEditor("/repo/notes.txt");
-    vi.useFakeTimers();
 
     await act(async () => {
       view.dispatch({ changes: { from: 0, insert: "changed " } });
