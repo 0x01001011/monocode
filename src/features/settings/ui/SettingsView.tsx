@@ -547,7 +547,9 @@ export function SettingsView({
               ) : null}
               {section === "chat" ? <ChatPage /> : null}
               {section === "keybindings" ? <KeybindingsPage /> : null}
-              {section === "mcp" ? <McpSettings cwd={cwd} /> : null}
+              {section === "mcp" ? (
+                <McpSettings cwd={cwd} recents={recents} />
+              ) : null}
               {section === "providers" ? (
                 <ProvidersPage cwd={cwd} recents={recents} />
               ) : null}
