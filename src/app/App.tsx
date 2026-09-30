@@ -3808,6 +3808,7 @@ export default function App({
           restored.providerSessionId,
           sessionWorkCwd(restored),
           restored.providerAccountId,
+          restored.blocks,
         );
       }
       lastPersisted.current.set(restored.id, persistFingerprint(restored));
@@ -4408,6 +4409,7 @@ export default function App({
               pending.fromProviderSessionId,
               sessionWorkCwd(session),
               pending.fromProviderAccountId,
+              session.blocks,
             );
           }
         }
@@ -8759,6 +8761,7 @@ export default function App({
             worker.providerSessionId,
             sessionWorkCwd(worker),
             worker.providerAccountId,
+            worker.blocks,
           );
         await upsertSession(worker);
         const next = [...sessionsRef.current, worker];
