@@ -68,6 +68,7 @@ import {
 } from "react";
 import { Sidebar } from "./shell/Sidebar";
 import { ApprovalToasts } from "../features/sessions/ui/ApprovalToasts";
+import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { WhatsNewDialog } from "./shell/WhatsNewDialog";
 import { ProviderSignInDialog } from "../features/sessions/ui/ProviderSignInDialog";
 import { TitleBar, type Tab as TitleTab } from "./shell/TitleBar";
@@ -1686,6 +1687,7 @@ export default function App({
     [sessions, activeTabId, tabs, composerFocused],
   );
   const [reminderNoticesHeight, setReminderNoticesHeight] = useState(0);
+  const [harnessUpdateHeight, setHarnessUpdateHeight] = useState(0);
 
   useEffect(() => {
     syncDockBadge(sessions);
@@ -10989,10 +10991,18 @@ export default function App({
               }}
             />
           )}
+          <HarnessUpdateNotice
+            topOffset={
+              12 + (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0)
+            }
+            onHeightChange={setHarnessUpdateHeight}
+          />
           <ApprovalToasts
             notices={hiddenApprovalToasts}
             topOffset={
-              12 + (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0)
+              12 +
+              (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0) +
+              (harnessUpdateHeight ? harnessUpdateHeight + 8 : 0)
             }
             onFocusSession={onOpenApprovalSession}
             onApproval={onApproval}
