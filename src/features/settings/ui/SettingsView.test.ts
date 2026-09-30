@@ -629,6 +629,27 @@ describe("settings pages", () => {
     expect(hidden?.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("sets interface scale from a menu instead of a live slider", async () => {
+    await render("appearance");
+    const row = container.querySelector('[data-setting-id="interface-scale"]')!;
+    expect(row.querySelector('input[type="range"]')).toBeNull();
+    const trigger = row.querySelector<HTMLButtonElement>(
+      '[aria-haspopup="listbox"]',
+    )!;
+    expect(trigger.getAttribute("aria-label")).toBe("Interface scale: 100%");
+
+    await act(async () => trigger.click());
+    const option = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
+    ).find((node) => node.textContent?.includes("150%"));
+    expect(option).toBeTruthy();
+    await act(async () => option!.click());
+
+    expect(localStorage.getItem("monocode.uiScale")).toBe("1.5");
+    expect(trigger.getAttribute("aria-label")).toBe("Interface scale: 150%");
+    document.documentElement.style.removeProperty("zoom");
+  });
+
   it("reports collapsed project rail changes to the app shell", async () => {
     const onCollapsedProjectRailModeChange = vi.fn();
     await render("appearance", {
