@@ -484,6 +484,8 @@ pub fn run() {
             set_dock_badge,
             #[cfg(target_os = "macos")]
             menu::keybindings_set_overrides,
+            #[cfg(target_os = "macos")]
+            menu::autosave_set_enabled,
             open_new_window,
             window::hide_window,
             window::destroy_window,
