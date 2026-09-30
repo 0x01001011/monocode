@@ -9781,6 +9781,12 @@ export default function App({
     return () => window.removeEventListener(OPEN_REMOTE_PROJECT_EVENT, open);
   }, []);
 
+  useEffect(() => {
+    const onOpenMcp = () => openSettings("mcp");
+    window.addEventListener("monocode:open-mcp-settings", onOpenMcp);
+    return () => window.removeEventListener("monocode:open-mcp-settings", onOpenMcp);
+  }, [openSettings]);
+
   const onOpenNotificationSettings = useCallback(
     (path?: string) => {
       openSettings("inbox", "project-notifications");

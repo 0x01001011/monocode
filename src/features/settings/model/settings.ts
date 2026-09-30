@@ -24,6 +24,7 @@ export type SettingsSectionId =
   | "keybindings"
   | "chat"
   | "providers"
+  | "mcp"
   | "skills"
   | "inbox"
   | "worktrees"
@@ -99,6 +100,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "account sign in login model harness claude codex gemini cli default hooks",
   },
   {
+    id: "mcp",
+    group: "agents",
+    label: "MCP",
+    description: "Find MCP servers across providers and manage their connections.",
+    keywords: "tools servers connections oauth authenticate login claude codex cursor opencode",
+  },
+  {
     id: "skills",
     group: "agents",
     label: "Skills",
@@ -155,6 +163,12 @@ export type SettingsEntry = {
 
 export const SETTINGS_INDEX: SettingsEntry[] = [
   { id: "remote-machines", section: "connections", label: "Your machines", keywords: "ssh remote connect host server environment" },
+  {
+    id: "mcp-servers",
+    section: "mcp",
+    label: "MCP servers",
+    keywords: "claude tools connections oauth authenticate login add remove",
+  },
   {
     id: "project-worktrees",
     section: "worktrees",
