@@ -227,14 +227,6 @@ html.has-native-glass:not(.theme-light) #root {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html,
-  body,
-  #root,
-  .sidebar-glass,
-  .body-glass {
-    transition: none;
-  }
-
   .tab-motion,
   .tab-motion > button {
     transition: none;
@@ -308,6 +300,16 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
   background: var(--color-background-base);
   transition: background-color var(--motion-feedback-duration)
     var(--motion-ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body,
+  #root,
+  .sidebar-glass,
+  .body-glass {
+    transition: none;
+  }
 }
 
 .chat-pane-background::before {
