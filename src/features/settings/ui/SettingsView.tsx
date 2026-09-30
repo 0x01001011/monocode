@@ -221,9 +221,9 @@ import { removeProviderAccountCredentials } from "../../providers/model/provider
 import {
   identityKey,
   identityOrganizationTag,
-  identitySubtitle,
   useProviderAccountIdentities,
 } from "../../providers/model/providerAccountIdentity";
+import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import {
   accountStatus,
   accountUsageKey,
@@ -3424,12 +3424,15 @@ function ProviderAccountsSettings() {
                           status={accountStatus(limits, usage.now)}
                           className="shrink-0"
                         />
-                        <span className="min-w-0 truncate text-content/30">
-                          {identitySubtitle(identity) ??
-                            (account.isDefault
+                        <ProviderAccountSubtitle
+                          identity={identity}
+                          fallback={
+                            account.isDefault
                               ? "Provider CLI profile"
-                              : "Isolated profile")}
-                        </span>
+                              : "Isolated profile"
+                          }
+                          className="truncate text-content/30"
+                        />
                       </div>
                     </div>
                     <AccountUsageMeters limits={limits} now={usage.now} />

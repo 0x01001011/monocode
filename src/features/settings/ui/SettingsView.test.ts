@@ -113,6 +113,42 @@ afterEach(async () => {
 });
 
 describe("settings pages", () => {
+  it("keeps account emails blurred until clicked and hides them when settings reopen", async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "provider_account_identity") {
+        const { provider } = args as { provider: string };
+        return { email: `${provider}@example.com`, plan: "Pro" };
+      }
+      return undefined;
+    });
+    await render("providers");
+
+    const emails = container.querySelectorAll<HTMLButtonElement>(
+      '[aria-label="Reveal email"]',
+    );
+    expect(emails).toHaveLength(2);
+    expect(
+      [...emails].every((email) =>
+        email.querySelector("span")?.className.includes("blur-[5px]"),
+      ),
+    ).toBe(true);
+    expect(container.textContent).toContain("Pro");
+    await act(async () => emails[0].click());
+    expect(emails[0].getAttribute("aria-label")).toBe("Hide email");
+    expect(emails[0].querySelector("span")?.className).not.toContain("blur");
+    expect(emails[1].getAttribute("aria-label")).toBe("Reveal email");
+    await act(async () => emails[0].click());
+    expect(emails[0].getAttribute("aria-label")).toBe("Reveal email");
+
+    await act(async () => emails[0].click());
+    await render("general");
+    await render("providers");
+    expect(container.querySelector('[aria-label="Hide email"]')).toBeNull();
+    expect(
+      container.querySelectorAll('[aria-label="Reveal email"]'),
+    ).toHaveLength(2);
+  });
+
   it("shows account usage bars as remaining capacity", async () => {
     setCachedRateLimits("claude", "default", {
       provider: "claude",
