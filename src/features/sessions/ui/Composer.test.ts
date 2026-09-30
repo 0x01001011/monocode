@@ -35,6 +35,10 @@ vi.mock("../../source-control/hooks/useProjectBranches", () => ({
 }));
 
 import { Composer, ComposerAction } from "./Composer";
+import {
+  clearMcpSettingsCache,
+  loadMcpSettings,
+} from "../../settings/model/mcpSettingsCache";
 import type { ComposerTurnOptions, Attachment } from "../model/session";
 import {
   clearComposerDraft,
@@ -84,6 +88,7 @@ describe("Composer question focus", () => {
   let root: Root;
 
   beforeEach(() => {
+    clearMcpSettingsCache();
     mcpInvoke.mockReset();
     mcpInvoke.mockImplementation(async (command: string) =>
       command === "mcp_discover"
@@ -316,6 +321,56 @@ describe("Composer question focus", () => {
     }
   });
 
+  it("reuses MCP discovery on reopen and applies shared settings refreshes", async () => {
+    await renderComposer(undefined, vi.fn(), false, 0, "/mcp");
+    const textarea = container.querySelector("textarea")!;
+    const enter = () =>
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    await act(async () => enter());
+    expect(mcpInvoke).toHaveBeenCalledTimes(2);
+    await act(async () =>
+      container
+        .querySelector('[aria-label="Search MCP servers"]')!
+        .dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        ),
+    );
+    await typeInto(textarea, "/mcp");
+    await act(async () => enter());
+    expect(container.querySelector("[data-mcp-picker]")).not.toBeNull();
+    expect(mcpInvoke).toHaveBeenCalledTimes(2);
+
+    mcpInvoke.mockImplementation(async (command: string) =>
+      command === "mcp_discover"
+        ? [
+            {
+              provider: "claude",
+              name: "docs",
+              scope: "project",
+              configPath: "/repo/.mcp.json",
+              transport: "stdio",
+              enabled: false,
+            },
+          ]
+        : "docs: local - Connected",
+    );
+    await act(async () => {
+      await loadMcpSettings("/repo", true);
+    });
+    const docs = container.querySelector<HTMLButtonElement>(
+      '[data-mcp-picker] [role="option"]',
+    )!;
+    expect(docs.disabled).toBe(true);
+    expect(docs.textContent).toContain("Disabled in provider configuration");
+    expect(mcpInvoke).toHaveBeenCalledTimes(4);
+  });
+
   it("shows four MCP rows at a time and dismisses on outside click or Escape", async () => {
     mcpInvoke.mockImplementation(async (command: string) =>
       command === "mcp_discover"
@@ -521,6 +576,10 @@ describe("Composer question focus", () => {
       const docs = container.querySelector<HTMLButtonElement>(
         '[data-mcp-picker] [role="option"]',
       )!;
+      expect(mcpInvoke).not.toHaveBeenCalledWith(
+        "claude_mcp_list",
+        expect.anything(),
+      );
       await act(async () => docs.click());
       expect(textarea.value).toContain("@mcp/docs");
       expect(container.querySelector("[data-mcp-tag] svg")).toBeNull();

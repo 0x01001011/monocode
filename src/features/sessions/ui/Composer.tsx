@@ -30,7 +30,6 @@ import {
   type ReactNode,
 } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { invoke } from "@tauri-apps/api/core";
 import {
   attachmentsFromFiles,
   attachmentsFromPaths,
@@ -188,10 +187,13 @@ import {
   type McpTag,
 } from "../model/mcpPicker";
 import { getComposerMcpTags, setComposerMcpTags } from "../model/draftCache";
+import { type McpConnection } from "../../settings/model/mcp";
 import {
-  parseClaudeMcpList,
-  type McpConnection,
-} from "../../settings/model/mcp";
+  getCachedMcpSettings,
+  loadMcpSettings,
+  subscribeMcpSettings,
+  type McpSettingsSnapshot,
+} from "../../settings/model/mcpSettingsCache";
 import type { LastTurnRecall } from "../model/editLastTurn";
 
 type Props = {
@@ -780,65 +782,26 @@ export function Composer({
 
   useEffect(() => {
     if (!mcpPickerOpen) return;
-    let cancelled = false;
-    setMcpLoading(true);
-    setMcpError("");
-    void invoke<McpConnection[]>("mcp_discover", { cwd: executionCwd })
-      .then((connections) => {
-        if (!cancelled)
-          setMcpConnections((current) => [
-            ...connections,
-            ...current.filter(
-              (entry) =>
-                entry.provider === "claude" &&
-                !entry.configPath &&
-                !connections.some(
-                  (configured) =>
-                    configured.provider === "claude" &&
-                    configured.name === entry.name,
-                ),
-            ),
-          ]);
-      })
-      .catch((cause) => {
-        if (!cancelled) setMcpError(String(cause));
-      })
-      .finally(() => {
-        if (!cancelled) setMcpLoading(false);
-      });
-    void invoke<string>("claude_mcp_list", { cwd: executionCwd })
-      .then((output) => {
-        if (cancelled) return;
-        const statuses = parseClaudeMcpList(output);
-        setMcpStatus(
-          new Map(statuses.map((server) => [server.name, server.status])),
-        );
-        setMcpConnections((current) => {
-          const combined = [...current];
-          for (const server of statuses) {
-            if (
-              !combined.some(
-                (entry) =>
-                  entry.provider === "claude" && entry.name === server.name,
-              )
-            ) {
-              combined.push({
-                provider: "claude",
-                name: server.name,
-                scope: "local",
-                configPath: "",
-                transport: "",
-              });
-            }
-          }
-          return combined;
-        });
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
+    const apply = (snapshot: McpSettingsSnapshot) => {
+      setMcpConnections(snapshot.servers);
+      setMcpStatus(
+        new Map(
+          snapshot.servers
+            .filter((server) => server.provider === "claude")
+            .map((server) => [server.name, server.status]),
+        ),
+      );
+      setMcpError(snapshot.error);
+      setMcpLoading(false);
     };
-  }, [executionCwd, mcpPickerOpen]);
+    const stop = subscribeMcpSettings(executionCwd, apply);
+    const cached = getCachedMcpSettings(executionCwd);
+    if (cached) apply(cached);
+    void loadMcpSettings(executionCwd, false, {
+      claudeHealth: harness === "claude",
+    });
+    return stop;
+  }, [executionCwd, harness, mcpPickerOpen]);
 
   useEffect(() => {
     setMcpPickerOpen(false);
