@@ -1037,6 +1037,12 @@ function Workspace({
   const [collapsedProjectRailMode, setCollapsedProjectRailMode] =
     useState<CollapsedProjectRailMode>(loadCollapsedProjectRailMode);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsReturnViewRef = useRef({
+    search: false,
+    inbox: false,
+    notes: false,
+    automations: false,
+  });
   const [updateNotice, setUpdateNotice] = useState(installedUpdate);
   const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
   const [providerSignInRequest, setProviderSignInRequest] = useState<{
@@ -9803,6 +9809,14 @@ function Workspace({
 
   const openSettings = useCallback(
     (section?: SettingsSectionId, anchor?: SettingsAnchor) => {
+      if (!settingsOpenRef.current) {
+        settingsReturnViewRef.current = {
+          search: searchViewOpenRef.current,
+          inbox: inboxViewOpenRef.current,
+          notes: notesViewOpenRef.current,
+          automations: automationsViewOpenRef.current,
+        };
+      }
       startTransition(() => {
         setFilePickerOpen(false);
         setSearchViewOpen(false);
@@ -9856,6 +9870,11 @@ function Workspace({
   );
 
   const onCloseSettings = useCallback(() => {
+    const returnView = settingsReturnViewRef.current;
+    setSearchViewOpen(returnView.search);
+    setInboxViewOpen(returnView.inbox);
+    setNotesViewOpen(returnView.notes && loadNotesEnabled());
+    setAutomationsViewOpen(returnView.automations);
     setSettingsOpen(false);
   }, []);
 
@@ -9874,7 +9893,7 @@ function Workspace({
 
   const onRailBack = useCallback(() => {
     if (settingsOpen) {
-      setSettingsOpen(false);
+      onCloseSettings();
       return;
     }
     if (searchViewOpen) {
@@ -9895,6 +9914,7 @@ function Workspace({
     }
     onVisitBack();
   }, [
+    onCloseSettings,
     onVisitBack,
     searchViewOpen,
     settingsOpen,
