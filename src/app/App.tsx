@@ -82,6 +82,11 @@ import {
   type SessionDeleteChoice,
 } from "../features/sessions/ui/DeleteSessionDialog";
 import {
+  setWorktreeFocus,
+  useWorktreeFocus,
+  worktreeFocus,
+} from "../features/source-control/model/worktreeFocus";
+import {
   assertWorktreeFilesClosed,
   createOrchestrationWorktree,
   createWorktree,
@@ -374,6 +379,7 @@ import {
   planWorkspaceTabClose,
   switchSessionInTab,
   workspaceTabCwd,
+  workspaceTabWorktree,
   focusedWorkspaceTabCwd,
 } from "../features/workspace/model/workspaceTabGroups";
 import { applyAddToChatRequest } from "../features/sessions/model/addChatToWorkspace";
@@ -901,6 +907,11 @@ type AppProps = {
   historyCwd?: string | null;
 };
 
+/** The worktree a project's workspace currently shows. */
+function currentWorkspace(project: string): string {
+  return worktreeFocus(project)?.path ?? project;
+}
+
 export default function App(props: AppProps) {
   return (
     <Suspense fallback={null}>
@@ -1134,6 +1145,54 @@ function Workspace({
   projectTerminalFocusedRef.current = projectTerminalFocused;
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
+
+  const projectWorktree = useWorktreeFocus(projectCwd);
+  /** Tab or session id -> the workspace it was opened or moved in. A tab
+   * belongs to the workspace it was opened in, whatever worktree it runs in:
+   * opening a session, or moving one from its composer, never switches the
+   * workspace. Unpinned tabs (restored ones) group by their own worktree. */
+  // Only the default workspace's tabs were saved, so every restored tab
+  // belongs to it, including one its composer moved to a worktree.
+  const [restoredPins] = useState(
+    () =>
+      new Map(
+        tabs.flatMap((tab) => {
+          const project = workspaceTabCwd(tab, sessions);
+          return project && !isRemoteProjectPath(project)
+            ? [[tab.id, project] as const]
+            : [];
+        }),
+      ),
+  );
+  const workspacePins = useRef(restoredPins);
+  const tabWorkspace = useCallback(
+    (tab: WorkspaceTab, list: readonly Session[]) => {
+      const pinnedTab = workspacePins.current.get(tab.id);
+      if (pinnedTab) return pinnedTab;
+      for (const id of leafIds(tab.layout)) {
+        const pinned = workspacePins.current.get(id);
+        if (pinned) return pinned;
+      }
+      return workspaceTabWorktree(tab, list);
+    },
+    [],
+  );
+  const tabWorktreeOf = useCallback(
+    (tab: WorkspaceTab) => tabWorkspace(tab, sessionsRef.current),
+    [tabWorkspace],
+  );
+  /** Saved tabs: the app reopens on each project's default workspace, so
+   * tabs from other worktrees close with it instead of piling up. */
+  const keepWorkspaceTab = useCallback(
+    (tab: WorkspaceTab) => {
+      const project = workspaceTabCwd(tab, sessionsRef.current);
+      if (!project || isRemoteProjectPath(project)) return true;
+      const workspace = tabWorkspace(tab, sessionsRef.current);
+      return !workspace || sameProjectPath(workspace, project);
+    },
+    [tabWorkspace],
+  );
+
   const projectCwdRef = useRef(projectCwd);
   projectCwdRef.current = projectCwd;
   const searchViewOpenRef = useRef(searchViewOpen);
@@ -1199,6 +1258,9 @@ function Workspace({
     [notesEnabled],
   );
 
+  /** Set while the project rail switches projects, whose landing tab is
+   * incidental and gives way to the worktree picked in that project. */
+  const projectRailSwitch = useRef(false);
   const projectReturnRef = useRef<ProjectReturnMemory>(
     resumed?.projectReturnMemory ?? new Map(),
   );
@@ -1792,6 +1854,7 @@ function Workspace({
       readProjectReturnMemory,
       flushHarnessEvents,
       () => lastDockSideRef.current,
+      keepWorkspaceTab,
     );
     void getCurrentWindow()
       .onCloseRequested((event) => {
@@ -1819,6 +1882,7 @@ function Workspace({
           "unload",
           projectTerminalsRef.current,
           lastDockSideRef.current ?? undefined,
+          keepWorkspaceTab,
         ).finally(() => {
           void (toTray ? hideCurrentWindow() : closeCurrentWindow());
         });
@@ -1830,7 +1894,7 @@ function Workspace({
       releaseQuit();
       unlistenClose?.();
     };
-  }, [flushHarnessEvents, readProjectReturnMemory]);
+  }, [flushHarnessEvents, keepWorkspaceTab, readProjectReturnMemory]);
 
   const refreshHistory = useCallback(async (cwd: string) => {
     if (!cwd || cwd === "~") return;
@@ -2008,6 +2072,7 @@ function Workspace({
       }),
       projectTerminals,
       lastDockSide ?? undefined,
+      keepWorkspaceTab,
     );
     const key = workspaceSnapshotKey(snapshot);
     if (workspaceSyncKey.current === key) return;
@@ -2024,6 +2089,8 @@ function Workspace({
     projectTerminals,
     lastDockSide,
     windowTransfer,
+    keepWorkspaceTab,
+    projectWorktree?.path,
   ]);
 
   useEffect(() => {
@@ -2216,7 +2283,13 @@ function Workspace({
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     const cwd = active?.cwd ?? sessionDefaults?.cwd ?? projectCwd;
-    const session = newDefaultSession(cwd, sessionDefaults?.runtimeMode);
+    const focus = worktreeFocus(cwd);
+    const session = {
+      ...newDefaultSession(cwd, sessionDefaults?.runtimeMode),
+      ...(focus && pathKey(focus.path) !== pathKey(cwd)
+        ? { worktreeCwd: focus.path, branch: focus.branch ?? undefined }
+        : {}),
+    };
     const tab = newTab(session.id);
     setSessions((prev) => [...prev, session]);
     appendTab(tab, cwd);
@@ -2741,6 +2814,7 @@ function Workspace({
         sessions: sessionsRef.current,
         closingTabId: id,
         scope: tabCloseScope,
+        worktreeOf: tabWorktreeOf,
       });
       if (closePlan.action === "keep") return;
       const closing = current[index];
@@ -2918,6 +2992,7 @@ function Workspace({
               sessions: sessionsRef.current,
               closingTabId: tab.id,
               scope: tabCloseScope,
+              worktreeOf: tabWorktreeOf,
             });
             if (closePlan.action === "close") {
               onCloseTab(
@@ -3093,13 +3168,33 @@ function Workspace({
           rememberRemotePendingWorktree(shellId);
         }
 
-        const session = newSession(
-          oldSession.harness,
-          oldSession.cwd,
-          oldSession.model,
-          oldSession.runtimeMode,
-          oldSession.modelSettings,
-        );
+        // The blank replacement stays in the tab's worktree, so clearing the
+        // last tab there does not switch the workspace back to the project.
+        const workspace = tabWorkspace(tab, sessionsRef.current);
+        const focus = worktreeFocus(oldSession.cwd);
+        const session = {
+          ...newSession(
+            oldSession.harness,
+            oldSession.cwd,
+            oldSession.model,
+            oldSession.runtimeMode,
+            oldSession.modelSettings,
+          ),
+          ...(workspace && !sameProjectPath(workspace, oldSession.cwd)
+            ? {
+                worktreeCwd: workspace,
+                branch:
+                  (focus && sameProjectPath(focus.path, workspace)
+                    ? focus.branch
+                    : undefined) ??
+                  (oldSession.worktreeCwd &&
+                  sameProjectPath(oldSession.worktreeCwd, workspace)
+                    ? oldSession.branch
+                    : undefined) ??
+                  undefined,
+              }
+            : {}),
+        };
 
         setSessions((prev) => [...prev, session]);
         setDirtyFiles((prev) => {
@@ -3150,6 +3245,7 @@ function Workspace({
         sessions: sessionsRef.current,
         closingTabId: tab.id,
         scope: tabCloseScope,
+        worktreeOf: tabWorktreeOf,
       });
       if (closePlan.action === "keep") onClearTabSession(tab.id);
       else onCloseTab(tab.id);
@@ -3185,6 +3281,7 @@ function Workspace({
           sessions: sessionsRef.current,
           closingTabId: tab.id,
           scope: tabCloseScope,
+          worktreeOf: tabWorktreeOf,
         });
         if (closePlan.action === "close") {
           onCloseTab(tab.id);
@@ -3314,6 +3411,7 @@ function Workspace({
           sessions: sessionsRef.current,
           closingTabId: activeTab.id,
           scope: tabCloseScope,
+          worktreeOf: tabWorktreeOf,
         });
         if (closePlan.action === "keep") onClearTabSession(activeTab.id);
         else onCloseTab(activeTab.id);
@@ -3356,6 +3454,7 @@ function Workspace({
         sessions: sessionsRef.current,
         closingTabId: id,
         scope: tabCloseScope,
+        worktreeOf: tabWorktreeOf,
       });
       if (closePlan.action === "keep" && id === activeTabIdRef.current) {
         onClosePane();
@@ -3366,13 +3465,44 @@ function Workspace({
     [onClosePane, onCloseTab, tabCloseScope],
   );
 
+  /** Open tabs per workspace in the sidebar's project, keyed by worktree
+   * path, so the switcher can show what each worktree still has open. */
+  const worktreeTabStats = useMemo(() => {
+    const stats = new Map<string, { tabs: number; busy: boolean }>();
+    if (!sidebarCwd || sidebarCwd === "~" || isRemoteProjectPath(sidebarCwd))
+      return stats;
+    for (const tab of filterTabsForProject(tabs, sessions, sidebarCwd)) {
+      const workspace = tabWorkspace(tab, sessions) ?? sidebarCwd;
+      const key = pathKey(workspace);
+      const entry = stats.get(key) ?? { tabs: 0, busy: false };
+      entry.tabs += 1;
+      entry.busy ||= leafIds(tab.layout).some(
+        (id) => sessions.find((session) => session.id === id)?.busy,
+      );
+      stats.set(key, entry);
+    }
+    return stats;
+  }, [tabs, sessions, sidebarCwd, tabWorkspace]);
   const deckProjectTabs = useMemo(() => {
     // A projectless session belongs to no project, so it stands on its own
     // rather than trailing the last project's tabs.
     const active = tabs.find((tab) => tab.id === activeTabId);
     if (active && !workspaceTabCwd(active, sessions)) return [active];
-    return filterTabsForProject(tabs, sessions, projectCwd);
-  }, [activeTabId, tabs, sessions, projectCwd]);
+    // Each worktree keeps its own tabs; the others stay open, just hidden.
+    const worktree = projectWorktree?.path ?? projectCwd;
+    return filterTabsForProject(tabs, sessions, projectCwd).filter((tab) => {
+      if (tab.id === activeTabId) return true;
+      const workspace = tabWorkspace(tab, sessions);
+      return !workspace || sameProjectPath(workspace, worktree);
+    });
+  }, [
+    activeTabId,
+    tabs,
+    sessions,
+    projectCwd,
+    projectWorktree?.path,
+    tabWorkspace,
+  ]);
 
   const onNext = useCallback(() => {
     const index = deckProjectTabs.findIndex((t) => t.id === activeTabId);
@@ -5025,7 +5155,7 @@ function Workspace({
   );
 
   const onWorktreeChange = useCallback(
-    async (sessionId: string, tree: Worktree) => {
+    async (sessionId: string, tree: Worktree, fromComposer = false) => {
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       if (
         !current ||
@@ -5091,6 +5221,11 @@ function Workspace({
           // Leave the original conversation, checkpoints, and live provider
           // context attached to the files they describe.
           const tab = newTab(selected.id);
+          if (fromComposer)
+            workspacePins.current.set(
+              selected.id,
+              currentWorkspace(source.cwd),
+            );
           sessionsRef.current = [...sessionsRef.current, selected];
           setSessions(sessionsRef.current);
           appendTab(tab, selected.cwd);
@@ -5114,6 +5249,12 @@ function Workspace({
           );
         }
         const next = sessionInWorktree(latest, target);
+        if (fromComposer)
+          workspacePins.current.set(
+            sessionId,
+            currentWorkspace(latest.cwd),
+          );
+        else workspacePins.current.delete(sessionId);
         if (latest.worktreeRemoved)
           await keepSessionChanges(sessionId, target.path);
         pendingPersist.current.delete(sessionId);
@@ -5132,6 +5273,121 @@ function Workspace({
     },
     [appendTab, invalidateLoadedSession, refreshHistory],
   );
+
+  const onComposerWorktreeChange = useCallback(
+    (sessionId: string, tree: Worktree) =>
+      onWorktreeChange(sessionId, tree, true),
+    [onWorktreeChange],
+  );
+
+  // The picked worktree is the workspace: its tabs are the ones shown. Picking
+  // another one returns to the tab last used there, carries a blank session
+  // over, or opens a new one.
+  const worktreeTabMemory = useRef(new Map<string, string>());
+  const scopedProject =
+    projectCwd !== "~" && !isRemoteProjectPath(projectCwd) ? projectCwd : null;
+  const scopeWorktree = projectWorktree?.path ?? projectCwd;
+  const scopeKey = `${pathKey(projectCwd)}\0${pathKey(scopeWorktree)}`;
+  const activeTabWorktree =
+    activeTab && scopedProject ? tabWorkspace(activeTab, sessions) : null;
+  const activeScopeKey = `${activeTabId}\0${activeTabWorktree ?? ""}`;
+  const lastScope = useRef({ scopeKey, activeScopeKey });
+  useEffect(() => {
+    const previous = lastScope.current;
+    lastScope.current = { scopeKey, activeScopeKey };
+    if (!scopedProject || !activeTab) return;
+    const tabProject = workspaceTabCwd(activeTab, sessionsRef.current);
+    if (!tabProject || !sameProjectPath(tabProject, scopedProject)) return;
+    if (!activeTabWorktree || sameProjectPath(activeTabWorktree, scopeWorktree)) {
+      worktreeTabMemory.current.set(scopeKey, activeTab.id);
+      return;
+    }
+    const moveBlankHere = () => {
+      if (!active || active.busy || !isBlankSession(active)) return false;
+      workspacePins.current.delete(activeTab.id);
+      void onWorktreeChange(active.id, {
+        path: scopeWorktree,
+        branch: projectWorktree?.branch ?? null,
+        head: "",
+        isMain: !projectWorktree,
+        locked: false,
+        prunable: false,
+        missing: false,
+        dirty: null,
+        unpushed: null,
+        sessionIds: [],
+      }).catch(() => undefined);
+      return true;
+    };
+    const joinWorkspace = () => {
+      workspacePins.current.set(activeTab.id, scopeWorktree);
+      worktreeTabMemory.current.set(scopeKey, activeTab.id);
+    };
+    const sameProject =
+      previous.scopeKey.split("\0")[0] === pathKey(scopedProject);
+    const scopedTabs = () =>
+      filterTabsForProject(
+        tabsRef.current,
+        sessionsRef.current,
+        scopedProject,
+      ).filter((tab) => {
+        const workspace = tabWorkspace(tab, sessionsRef.current);
+        return !workspace || sameProjectPath(workspace, scopeWorktree);
+      });
+    const lastUsedTab = () => {
+      const scoped = scopedTabs();
+      const remembered = worktreeTabMemory.current.get(scopeKey);
+      return (
+        scoped.find((tab) => tab.id === remembered) ?? scoped[scoped.length - 1]
+      );
+    };
+    if (!sameProject) {
+      // Back in a project: its picked worktree wins over whichever tab the
+      // switch landed on. From the project rail that tab is incidental (a
+      // reused blank, or the project's first tab), so return to the worktree's
+      // own; a session opened directly (inbox, search) joins it instead.
+      const fromRail = projectRailSwitch.current;
+      projectRailSwitch.current = false;
+      const target = fromRail ? lastUsedTab() : undefined;
+      if (target) activateTab(target.id);
+      else if (!moveBlankHere()) joinWorkspace();
+      return;
+    }
+    const picked =
+      previous.scopeKey !== scopeKey &&
+      previous.activeScopeKey === activeScopeKey;
+    if (!picked && previous.activeScopeKey !== activeScopeKey) {
+      // Opened from the session list, inbox or search: the tab joins the
+      // workspace on screen, as it did before worktree scoping.
+      joinWorkspace();
+      return;
+    }
+    if (!picked) {
+      // Startup: nothing on screen to keep, so the workspace follows the tab.
+      setWorktreeFocus(
+        scopedProject,
+        sameProjectPath(activeTabWorktree, scopedProject)
+          ? undefined
+          : {
+              path: activeTabWorktree,
+              branch:
+                sessionsRef.current.find(
+                  (session) =>
+                    !!session.worktreeCwd &&
+                    sameProjectPath(session.worktreeCwd, activeTabWorktree),
+                )?.branch ?? null,
+            },
+      );
+      return;
+    }
+    const target = lastUsedTab();
+    if (target) {
+      activateTab(target.id);
+      return;
+    }
+    if (moveBlankHere()) return;
+    onNew();
+  }, [scopeKey, activeScopeKey]);
 
   /**
    * Open a run of folders from one snapshot, committed in a single transition.
@@ -5211,7 +5467,10 @@ function Workspace({
   );
 
   const onSelectProject = useCallback(
-    (path: string) => openProjects([path]),
+    (path: string) => {
+      projectRailSwitch.current = !sameProjectPath(path, projectCwdRef.current);
+      openProjects([path]);
+    },
     [openProjects],
   );
 
@@ -6473,6 +6732,10 @@ function Workspace({
             false,
           );
           workCwd = tree.path;
+          workspacePins.current.set(
+            sessionId,
+            currentWorkspace(current.cwd),
+          );
           if (proposalDraft)
             proposalDraft = { ...proposalDraft, checkoutCwd: tree.path };
           setSessions((prev) =>
@@ -10418,7 +10681,7 @@ function Workspace({
     onClose: onClosePane,
     onCwdChange,
     onBranchChange,
-    onWorktreeChange,
+    onWorktreeChange: onComposerWorktreeChange,
     onRemoteSnapshot,
     onWorkspaceModeChange,
     onWorktreeBaseChange,
@@ -10519,6 +10782,7 @@ function Workspace({
             <Sidebar
               cwd={sidebarCwd}
               gitCwd={gitCwd}
+              worktreeTabStats={worktreeTabStats}
               explorerRootLabel={explorerRootLabel}
               open={sessionSidebarOpen}
               tab={sidebarTab}
