@@ -3,6 +3,7 @@ import { newSession, type RuntimeMode } from "../../../../features/sessions/mode
 import { applyHarnessEvent } from "../../core/apply";
 
 let onStdout: ((line: string) => void) | undefined;
+let onChildExit: ((code: number | null) => void) | undefined;
 let onSseEvent: ((event: Record<string, unknown>) => void) | undefined;
 let onSseEnd: ((error?: string) => void) | undefined;
 let sessionMessages: unknown[] = [];
@@ -47,8 +48,13 @@ vi.mock("../../core/child", () => ({
   resolveOpenCodeBinary: async () => ({ path: "/fake/opencode" }),
   spawnChild,
   unwatchChild: () => undefined,
-  watchChild: (_id: string, stdout: (line: string) => void) => {
+  watchChild: (
+    _id: string,
+    stdout: (line: string) => void,
+    exit: (code: number | null) => void,
+  ) => {
     onStdout = stdout;
+    onChildExit = exit;
   },
   watchSse: (
     _id: string,
@@ -138,11 +144,13 @@ function idle(sessionID = "session_1") {
 
 beforeEach(() => {
   onStdout = undefined;
+  onChildExit = undefined;
   onSseEvent = undefined;
   onSseEnd = undefined;
   sessionMessages = [];
   spawnChild.mockClear();
   killChild.mockClear();
+  closeHarnessSse.mockClear();
   harnessHttp.mockClear();
   __openCodeTestReset();
 });
@@ -970,4 +978,30 @@ it("closes an event stream that ended on its own when the session stops", async 
 
   await stopOpenCodeSession("opencode-live");
   expect(closeHarnessSse).toHaveBeenCalledWith("opencode-live");
+});
+
+it("closes the event stream after the server exits on its own", async () => {
+  const events: HarnessEvent[] = [];
+  const { done } = await startTurn(events);
+  onChildExit?.(1);
+  await expect(done).rejects.toThrow("OpenCode server exited");
+  expect(events).toContainEqual({ type: "session.ended", code: 1 });
+
+  await stopOpenCodeSession("opencode-live");
+  expect(closeHarnessSse).toHaveBeenCalledExactlyOnceWith("opencode-live");
+  expect(killChild).toHaveBeenCalledExactlyOnceWith("opencode-live");
+});
+
+it("still kills the child when closing an ended stream fails", async () => {
+  const events: HarnessEvent[] = [];
+  const { done } = await startTurn(events);
+  onSseEnd?.("stream closed");
+  await expect(done).rejects.toThrow("stream closed");
+  closeHarnessSse.mockClear();
+  killChild.mockClear();
+  closeHarnessSse.mockRejectedValueOnce(new Error("SSE close failed"));
+
+  await expect(stopOpenCodeSession("opencode-live")).resolves.toBeUndefined();
+  expect(closeHarnessSse).toHaveBeenCalledExactlyOnceWith("opencode-live");
+  expect(killChild).toHaveBeenCalledExactlyOnceWith("opencode-live");
 });
