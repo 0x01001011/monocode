@@ -1,5 +1,6 @@
 import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
 import {
+  type WorktreeFocus,
   inWorktreeFocus,
   useWorktreeFocus,
 } from "../../features/source-control/model/worktreeFocus";
@@ -224,6 +225,9 @@ type Props = {
   explorerRootLabel?: string;
   /** Open tabs per worktree path key, for the worktree switcher. */
   worktreeTabStats?: ReadonlyMap<string, { tabs: number; busy: boolean }>;
+  onSelectWorkspace?: (focus?: WorktreeFocus) => void;
+  workspaceSwitchPending?: boolean;
+  workspaceSwitchError?: string;
   open: boolean;
   sessions: SessionSummary[];
   busySessionIds: Set<string>;
@@ -326,6 +330,9 @@ function SidebarComponent({
   gitCwd,
   explorerRootLabel,
   worktreeTabStats,
+  onSelectWorkspace,
+  workspaceSwitchPending,
+  workspaceSwitchError,
   open,
   sessions,
   busySessionIds,
@@ -1607,7 +1614,13 @@ function SidebarComponent({
           >
             <div className="flex min-w-0 flex-1 items-center">
               {!remoteProject && cwd && cwd !== "~" ? (
-                <SidebarWorktreeSwitcher cwd={cwd} tabStats={worktreeTabStats} />
+                <SidebarWorktreeSwitcher
+                  cwd={cwd}
+                  tabStats={worktreeTabStats}
+                  onSelect={onSelectWorkspace}
+                  pending={workspaceSwitchPending}
+                  switchError={workspaceSwitchError}
+                />
               ) : (
                 <span className="min-w-0 truncate text-sm font-medium leading-tight">
                   Workspace
