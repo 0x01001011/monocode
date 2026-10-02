@@ -459,7 +459,10 @@ import {
   TranscriptPoolOutlet,
 } from "../features/sessions/ui/TranscriptPool";
 import { syncDockBadge } from "../features/notifications/model/dockBadge";
-import { liveAgentsFromSessions } from "../features/sessions/model/liveAgents";
+import {
+  isLiveAgentSession,
+  liveAgentsFromSessions,
+} from "../features/sessions/model/liveAgents";
 import { hiddenApprovalNotices } from "../features/notifications/model/approvalToast";
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
 import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
@@ -1715,6 +1718,11 @@ function Workspace({
       busyIds: busySessionIds,
       previousUnseenIds: unseenFinishedRef.current,
       focusedSessionId: activeSessionId,
+      untrackedIds: new Set(
+        sessions
+          .filter((session) => !isLiveAgentSession(session))
+          .map((session) => session.id),
+      ),
     });
     busyForDoneRef.current = busySessionIds;
     focusedForDoneRef.current = activeSessionId;
