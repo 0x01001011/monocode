@@ -10,6 +10,7 @@ const spawnChild = vi.fn(async () => {
   onStdout?.("opencode server listening on http://127.0.0.1:4096");
 });
 const killChild = vi.fn(async () => undefined);
+const closeHarnessSse = vi.fn(async (_id: string) => undefined);
 const harnessHttp = vi.fn(
   async (input: {
     url: string;
@@ -37,7 +38,7 @@ const harnessHttp = vi.fn(
 );
 
 vi.mock("../../core/child", () => ({
-  closeHarnessSse: async () => undefined,
+  closeHarnessSse,
   execChild: async () => "opencode 1.14.19",
   freeHarnessPort: async () => 4096,
   harnessHttp,
@@ -958,4 +959,15 @@ describe("OpenCode child permission routing", () => {
       });
     },
   );
+});
+
+it("closes an event stream that ended on its own when the session stops", async () => {
+  const events: HarnessEvent[] = [];
+  const { done } = await startTurn(events);
+  onSseEnd?.("stream closed");
+  await done.catch(() => undefined);
+  closeHarnessSse.mockClear();
+
+  await stopOpenCodeSession("opencode-live");
+  expect(closeHarnessSse).toHaveBeenCalledWith("opencode-live");
 });
