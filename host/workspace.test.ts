@@ -206,6 +206,69 @@ it("reports tracked and untracked changes and commits staged files", async () =>
   expect((await hostGitIndex(root)).files).toEqual([]);
 });
 
+it("stages and unstages a folder subtree without affecting other changes", async () => {
+  const root = realpathSync.native(
+    mkdtempSync(join(tmpdir(), "monocode-host-folder-")),
+  );
+  roots.push(root);
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root });
+  git("init", "-q");
+  git("config", "core.autocrlf", "false");
+  git("config", "user.name", "Workspace Test");
+  git("config", "user.email", "workspace@example.test");
+  git("config", "commit.gpgsign", "false");
+  mkdirSync(join(root, "src/nested"), { recursive: true });
+  mkdirSync(join(root, "src-other"));
+  writeFileSync(join(root, "src/app.ts"), "before\n");
+  writeFileSync(join(root, "src/nested/deleted.ts"), "delete me\n");
+  writeFileSync(join(root, "src-other/app.ts"), "before\n");
+  writeFileSync(join(root, "ready.txt"), "before\n");
+  writeFileSync(join(root, ".gitignore"), "src/ignored.txt\n");
+  git("add", ".");
+  git("commit", "-qm", "initial");
+  writeFileSync(join(root, "src/app.ts"), "after\n");
+  rmSync(join(root, "src/nested"), { recursive: true });
+  mkdirSync(join(root, "src/added"));
+  writeFileSync(join(root, "src/added/new.ts"), "new\n");
+  writeFileSync(join(root, "src/ignored.txt"), "ignored\n");
+  writeFileSync(join(root, "src-other/app.ts"), "outside\n");
+  writeFileSync(join(root, "ready.txt"), "ready\n");
+  await hostGitAction(root, "stage", "ready.txt");
+
+  await hostGitAction(root, "stage", "src");
+  let files = (await hostGitIndex(root)).files;
+  expect(files).toHaveLength(5);
+  for (const file of files) {
+    expect(file.staged).toBe(
+      file.relative.startsWith("src/") || file.relative === "ready.txt",
+    );
+    expect(file.unstaged).toBe(file.relative === "src-other/app.ts");
+  }
+
+  await hostGitAction(root, "unstage", "src");
+  files = (await hostGitIndex(root)).files;
+  expect(files).toHaveLength(5);
+  for (const file of files) {
+    expect(file.staged).toBe(file.relative === "ready.txt");
+    expect(file.unstaged).toBe(file.relative !== "ready.txt");
+  }
+  expect(await readHostFile(root, "src/app.ts")).toBe("after\n");
+
+  // A folder can still appear in the Changes tree after it was deleted on disk.
+  await hostGitAction(root, "stage", "src/nested");
+  expect(
+    (await hostGitIndex(root)).files.find(
+      (file) => file.relative === "src/nested/deleted.ts",
+    ),
+  ).toMatchObject({ staged: true, unstaged: false });
+  await hostGitAction(root, "unstage", "src/nested");
+  expect(
+    (await hostGitIndex(root)).files.find(
+      (file) => file.relative === "src/nested/deleted.ts",
+    ),
+  ).toMatchObject({ staged: false, unstaged: true });
+});
+
 it("stages selected host diff content without replacing the working file", async () => {
   const root = realpathSync.native(
     mkdtempSync(join(tmpdir(), "monocode-workspace-hunk-")),
