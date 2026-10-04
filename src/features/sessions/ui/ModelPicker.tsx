@@ -690,14 +690,14 @@ export function ModelPicker({
           openRecentMenu();
         }}
         onClick={() => togglePicker()}
-        className={`flex h-6.5 max-w-40 items-center gap-1 rounded-md px-1.5 ${
+        className={`flex h-6.5 shrink-0 items-center gap-1 rounded-md px-1.5 ${
           open
             ? "bg-selection text-content"
             : "bg-selection text-content hover:bg-selection-hover"
         }`}
       >
         <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
-        <span className="min-w-0 truncate text-[11px]">{current.name}</span>
+        <span className="whitespace-nowrap text-[11px]">{current.name}</span>
         {triggerEffortLabel ? (
           <span className="shrink-0 text-[11px] text-content/50">
             {triggerEffortLabel}
