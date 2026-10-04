@@ -2423,7 +2423,7 @@ fn git_commit_file_diff_for(root: &Path, sha: &str, relative: &str) -> Result<Gi
 
 fn git_stage_file_for(root: &Path, relative: &str) -> Result<(), String> {
     let relative = resolve_repo_path(root, relative)?;
-    git_checked(root, &["add", "--", &relative])
+    git_checked(root, &["--literal-pathspecs", "add", "--", &relative])
 }
 
 fn git_stage_contents_for(root: &Path, relative: &str, contents: &[u8]) -> Result<(), String> {
@@ -2498,7 +2498,16 @@ fn git_hash_object(root: &Path, relative: &str, contents: &[u8]) -> Result<Strin
 
 fn git_unstage_file_for(root: &Path, relative: &str) -> Result<(), String> {
     let relative = resolve_repo_path(root, relative)?;
-    git_checked(root, &["restore", "--staged", "--", &relative])
+    git_checked(
+        root,
+        &[
+            "--literal-pathspecs",
+            "restore",
+            "--staged",
+            "--",
+            &relative,
+        ],
+    )
 }
 
 fn git_discard_file_for(root: &Path, relative: &str) -> Result<(), String> {
@@ -7107,6 +7116,53 @@ mod tests {
         assert!(!index.files[0].staged);
         assert!(index.files[0].unstaged);
         assert!(!dir.0.join("deleted").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_stage_and_unstage_literal_directory_names() {
+        for folder in ["*", "folder?", "[ab]", ":(glob)*"] {
+            let dir = tmp("git-stage-literal-directory");
+            for directory in [folder, "a", "folderx"] {
+                std::fs::create_dir(dir.0.join(directory)).unwrap();
+            }
+            let inside = format!("{folder}/inside.txt");
+            let tracked = [
+                inside.as_str(),
+                "a/other.txt",
+                "folderx/other.txt",
+                "ready.txt",
+            ];
+            let initial: Vec<_> = tracked.iter().map(|path| (*path, "before\n")).collect();
+            if !init_git_commit(&dir.0, &initial) {
+                return;
+            }
+            for path in tracked {
+                std::fs::write(dir.0.join(path), "after\n").unwrap();
+            }
+            std::fs::write(dir.0.join("private.txt"), "unrelated untracked data\n").unwrap();
+            let staged_paths = || {
+                git_run(&dir.0, &["diff", "--cached", "--name-only", "-z"])
+                    .unwrap()
+                    .split('\0')
+                    .filter(|path| !path.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            };
+
+            git_stage_file_for(&dir.0, "ready.txt").unwrap();
+            git_stage_file_for(&dir.0, folder).unwrap();
+            let mut expected = vec![inside.clone(), "ready.txt".to_string()];
+            expected.sort();
+            assert_eq!(staged_paths(), expected, "stage folder {folder}");
+
+            git_unstage_file_for(&dir.0, folder).unwrap();
+            assert_eq!(staged_paths(), vec!["ready.txt"], "unstage folder {folder}");
+            assert_eq!(
+                std::fs::read_to_string(dir.0.join(&inside)).unwrap(),
+                "after\n"
+            );
+        }
     }
 
     #[test]
