@@ -10763,8 +10763,10 @@ function Workspace({
     <OrchestrationActions.Provider value={orchestrationActions}>
       <OrchestrationWorkers.Provider value={orchestrationWorkers}>
         <div
-          className={`flex h-full flex-col text-content ${
-            HAS_NATIVE_GLASS ? "bg-background-base/40" : "bg-background-base"
+          className={`workspace-background flex h-full flex-col text-content ${
+            HAS_NATIVE_GLASS
+              ? "bg-background-base/[var(--window-background-opacity)]"
+              : "bg-background-base"
           }`}
         >
           {compactTitleBar ? workspaceTitleBar : null}
