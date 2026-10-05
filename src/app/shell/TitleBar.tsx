@@ -5,8 +5,6 @@ import {
   DashboardSquare,
   Inbox,
   PanelLeft,
-  Plus,
-  Search,
   Settings,
   StickyNote,
   Terminal,
@@ -93,7 +91,6 @@ type Props = {
   onToggleSidebar: () => void;
   onToggleSessionSidebar?: () => void;
   onSelect: (id: string) => void;
-  onNew: () => void;
   onNewTerminal?: () => void;
   onOpenSettings?: () => void;
   onOpenInbox?: () => void;
@@ -104,7 +101,6 @@ type Props = {
   onDeleteTab?: (id: string) => void;
   onReorder: (ids: string[], movedId?: string) => void;
   onPlaceOnPane?: (tabId: string, targetId: string, edge: PaneEdge) => void;
-  onGoToFile?: () => void;
   onPinFile?: (fileId: string) => void;
   recents?: RecentProject[];
   onSelectProject?: (path: string) => void;
@@ -612,7 +608,6 @@ function TitleBarComponent({
   onToggleSidebar,
   onToggleSessionSidebar,
   onSelect,
-  onNew,
   onNewTerminal,
   onOpenSettings,
   onOpenInbox,
@@ -623,7 +618,6 @@ function TitleBarComponent({
   onDeleteTab,
   onReorder,
   onPlaceOnPane,
-  onGoToFile,
   onPinFile,
   recents = [],
   onSelectProject,
@@ -849,10 +843,9 @@ function TitleBarComponent({
   const showProjectButton =
     railClosed && Boolean(onSelectProject) && !showCurrentProject;
   const showTrailingActions =
-    (projectless &&
-      railClosed &&
-      Boolean(onOpenInbox || onOpenNotes || onOpenSettings)) ||
-    (railClosed && !projectless);
+    projectless &&
+    railClosed &&
+    Boolean(onOpenInbox || onOpenNotes || onOpenSettings);
   const trailingControls =
     showTrailingActions || !IS_MAC ? (
       <div className="flex h-full shrink-0 items-stretch">
@@ -867,16 +860,6 @@ function TitleBarComponent({
               <IconButton label="Notes" onClick={onOpenNotes}>
                 <StickyNote className="size-3.5" strokeWidth={1.75} />
               </IconButton>
-            ) : null}
-            {railClosed && !projectless ? (
-              <>
-                <IconButton label={`Go to File (${MOD}P)`} onClick={onGoToFile}>
-                  <Search className="size-3.5" strokeWidth={1.75} />
-                </IconButton>
-                <IconButton label={`New session (${MOD}T)`} onClick={onNew}>
-                  <Plus className="size-3.5" strokeWidth={1.75} />
-                </IconButton>
-              </>
             ) : null}
             {!projectRailOpen && !showCurrentProject && onOpenSettings ? (
               <IconButton label={`Settings (${MOD},)`} onClick={onOpenSettings}>
