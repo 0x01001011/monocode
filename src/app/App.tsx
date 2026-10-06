@@ -1,11 +1,7 @@
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
 import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation";
 import { useIdleSessionDetach } from "./hooks/useIdleSessionDetach";
-import {
-  cancelScheduledFlush,
-  scheduleHarnessFlush,
-  type ScheduledFlush,
-} from "./model/harnessFlush";
+import { HarnessEventQueue } from "./model/harnessFlush";
 import {
   handleAgentApp,
   type AppSessionListing,
@@ -1330,10 +1326,42 @@ function Workspace({
   const openingSessionIds = useRef(new Set<string>());
   const activeSessionPrefetch = useRef<Promise<Session | null> | null>(null);
   const [transcriptPool] = useState(() => new TranscriptPool());
-  // Tokens arrive many times per frame; apply them once so React/markdown aren't
-  // recomputed for every delta.
-  const harnessQueued = useRef(new Map<string, HarnessEvent[]>());
-  const harnessFlush = useRef<ScheduledFlush | null>(null);
+  // Visible output advances per frame; hidden streams keep their own cadence.
+  const [harnessEvents] = useState(
+    () =>
+      new HarnessEventQueue(
+        (sessionId) => {
+          const tab = tabsRef.current.find(
+            (entry) => entry.id === activeTabIdRef.current,
+          );
+          // Inbox owns its session surfaces outside the workspace tab tree.
+          return (
+            foregroundSurfaceRef.current.inboxSessionId === sessionId ||
+            (foregroundSurfaceRef.current.workspaceVisible &&
+              !!tab &&
+              (leafIds(tab.layout).includes(sessionId) ||
+                tab.editorPanes.some((pane) =>
+                  pane.files.some(
+                    (file) =>
+                      file.id === pane.activeFileId &&
+                      file.agent?.sessionId === sessionId,
+                  ),
+                )))
+          );
+        },
+        (batches) => {
+          const prev = sessionsRef.current;
+          const next = prev.map((session) => {
+            const events = batches.get(session.id);
+            return events ? applyHarnessEvents(session, events) : session;
+          });
+          if (!next.some((session, index) => session !== prev[index])) return;
+          sessionsRef.current = next;
+          syncDockBadge(next);
+          setSessions(next);
+        },
+      ),
+  );
   const skipForgetSessionIds = useRef(new Set<string>());
   const importedSessionsApplied = useRef(false);
   const projectLocationSyncs = useRef(
@@ -1363,22 +1391,8 @@ function Workspace({
     }
   }, [windowTransfer, resumed]);
 
-  const flushHarnessEvents = useCallback(() => {
-    cancelScheduledFlush(harnessFlush.current);
-    harnessFlush.current = null;
-    const batches = harnessQueued.current;
-    if (batches.size === 0) return;
-    harnessQueued.current = new Map();
-    const prev = sessionsRef.current;
-    const next = prev.map((session) => {
-      const events = batches.get(session.id);
-      return events ? applyHarnessEvents(session, events) : session;
-    });
-    if (!next.some((session, index) => session !== prev[index])) return;
-    sessionsRef.current = next;
-    syncDockBadge(next);
-    setSessions(next);
-  }, []);
+  const flushHarnessEvents = harnessEvents.flush;
+  const flushForegroundHarnessEvents = harnessEvents.flushForeground;
 
   const stopSessionForRemoval = useCallback(
     async (sessionId: string): Promise<Session | undefined> => {
@@ -1401,71 +1415,7 @@ function Workspace({
     [flushHarnessEvents],
   );
 
-  const applyApprovalEvent = useCallback(
-    (sessionId: string, event: HarnessEvent) => {
-      const queued = harnessQueued.current.get(sessionId) ?? [];
-      harnessQueued.current.delete(sessionId);
-      const events = [...queued, event];
-      const prev = sessionsRef.current;
-      const next = prev.map((session) =>
-        session.id === sessionId
-          ? applyHarnessEvents(session, events)
-          : session,
-      );
-      if (!next.some((session, index) => session !== prev[index])) return;
-      sessionsRef.current = next;
-      syncDockBadge(next);
-      setSessions(next);
-    },
-    [],
-  );
-
-  const enqueueHarnessEvent = useCallback(
-    (sessionId: string, event: HarnessEvent) => {
-      if (
-        event.type === "approval.requested" ||
-        event.type === "approval.resolved" ||
-        event.type === "question.asked" ||
-        event.type === "question.resolved"
-      ) {
-        applyApprovalEvent(sessionId, event);
-        return;
-      }
-      const queued = harnessQueued.current;
-      const events = queued.get(sessionId);
-      if (events) events.push(event);
-      else queued.set(sessionId, [event]);
-      const tab = tabsRef.current.find(
-        (entry) => entry.id === activeTabIdRef.current,
-      );
-      const foreground =
-        !document.hidden &&
-        // Inbox owns its session surfaces outside the workspace tab tree.
-        (foregroundSurfaceRef.current.inboxSessionId === sessionId ||
-          (foregroundSurfaceRef.current.workspaceVisible &&
-            !!tab &&
-            (leafIds(tab.layout).includes(sessionId) ||
-              tab.editorPanes.some((pane) =>
-                pane.files.some(
-                  (file) =>
-                    file.id === pane.activeFileId &&
-                    file.agent?.sessionId === sessionId,
-                ),
-              ))));
-      // A visible stream must not wait for a background-only timer.
-      if (foreground && harnessFlush.current?.kind === "timeout") {
-        cancelScheduledFlush(harnessFlush.current);
-        harnessFlush.current = null;
-      }
-      if (!harnessFlush.current) {
-        harnessFlush.current = scheduleHarnessFlush(
-          flushHarnessEvents,
-          foreground,
-        );
-      }
-    },
-    [applyApprovalEvent, flushHarnessEvents],
-  );
+  const enqueueHarnessEvent = harnessEvents.enqueue;
 
   useEffect(() => {
     if (resumed?.sessions.length) bindResumedSessions(resumed.sessions);
@@ -1495,10 +1445,9 @@ function Workspace({
       window.removeEventListener("pagehide", reap);
       window.removeEventListener("beforeunload", reap);
       stopBridge();
-      cancelScheduledFlush(harnessFlush.current);
-      harnessFlush.current = null;
+      harnessEvents.cancelScheduled();
     };
-  }, [resumed, readProjectReturnMemory]);
+  }, [resumed, readProjectReturnMemory, harnessEvents]);
 
   useEffect(() => {
     void probeHarnessAvailability();
@@ -1829,7 +1778,7 @@ function Workspace({
       .onFocusChanged(({ payload: focused }) => {
         setWindowFocused(focused);
         if (focused) {
-          flushHarnessEvents();
+          flushForegroundHarnessEvents();
           syncDockBadge(sessionsRef.current);
           if (
             document.activeElement === document.body &&
@@ -1851,7 +1800,7 @@ function Workspace({
     return () => {
       unlisten?.();
     };
-  }, [flushHarnessEvents]);
+  }, [flushForegroundHarnessEvents]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -1864,9 +1813,9 @@ function Workspace({
   }, [flushHarnessEvents]);
 
   useLayoutEffect(() => {
-    // A newly selected chat catches up before paint, even if its output was
-    // waiting on the background cadence. Draft/composer input stays immediate.
-    flushHarnessEvents();
+    // Catch up only the newly visible panes before paint. Other streams keep
+    // their background timer instead of adding work to this tab switch.
+    flushForegroundHarnessEvents();
   }, [
     activeTabId,
     inboxViewOpen,
@@ -1875,7 +1824,7 @@ function Workspace({
     notesViewOpen,
     automationsViewOpen,
     settingsOpen,
-    flushHarnessEvents,
+    flushForegroundHarnessEvents,
   ]);
 
   useEffect(() => {
