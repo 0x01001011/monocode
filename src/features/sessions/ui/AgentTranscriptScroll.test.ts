@@ -146,6 +146,34 @@ describe("subagent scrolling", () => {
     height = 1100;
     act(() => observer.resize());
     expect(top).toBe(300);
+
+    act(() => {
+      top = 820;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    height = 1140;
+    act(() => observer.resize());
+    expect(top).toBe(860);
+
+    // A resize can precede the scroll event from a manual upward move.
+    top = 856;
+    height = 1180;
+    act(() => observer.resize());
+    expect(top).toBe(856);
+
+    act(() => {
+      scroller.dispatchEvent(new Event("scroll"));
+      top = 900;
+      scroller.dispatchEvent(new Event("scroll"));
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+      top = 896;
+      scroller.dispatchEvent(new Event("scroll"));
+      top = 898;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    height = 1220;
+    act(() => observer.resize());
+    expect(top).toBe(898);
   });
 });
 
@@ -177,7 +205,7 @@ describe("transcript scrolling", () => {
     const observer = observers.find((item) => item.targets.includes(scroller))!;
     act(() => observer.resize());
     expect(geometry.top).toBe(600);
-    return { scroller, geometry, observer };
+    return { scroller, geometry, observer, blocks };
   }
 
   it("keeps following when a queued scroll event lands after content grows", () => {
@@ -197,6 +225,57 @@ describe("transcript scrolling", () => {
     geometry.height = 1100;
     act(() => observer.resize());
     expect(geometry.top).toBe(596);
+  });
+
+  it.each(["resize", "stream update"])(
+    "respects an upward move before its scroll event arrives during a %s",
+    (change) => {
+      const { scroller, geometry, observer, blocks } = mountScroller();
+      // The browser moves first; a streaming commit or resize can run before
+      // its asynchronous scroll event is dispatched.
+      geometry.top = 560;
+      geometry.height = 1100;
+      act(() => {
+        if (change === "resize") observer.resize();
+        else
+          root.render(
+            createElement(AgentTranscript, {
+              blocks: [blocks[0], { ...blocks[1], text: "One\n\nTwo" }],
+              busy: true,
+            }),
+          );
+      });
+      expect(geometry.top).toBe(560);
+
+      act(() => scroller.dispatchEvent(new Event("scroll")));
+      geometry.height = 1200;
+      act(() => observer.resize());
+      expect(geometry.top).toBe(560);
+    },
+  );
+
+  it("waits for the bottom before resuming after small downward movement", () => {
+    const { scroller, geometry, observer } = mountScroller();
+    act(() => {
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+      geometry.top = 596;
+      scroller.dispatchEvent(new Event("scroll"));
+      // A slight reversal inside the follow margin still leaves the reader
+      // above the end. The next token must not pull them back down.
+      geometry.top = 598;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    geometry.height = 1100;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(598);
+
+    act(() => {
+      geometry.top = 700;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    geometry.height = 1200;
+    act(() => observer.resize());
+    expect(geometry.top).toBe(800);
   });
 
   it.each(["viewport grows", "content shrinks"])(
