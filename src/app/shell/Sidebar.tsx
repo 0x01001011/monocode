@@ -158,7 +158,6 @@ import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectRail } from "./ProjectRail";
 import { InboxNotificationMenu } from "../../features/inbox/ui/InboxNotificationMenu";
-import { prefetchGithubWorkItem } from "../../features/inbox/model/githubTasks";
 import { RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
@@ -3250,11 +3249,6 @@ const SessionCard = memo(function SessionCard({
       data-tauri-drag-region="false"
       title={`Open ${linkedWorkItem.kind === "pr" ? "PR" : "issue"} #${linkedWorkItem.number} beside this session (${MOD}-click for GitHub)`}
       aria-label={`Open ${linkedWorkItem.kind === "pr" ? "PR" : "issue"} #${linkedWorkItem.number}`}
-      onPointerEnter={() => {
-        // Hover usually precedes the click by a few hundred ms, which is
-        // most of what the panel would otherwise spend waiting on GitHub.
-        if (onOpenWorkItem) prefetchGithubWorkItem(session.cwd, linkedWorkItem);
-      }}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
         event.preventDefault();
