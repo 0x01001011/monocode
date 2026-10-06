@@ -16,6 +16,7 @@ export type HarnessEvent =
   | { type: "session.error"; message: string }
   | { type: "session.providerBound"; providerSessionId: string }
   | { type: "turn.started"; providerTurnId: string }
+  | { type: "turn.ready" }
   | {
       type: "session.configChanged";
       model?: string;
@@ -153,6 +154,9 @@ export type HarnessEvent =
   | ({ type: "turn.metrics" } & TurnMetrics);
 
 export type ApprovalDecision = "allow" | "deny";
+
+/** The turn is connecting or has just ended; retain the follow-up for later. */
+export class TurnNotReadyError extends Error {}
 
 export type HarnessSessionInput = {
   sessionId: string;
