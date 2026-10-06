@@ -352,6 +352,7 @@ export type Block = {
    * rather than turn chrome like a status ping. Never folds into the trail.
    */
   notice?: "error" | "interrupt";
+  statusKey?: string;
 };
 
 export type RuntimeMode =
