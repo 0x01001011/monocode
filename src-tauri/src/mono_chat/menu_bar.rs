@@ -3,16 +3,21 @@
 
 use std::panic::AssertUnwindSafe;
 
-use objc2::{MainThreadMarker, MainThreadOnly};
+use objc2::runtime::NSObjectProtocol;
+use objc2::{msg_send, sel, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSColor, NSFont, NSFontWeightSemibold, NSMenu, NSTextField, NSView,
+    NSAutoresizingMaskOptions, NSColor, NSFont, NSFontWeightSemibold, NSMenu, NSMenuItem,
+    NSTextField, NSView,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use serde::Deserialize;
 
 const WIDTH: f64 = 260.0;
-const PORTRAIT_SIZE: f64 = 32.0;
-const PORTRAIT_PIXELS: usize = 64;
+const PORTRAIT_SIZE: f64 = 28.0;
+const PORTRAIT_PIXELS: usize = 56;
+/// Pixels per mascot unit: a 1.5-unit sprite cell lands on exactly 3 pixels,
+/// and the 16-unit sprite fills a little over half the circle.
+const SPRITE_SCALE: f64 = 2.0;
 
 #[derive(Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +51,7 @@ pub(super) fn decorate(tray: &tauri::tray::TrayIcon) -> tauri::Result<()> {
                     // initially sizes it to 18pt. Only adjust its display size.
                     image.setSize(NSSize::new(PORTRAIT_SIZE, PORTRAIT_SIZE));
                     item.setImage(Some(&image));
+                    show_image(&item);
                     item.setToolTip(Some(&NSString::from_str("Open floating chat")));
                 }
             }
@@ -53,6 +59,15 @@ pub(super) fn decorate(tray: &tauri::tray::TrayIcon) -> tauri::Result<()> {
         .map_err(|exception| format!("Could not style the Mono menu: {exception:?}"))
     })?
     .map_err(|error| std::io::Error::other(error).into())
+}
+
+/// macOS 27 hides menu item images unless the item asks to keep them.
+fn show_image(item: &NSMenuItem) {
+    // NSMenuItemImageVisibilityVisible; objc2-app-kit predates the property.
+    const VISIBLE: isize = 1;
+    if item.respondsToSelector(sel!(setPreferredImageVisibility:)) {
+        let () = unsafe { msg_send![item, setPreferredImageVisibility: VISIBLE] };
+    }
 }
 
 fn style_menu(menu: &NSMenu, mtm: MainThreadMarker) {
@@ -65,16 +80,16 @@ fn style_menu(menu: &NSMenu, mtm: MainThreadMarker) {
     // menus. Only this noninteractive item has a custom view.
     let view = NSView::initWithFrame(
         NSView::alloc(mtm),
-        NSRect::new(NSPoint::ZERO, NSSize::new(WIDTH, 36.0)),
+        NSRect::new(NSPoint::ZERO, NSSize::new(WIDTH, 30.0)),
     );
     let title = NSTextField::labelWithString(&NSString::from_str("Monos"), mtm);
-    title.setFont(Some(&NSFont::systemFontOfSize_weight(15.0, unsafe {
+    title.setFont(Some(&NSFont::systemFontOfSize_weight(13.0, unsafe {
         NSFontWeightSemibold
     })));
     title.setTextColor(Some(&NSColor::labelColor()));
     title.setFrame(NSRect::new(
-        NSPoint::new(16.0, 10.0),
-        NSSize::new(WIDTH - 32.0, 19.0),
+        NSPoint::new(16.0, 7.0),
+        NSSize::new(WIDTH - 32.0, 17.0),
     ));
     title.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
     view.addSubview(&title);
@@ -93,14 +108,18 @@ pub(super) fn icon_for(
 
 fn portrait(rects: &[MascotRect]) -> tauri::image::Image<'static> {
     // Feed real RGBA pixels to IconMenuItemBuilder so the native menu model
-    // owns the image. Render at 2× for a crisp 32pt Retina portrait, using the
+    // owns the image. Render at 2× for a crisp 28pt Retina portrait, using the
     // same shaded layers and crisp rectangle edges as the in-app mascot.
     let mut rgba = vec![0; PORTRAIT_PIXELS * PORTRAIT_PIXELS * 4];
+    let center = PORTRAIT_PIXELS as f64 / 2.0;
+    // The sprite sits centred in the circle, like the glyphs in macOS's
+    // own status menus, rather than filling it.
+    let inset = center - 8.0 * SPRITE_SCALE;
     for y in 0..PORTRAIT_PIXELS {
         for x in 0..PORTRAIT_PIXELS {
             let distance =
-                ((x as f64 + 0.5 - 32.0).powi(2) + (y as f64 + 0.5 - 32.0).powi(2)).sqrt();
-            let alpha = (30.0 - distance + 0.5).clamp(0.0, 1.0) * 0.12;
+                ((x as f64 + 0.5 - center).powi(2) + (y as f64 + 0.5 - center).powi(2)).sqrt();
+            let alpha = (center - 2.0 - distance + 0.5).clamp(0.0, 1.0) * 0.12;
             blend(
                 &mut rgba[(y * PORTRAIT_PIXELS + x) * 4..][..4],
                 [0.5, 0.5, 0.5, alpha],
@@ -111,7 +130,11 @@ fn portrait(rects: &[MascotRect]) -> tauri::image::Image<'static> {
         let Some(fill) = color(&rect.fill) else {
             continue;
         };
-        let edge = |value: f64| (value * 4.0).round().clamp(0.0, PORTRAIT_PIXELS as f64) as usize;
+        let edge = |value: f64| {
+            (inset + value * SPRITE_SCALE)
+                .round()
+                .clamp(0.0, PORTRAIT_PIXELS as f64) as usize
+        };
         for y in edge(rect.y)..edge(rect.y + rect.h) {
             for x in edge(rect.x)..edge(rect.x + rect.w) {
                 blend(&mut rgba[(y * PORTRAIT_PIXELS + x) * 4..][..4], fill);
@@ -213,12 +236,14 @@ mod tests {
                 fill: "#263331".into(),
             },
         ]);
-        assert_eq!((image.width(), image.height()), (64, 64));
-        let pixel = |x: usize, y: usize| &image.rgba()[(y * 64 + x) * 4..][..4];
+        assert_eq!((image.width(), image.height()), (56, 56));
+        let pixel = |x: usize, y: usize| &image.rgba()[(y * 56 + x) * 4..][..4];
         assert_eq!(pixel(0, 0), [0, 0, 0, 0]);
-        assert_eq!(pixel(10, 10), [255, 0, 0, 255]);
-        assert_eq!(pixel(21, 21), [38, 51, 49, 255]);
-        assert_eq!(pixel(21, 42), [255, 0, 0, 255], "sprite stays upright");
+        // The 16-unit sprite spans the middle 32 pixels, inset 12 on each side.
+        assert_eq!(pixel(18, 18), [255, 0, 0, 255]);
+        assert_eq!(pixel(23, 23), [38, 51, 49, 255]);
+        assert_eq!(pixel(23, 36), [255, 0, 0, 255], "sprite stays upright");
+        assert_ne!(pixel(14, 28), [255, 0, 0, 255], "sprite leaves a margin");
     }
 
     #[test]
@@ -248,7 +273,7 @@ mod tests {
         objc2::exception::catch(|| {
             let image: Retained<NSImage> =
                 NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(&png_bytes)).unwrap();
-            image.setSize(NSSize::new(32.0, 32.0));
+            image.setSize(NSSize::new(PORTRAIT_SIZE, PORTRAIT_SIZE));
             let raster = unsafe {
                 image.CGImageForProposedRect_context_hints(std::ptr::null_mut(), None, None)
             };
@@ -281,7 +306,7 @@ mod tests {
                 }],
             },
         ];
-        let center = (32 * 64 + 32) * 4;
+        let center = (28 * 56 + 28) * 4;
         assert_eq!(
             &icon_for("first", &mascots).unwrap().rgba()[center..][..4],
             [255, 0, 0, 255]
