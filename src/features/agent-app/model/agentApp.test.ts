@@ -87,6 +87,7 @@ function fixture() {
         model: "codex:test",
         busy: false,
         hasDraft: false,
+        archived: false,
       },
     ]),
     session: vi.fn(async (id) =>
@@ -94,6 +95,8 @@ function fixture() {
     ),
     send: vi.fn(async () => ({ alreadySubmitted: false })),
     draft: vi.fn(async () => ({ alreadySaved: false, draft: true })),
+    stop: vi.fn(async () => {}),
+    remove: vi.fn(async () => {}),
     worktrees: vi.fn(async () => ({
       worktrees: [
         { ...featureWorktree },
@@ -111,6 +114,174 @@ function fixture() {
 }
 
 describe("agent app commands", () => {
+  describe.each([
+    ["sessions.stop", "stopped"],
+    ["sessions.archive", "archived"],
+    ["sessions.delete", "deleted"],
+  ] as const)("%s", (action, resultField) => {
+    it("manages a running session in the caller's project", async () => {
+      const { source, host } = fixture();
+      vi.mocked(host.session).mockResolvedValue({
+        ...newSession("codex", source.cwd),
+        id: "other",
+        busy: true,
+      });
+      expect(
+        await handleAgentApp(
+          source,
+          "manage",
+          action,
+          { sessionId: "other" },
+          host,
+        ),
+      ).toEqual({ sessionId: "other", [resultField]: true });
+      if (action === "sessions.stop") {
+        expect(host.stop).toHaveBeenCalledExactlyOnceWith("other");
+        expect(host.remove).not.toHaveBeenCalled();
+      } else {
+        expect(host.remove).toHaveBeenCalledExactlyOnceWith(
+          "other",
+          action === "sessions.archive" ? "archive" : "delete",
+        );
+        expect(host.stop).not.toHaveBeenCalled();
+      }
+    });
+
+    it("lets a Mono manage sessions in a selected assigned project", async () => {
+      const { source, host } = fixture();
+      source.cwd = "/home/user";
+      host.isMono = (id) => id === source.id;
+      host.monoOf = () => ({
+        id: "mono",
+        projects: ["/code/app", "/code/site"],
+      });
+      vi.mocked(host.session).mockResolvedValue({
+        ...newSession("codex", "/code/site"),
+        id: "other",
+      });
+      expect(
+        await handleAgentApp(
+          source,
+          "manage",
+          action,
+          {
+            sessionId: "other",
+            project: "site",
+          },
+          host,
+        ),
+      ).toEqual({ sessionId: "other", [resultField]: true });
+      expect(host.sessions).toHaveBeenCalledWith("/code/site");
+      await expect(
+        handleAgentApp(
+          source,
+          "outside",
+          action,
+          {
+            sessionId: "other",
+            project: "/code/unassigned",
+          },
+          host,
+        ),
+      ).rejects.toThrow("Not one of your projects");
+      await expect(
+        handleAgentApp(
+          source,
+          "wrong-project",
+          action,
+          {
+            sessionId: "other",
+            project: "/code/app",
+          },
+          host,
+        ),
+      ).rejects.toThrow("not found in this project");
+      expect(
+        vi.mocked(host.stop).mock.calls.length +
+          vi.mocked(host.remove).mock.calls.length,
+      ).toBe(1);
+    });
+
+    it("rejects the caller, missing sessions and sessions outside the selected project", async () => {
+      const { source, host } = fixture();
+      await expect(
+        handleAgentApp(source, "self", action, { sessionId: source.id }, host),
+      ).rejects.toThrow("calling session");
+      await expect(
+        handleAgentApp(
+          source,
+          "missing",
+          action,
+          { sessionId: "missing" },
+          host,
+        ),
+      ).rejects.toThrow("not found in this project");
+      vi.mocked(host.session).mockResolvedValue({
+        ...newSession("codex", "/another-project"),
+        id: "other",
+      });
+      await expect(
+        handleAgentApp(source, "outside", action, { sessionId: "other" }, host),
+      ).rejects.toThrow("not found in this project");
+      expect(host.stop).not.toHaveBeenCalled();
+      expect(host.remove).not.toHaveBeenCalled();
+    });
+
+    it("does not manage Mono chats, habit runs or orchestration workers", async () => {
+      const { source, host } = fixture();
+      host.isMono = () => true;
+      await expect(
+        handleAgentApp(source, "mono", action, { sessionId: "other" }, host),
+      ).rejects.toThrow("Only regular project sessions");
+      host.isMono = () => false;
+      host.isHabitRun = () => true;
+      await expect(
+        handleAgentApp(source, "habit", action, { sessionId: "other" }, host),
+      ).rejects.toThrow("Only regular project sessions");
+      host.isHabitRun = () => false;
+      vi.mocked(host.session).mockResolvedValue({
+        ...newSession("codex", source.cwd),
+        id: "other",
+        orchestrationLeadId: "orchestrator",
+      });
+      await expect(
+        handleAgentApp(source, "worker", action, { sessionId: "other" }, host),
+      ).rejects.toThrow("Only regular project sessions");
+      expect(host.stop).not.toHaveBeenCalled();
+      expect(host.remove).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid request IDs and unsupported fields before making changes", async () => {
+      const { source, host } = fixture();
+      await expect(
+        handleAgentApp(source, "bad/id", action, { sessionId: "other" }, host),
+      ).rejects.toThrow("Invalid request ID");
+      await expect(
+        handleAgentApp(
+          source,
+          "extra",
+          action,
+          {
+            sessionId: "other",
+            deleteWorktree: true,
+          },
+          host,
+        ),
+      ).rejects.toThrow("Unknown");
+      expect(host.stop).not.toHaveBeenCalled();
+      expect(host.remove).not.toHaveBeenCalled();
+    });
+
+    it("reports lifecycle failures instead of claiming success", async () => {
+      const { source, host } = fixture();
+      vi.mocked(host.stop).mockRejectedValue(new Error("operation failed"));
+      vi.mocked(host.remove).mockRejectedValue(new Error("operation failed"));
+      await expect(
+        handleAgentApp(source, "failed", action, { sessionId: "other" }, host),
+      ).rejects.toThrow("operation failed");
+    });
+  });
+
   it("allows session inspection in a Mono's projects when its chat lives at home", () => {
     const { source } = fixture();
     source.cwd = "/home/user";

@@ -177,6 +177,143 @@ describe("Mono completion batches", () => {
     );
   });
 
+  it("dismisses the calling Mono's pending cancellation without losing other session results", () => {
+    const ready = vi.fn();
+    const batches = new MonoSessionCompletionBatches(ready);
+    const stopped = batches.watch(origin, "stop-request", "stopped-session");
+    const other = batches.watch(origin, "other-request", "other-session");
+    batches.closeInactive(() => false);
+    batches.dismissSession(origin.monoId, "stopped-session");
+    stopped(result("stopped-session", "cancelled"));
+    expect(ready).not.toHaveBeenCalled();
+    other(result("other-session"));
+    expect(ready).toHaveBeenCalledOnce();
+    expect(ready.mock.calls[0][1].monoSessionCompletion).toEqual({
+      sessionId: "other-session",
+      title: "Agent session",
+      status: "completed",
+    });
+    expect(ready.mock.calls[0][1].text).not.toContain("stopped-session");
+  });
+
+  it("keeps other Monos and future monitored turns on the same session independent", () => {
+    const ready = vi.fn();
+    const batches = new MonoSessionCompletionBatches(ready);
+    const cancelled = batches.watch(origin, "request", "worker");
+    const other = batches.watch(
+      { monoId: "another", turn: 1 },
+      "other",
+      "worker",
+    );
+    batches.closeInactive(() => false);
+    batches.dismissSession(origin.monoId, "worker");
+    cancelled(result("worker", "cancelled"));
+    other(result("worker", "cancelled"));
+    expect(ready.mock.calls.map(([monoId]) => monoId)).toEqual(["another"]);
+
+    const followUp = batches.watch(
+      { ...origin, turn: 2 },
+      "follow-up",
+      "worker",
+    );
+    batches.closeInactive(() => false);
+    cancelled(result("worker", "cancelled"));
+    expect(ready).toHaveBeenCalledOnce();
+    followUp(result("worker"));
+    expect(ready.mock.calls.map(([monoId]) => monoId)).toEqual([
+      "another",
+      "mono",
+    ]);
+    expect(ready.mock.calls[1][1].monoSessionCompletion.status).toBe(
+      "completed",
+    );
+  });
+
+  it("does not repeat a rejected launch after the successfully launched session is archived", async () => {
+    const ready = vi.fn();
+    const batches = new MonoSessionCompletionBatches(ready);
+    const rejected = batches.watch(
+      origin,
+      "rejected-request",
+      "failed-session",
+    );
+    const accepted = await submitWithSettlement({
+      submit: () => false,
+      onSettled: (outcome) =>
+        rejected(
+          monoSessionCompletionResult({
+            requestId: "rejected-request",
+            sessionId: "failed-session",
+            project: "/code/project",
+            prompt: "Review",
+            outcome,
+          }),
+        ),
+      rejectionMessage: "Session was not open",
+    });
+    expect(accepted).toBe(false);
+    rejected.discard();
+    const launched = batches.watch(origin, "launched-request", "worker");
+    batches.closeInactive(() => false);
+    batches.dismissSession(origin.monoId, "worker");
+    launched(result("worker", "cancelled"));
+    expect(ready).not.toHaveBeenCalled();
+  });
+
+  it("lets a discarded request retry while ignoring the old callback and discard", () => {
+    const ready = vi.fn();
+    const batches = new MonoSessionCompletionBatches(ready);
+    const rejected = batches.watch(origin, "request", "worker");
+    rejected.discard();
+    const retry = batches.watch(origin, "request", "worker");
+    rejected(result("worker", "failed"));
+    rejected.discard();
+    batches.closeInactive(() => false);
+    expect(ready).not.toHaveBeenCalled();
+    retry(result("worker"));
+    expect(ready).toHaveBeenCalledOnce();
+    expect(ready.mock.calls[0][1].monoSessionCompletion.status).toBe(
+      "completed",
+    );
+  });
+
+  it.each([false, true])(
+    "updates a report dismissed during asynchronous delivery (retain another session: %s)",
+    async (retainOther) => {
+      let resume!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const delivered = vi.fn();
+      const batches = new MonoSessionCompletionBatches(
+        async (_, _message, current) => {
+          await waiting;
+          const message = current();
+          if (message) delivered(message);
+        },
+      );
+      batches.watch(origin, "request", "worker")(result("worker", "cancelled"));
+      if (retainOther) batches.watch(origin, "other", "other")(result("other"));
+      batches.closeInactive(() => false);
+      batches.dismissSession(origin.monoId, "worker");
+      resume();
+      await waiting;
+      if (retainOther) {
+        expect(delivered).toHaveBeenCalledOnce();
+        expect(delivered.mock.calls[0][0].monoSessionCompletion).toEqual({
+          sessionId: "other",
+          title: "Agent session",
+          status: "completed",
+        });
+        expect(delivered.mock.calls[0][0].text).not.toContain(
+          '"sessionId":"worker"',
+        );
+      } else {
+        expect(delivered).not.toHaveBeenCalled();
+      }
+    },
+  );
+
   it("bounds a large group's reports while retaining every session's identity and outcome", () => {
     const ready = vi.fn();
     const batches = new MonoSessionCompletionBatches(ready);

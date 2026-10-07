@@ -9,6 +9,7 @@ import {
   enqueueMonoMessage,
 } from "../features/monos/model/monoMessaging";
 import {
+  dismissQueuedMonoSessionCompletion,
   enqueueMonoSessionCompletion,
   monoSessionCompletionResult,
   MonoSessionCompletionBatches,
@@ -4929,6 +4930,7 @@ function Workspace({
       sessionId: string,
       mode: "archive" | "delete",
       skipDeleteConfirm = false,
+      origin: "ui" | "cli" = "ui",
     ): Promise<boolean> => {
       if (
         removingSessionIds.current.has(sessionId) ||
@@ -4988,6 +4990,7 @@ function Workspace({
       try {
         const remover = createSessionRemover({
           mode,
+          preserveOpenFiles: origin === "cli",
           scope: tabCloseScope,
           replacement: {
             harness: seed?.harness ?? "cursor",
@@ -5098,6 +5101,7 @@ function Workspace({
             },
           },
           confirm: async (closedTabs, removalMode) => {
+            if (origin === "cli") return true;
             const files = filesInWorkspaceTabs(closedTabs);
             const unsaved = files.some(
               (file) =>
@@ -5130,6 +5134,7 @@ function Workspace({
         }
         return removed;
       } catch (error) {
+        if (origin === "cli") throw error;
         const detail = error instanceof Error ? error.message : String(error);
         void message(`Could not ${mode} this conversation.\n\n${detail}`, {
           title: "MonoCode",
@@ -7650,7 +7655,7 @@ function Workspace({
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(
-              `<monocode_app>\n${handAgent ? "App access is always enabled in this thread." : "The user's Operator command enables app access in this thread, including later turns without the command."} You can start session tabs or split session panes right or down, list and create project worktrees, choose a new session's checkout, read and continue other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` when you need the exact commands and JSON fields. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</monocode_app>`,
+              `<monocode_app>\n${handAgent ? "App access is always enabled in this thread." : "The user's Operator command enables app access in this thread, including later turns without the command."} You can start session tabs or split session panes right or down, list and create project worktrees, choose a new session's checkout, read, continue, stop, archive or delete other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` when you need the exact commands and JSON fields. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</monocode_app>`,
             );
           }
           // A Mono reads who it is ahead of the message, so it never takes it
@@ -8143,7 +8148,11 @@ function Workspace({
   );
 
   const queueMonoSessionCompletion = useCallback(
-    async (monoId: string, message: QueuedMessage) => {
+    async (
+      monoId: string,
+      message: QueuedMessage,
+      current: () => QueuedMessage | undefined = () => message,
+    ) => {
       if (!isMonoSession(monoId) || removingSessionIds.current.has(monoId))
         return;
       if (
@@ -8151,13 +8160,16 @@ function Workspace({
         removingSessionIds.current.has(monoId)
       )
         return;
-      setSessions((previous) =>
-        previous.map((session) =>
-          session.id === monoId
-            ? enqueueMonoSessionCompletion(session, message)
-            : session,
-        ),
-      );
+      setSessions((previous) => {
+        const latest = current();
+        return latest
+          ? previous.map((session) =>
+              session.id === monoId
+                ? enqueueMonoSessionCompletion(session, latest)
+                : session,
+            )
+          : previous;
+      });
     },
     [ensureOpenSession],
   );
@@ -8166,9 +8178,8 @@ function Workspace({
   const monoCompletionBatches = useRef<MonoSessionCompletionBatches | null>(null);
   if (!monoCompletionBatches.current) {
     monoCompletionBatches.current = new MonoSessionCompletionBatches(
-      (monoId, message) => {
-        void queueMonoSessionCompletionRef.current(monoId, message);
-      },
+      (monoId, message, current) =>
+        queueMonoSessionCompletionRef.current(monoId, message, current),
     );
   }
   useEffect(() => {
@@ -9668,17 +9679,18 @@ function Workspace({
         const stopping = orchestrator.stopForSession(sessionId);
         if (stopping) {
           void stopping.catch(console.error);
-          return;
+          return stopping;
         }
       }
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       turnGen.current.set(sessionId, (turnGen.current.get(sessionId) ?? 0) + 1);
       flushHarnessEvents();
-      if (session) {
-        for (const id of sessionChildHarnesses(session)) {
-          void cancelHarnessTurn(id, sessionId);
-        }
-      }
+      const cancelling = Promise.all(
+        (session ? sessionChildHarnesses(session) : []).map((id) =>
+          cancelHarnessTurn(id, sessionId),
+        ),
+      );
+      void cancelling.catch(console.error);
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
@@ -9701,6 +9713,7 @@ function Workspace({
       } else {
         notifyReviewChanged(sessionId);
       }
+      return cancelling;
     },
     [flushHarnessEvents],
   );
@@ -10219,6 +10232,11 @@ function Workspace({
     orchestrator.sync();
   }, [sessions]);
 
+  const stopSessionRef = useRef(onStop);
+  stopSessionRef.current = onStop;
+  const removeSessionRef = useRef(onRemoveHistorySession);
+  removeSessionRef.current = onRemoveHistorySession;
+
   useEffect(() => {
     const listening = listen<{
       id: string;
@@ -10272,20 +10290,37 @@ function Workspace({
           const settle = monoCompletionBatches.current!.watch(
             { monoId, turn: sourceTurn },
             requestId,
+            sessionId,
           );
-          return (outcome: ControlOutcome) =>
-            settle(
-              monoSessionCompletionResult({
-                requestId,
-                sessionId,
-                project,
-                prompt,
-                outcome,
-                session: sessionsRef.current.find(
-                  (session) => session.id === sessionId,
-                ),
-              }),
-            );
+          return Object.assign(
+            (outcome: ControlOutcome) =>
+              settle(
+                monoSessionCompletionResult({
+                  requestId,
+                  sessionId,
+                  project,
+                  prompt,
+                  outcome,
+                  session: sessionsRef.current.find(
+                    (session) => session.id === sessionId,
+                  ),
+                }),
+              ),
+            { discard: settle.discard },
+          );
+        };
+        const dismissCompletion = (sessionId: string) => {
+          if (!isMonoSession(source.id)) return;
+          monoCompletionBatches.current!.dismissSession(source.id, sessionId);
+          flushSync(() =>
+            setSessions((previous) =>
+              previous.map((session) =>
+                session.id === source.id
+                  ? dismissQueuedMonoSessionCompletion(session, sessionId)
+                  : session,
+              ),
+            ),
+          );
         };
         const promise = handleAgentApp(
           source,
@@ -10337,11 +10372,7 @@ function Workspace({
                   onSettled,
                 );
               } catch (error) {
-                onSettled?.({
-                  status: "failed",
-                  text: "",
-                  error: error instanceof Error ? error.message : String(error),
-                });
+                onSettled?.discard();
                 throw error;
               }
             },
@@ -10357,6 +10388,7 @@ function Workspace({
                   model: session.model,
                   busy: false,
                   hasDraft: !!session.draft,
+                  archived: !!session.archived,
                 });
               }
               for (const session of sessionsRef.current) {
@@ -10373,6 +10405,7 @@ function Workspace({
                   model: session.model,
                   busy: !!session.busy,
                   hasDraft: !!sessionDraftBlock(session),
+                  archived: byId.get(session.id)?.archived ?? false,
                 });
               }
               return [...byId.values()];
@@ -10418,28 +10451,33 @@ function Workspace({
                 throw new Error(
                   "Session already has a draft; send or remove it first",
                 );
-              const accepted = notifyMonoId
+              const onSettled = notifyMonoId
+                ? monitorCompletion(
+                    notifyMonoId,
+                    id,
+                    requestId,
+                    target.cwd,
+                    prompt,
+                  )
+                : undefined;
+              const accepted = onSettled
                 ? await submitWithSettlement({
                     submit: (onSettled) =>
                       submitSessionRef.current(id, prompt, [], {
                         appRequestId: requestId,
                         onSettled,
                       }),
-                    onSettled: monitorCompletion(
-                      notifyMonoId,
-                      id,
-                      requestId,
-                      target.cwd,
-                      prompt,
-                    ),
+                    onSettled,
                     rejectionMessage:
                       "The monitored follow-up could not start.",
                   })
                 : await submitSessionRef.current(id, prompt, [], {
                     appRequestId: requestId,
                   });
-              if (!accepted)
+              if (!accepted) {
+                onSettled?.discard();
                 throw new Error("Session could not accept the follow-up");
+              }
               return { alreadySubmitted: false };
             },
             draft: async (id, prompt, requestId) => {
@@ -10472,6 +10510,54 @@ function Workspace({
               );
               if (!saved) throw new Error("Session could not accept a draft");
               return { alreadySaved: false, draft: true };
+            },
+            stop: async (id) => {
+              if (
+                removingSessionIds.current.has(id) ||
+                switchingWorktrees.current.has(id)
+              )
+                throw new Error(
+                  "Session is being removed or changing worktrees",
+                );
+              const target = sessionsRef.current.find(
+                (session) => session.id === id,
+              );
+              if (!target) {
+                dismissCompletion(id);
+                return;
+              }
+              if (
+                target.orchestrationLeadId ||
+                !canAccessProject(target.cwd) ||
+                isMonoSession(id) ||
+                isHabitRun(id)
+              )
+                throw new Error("Session is unavailable in this project");
+              await flushSync(() => stopSessionRef.current(id));
+              flushHarnessEvents();
+              dismissCompletion(id);
+            },
+            remove: async (id, mode) => {
+              const target = await ensureOpenSessionRef.current(id);
+              if (
+                !target ||
+                target.orchestrationLeadId ||
+                !canAccessProject(target.cwd) ||
+                isMonoSession(id) ||
+                isHabitRun(id)
+              )
+                throw new Error("Session is unavailable in this project");
+              const removed = await removeSessionRef.current(
+                id,
+                mode,
+                true,
+                "cli",
+              );
+              if (!removed)
+                throw new Error(
+                  `Session could not be ${mode === "archive" ? "archived" : "deleted"}; another session operation is in progress`,
+                );
+              dismissCompletion(id);
             },
             worktrees: (cwd) => listWorktrees(cwd),
             createWorktree: (cwd, branch, base, existing) =>
