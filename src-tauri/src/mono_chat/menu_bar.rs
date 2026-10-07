@@ -1,23 +1,29 @@
 //! Native menu presentation. Selectable rows remain ordinary NSMenuItems so
-//! AppKit owns keyboard navigation, accessibility, highlighting and actions.
+//! AppKit owns keyboard navigation, accessibility and actions. Each carries a
+//! row view only so hover draws the translucent pill of the system's status
+//! menus instead of the accent-colored selection.
 
 use std::panic::AssertUnwindSafe;
 
 use objc2::rc::Retained;
 use objc2::runtime::NSObjectProtocol;
 use objc2::runtime::{AnyObject, Bool};
-use objc2::AllocAnyThread;
-use objc2::{msg_send, sel, MainThreadMarker, MainThreadOnly};
+use objc2::{define_class, msg_send, sel, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSAutoresizingMaskOptions, NSBezierPath, NSColor, NSFont, NSFontAttributeName,
-    NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage,
-    NSImageSymbolConfiguration, NSMenu, NSMenuItem, NSTextField, NSView,
+    NSAutoresizingMaskOptions, NSBezierPath, NSColor, NSFont, NSFontWeightRegular,
+    NSFontWeightSemibold, NSImage, NSImageSymbolConfiguration, NSImageView, NSMenu, NSMenuItem,
+    NSTextField, NSView,
 };
-use objc2_foundation::{NSAttributedString, NSDictionary, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use serde::Deserialize;
 
 const WIDTH: f64 = 260.0;
 const PORTRAIT_SIZE: f64 = 28.0;
+const ROW_HEIGHT: f64 = 34.0;
+/// Where AppKit placed the image and title of a plain item, so rows with a
+/// view line up with the header the same way.
+const IMAGE_X: f64 = 15.0;
+const TITLE_X: f64 = 49.0;
 const PORTRAIT_PIXELS: usize = 56;
 /// Pixels per mascot unit: a 1.5-unit sprite cell lands on exactly 3 pixels,
 /// and the 16-unit sprite fills a little over half the circle.
@@ -75,22 +81,29 @@ pub(super) fn decorate(tray: &tauri::tray::TrayIcon) -> tauri::Result<()> {
             };
             style_menu(&menu, mtm);
             for item in menu.itemArray() {
+                if item.isSeparatorItem() || !item.isEnabled() {
+                    continue;
+                }
                 let title = item.title().to_string();
                 if let Some(action) = ACTIONS.iter().find(|a| a.title == title) {
-                    if let Some(image) = action_icon(action) {
-                        item.setImage(Some(&image));
-                        show_image(&item);
-                    }
-                    if action.destructive {
-                        item.setAttributedTitle(Some(&red_title(action.title)));
-                    }
+                    let image = action_icon(action);
+                    item.setImage(image.as_deref());
+                    show_image(&item);
+                    let color = if action.destructive {
+                        NSColor::systemRedColor()
+                    } else {
+                        NSColor::labelColor()
+                    };
+                    item.setView(Some(&row(&title, image.as_deref(), &color, mtm)));
                 } else if let Some(image) = item.image() {
                     // Muda stores the portrait in its IconMenuItem model and
                     // initially sizes it to 18pt. Only adjust its display size.
                     image.setSize(NSSize::new(PORTRAIT_SIZE, PORTRAIT_SIZE));
                     item.setImage(Some(&image));
                     show_image(&item);
-                    item.setToolTip(Some(&NSString::from_str("Open floating chat")));
+                    let view = row(&title, Some(&image), &NSColor::labelColor(), mtm);
+                    view.setToolTip(Some(&NSString::from_str("Open floating chat")));
+                    item.setView(Some(&view));
                 }
             }
         }))
@@ -158,20 +171,77 @@ fn action_icon(action: &Action) -> Option<Retained<NSImage>> {
     Some(image)
 }
 
-/// An attributed title replaces the menu's font, so restate it with the red.
-fn red_title(title: &str) -> Retained<NSAttributedString> {
-    let keys = unsafe { [NSFontAttributeName, NSForegroundColorAttributeName] };
-    let font = NSFont::systemFontOfSize(14.0);
-    let color = NSColor::systemRedColor();
-    let values: [&AnyObject; 2] = [&font, &color];
-    let attributes = NSDictionary::from_slices(&keys, &values);
-    unsafe {
-        NSAttributedString::initWithString_attributes(
-            NSAttributedString::alloc(),
-            &NSString::from_str(title),
-            Some(&attributes),
-        )
+define_class!(
+    /// A selectable row. A menu item with a view draws nothing itself, so the
+    /// row draws the hover pill and forwards clicks to the item's action.
+    #[unsafe(super(NSView))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "MonoCodeMenuRow"]
+    struct MenuRow;
+
+    impl MenuRow {
+        #[unsafe(method(drawRect:))]
+        fn draw_rect(&self, _dirty: NSRect) {
+            if !self.enclosingMenuItem().is_some_and(|item| item.isHighlighted()) {
+                return;
+            }
+            let bounds = self.bounds();
+            NSColor::labelColor().colorWithAlphaComponent(0.1).setFill();
+            NSBezierPath::bezierPathWithRoundedRect_xRadius_yRadius(
+                NSRect::new(
+                    NSPoint::new(bounds.origin.x + 5.0, bounds.origin.y),
+                    NSSize::new(bounds.size.width - 10.0, bounds.size.height),
+                ),
+                10.0,
+                10.0,
+            )
+            .fill();
+        }
+
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, _event: Option<&AnyObject>) {
+            let Some(item) = self.enclosingMenuItem() else {
+                return;
+            };
+            // The item is in the menu that is tracking this view.
+            let Some(menu) = (unsafe { item.menu() }) else {
+                return;
+            };
+            menu.cancelTracking();
+            menu.performActionForItemAtIndex(menu.indexOfItem(&item));
+        }
     }
+);
+
+fn row(
+    title: &str,
+    image: Option<&NSImage>,
+    color: &NSColor,
+    mtm: MainThreadMarker,
+) -> Retained<NSView> {
+    let frame = NSRect::new(NSPoint::ZERO, NSSize::new(WIDTH, ROW_HEIGHT));
+    let view: Retained<MenuRow> = unsafe { msg_send![MenuRow::alloc(mtm), initWithFrame: frame] };
+    view.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
+    if let Some(image) = image {
+        let icon = NSImageView::imageViewWithImage(image, mtm);
+        icon.setFrame(NSRect::new(
+            NSPoint::new(IMAGE_X, (ROW_HEIGHT - PORTRAIT_SIZE) / 2.0),
+            NSSize::new(PORTRAIT_SIZE, PORTRAIT_SIZE),
+        ));
+        view.addSubview(&icon);
+    }
+    let label = NSTextField::labelWithString(&NSString::from_str(title), mtm);
+    label.setFont(Some(&NSFont::systemFontOfSize(14.0)));
+    label.setTextColor(Some(color));
+    label.sizeToFit();
+    let height = label.frame().size.height;
+    label.setFrame(NSRect::new(
+        NSPoint::new(TITLE_X, ((ROW_HEIGHT - height) / 2.0).round()),
+        NSSize::new(WIDTH - TITLE_X - 16.0, height),
+    ));
+    label.setAutoresizingMask(NSAutoresizingMaskOptions::ViewWidthSizable);
+    view.addSubview(&label);
+    view.into_super()
 }
 
 fn style_menu(menu: &NSMenu, mtm: MainThreadMarker) {

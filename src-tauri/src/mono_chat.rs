@@ -784,7 +784,7 @@ pub fn mono_chat_reply(
         let reveal = result.is_ok()
             && matches!(
                 request.action.get("kind").and_then(Value::as_str),
-                Some("reveal" | "openFile")
+                Some("reveal" | "openFile" | "openArtifact")
             );
         inner.finish(id, window.label(), result);
         (request.mono_id, reveal)
@@ -825,6 +825,7 @@ pub async fn mono_chat_action(
             | "questionInteraction"
             | "reveal"
             | "openFile"
+            | "openArtifact"
             | "resume"
     ) {
         return Err("Unknown chat action.".into());
