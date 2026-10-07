@@ -48,17 +48,31 @@ export class TranscriptTurnCache {
   turnItems(
     turn: Block[],
     settled: boolean,
-    { managed = false, inlineWork = false } = {},
+    {
+      managed = false,
+      inlineWork = false,
+      undeliveredMessageIds,
+    }: {
+      managed?: boolean;
+      inlineWork?: boolean;
+      undeliveredMessageIds?: ReadonlySet<string>;
+    } = {},
   ): TurnItem[] {
     let variants = this.items.get(turn);
-    const key = `${settled}/${managed}/${inlineWork}`;
+    const undelivered =
+      inlineWork && undeliveredMessageIds?.size
+        ? turn
+            .filter((block) => undeliveredMessageIds?.has(block.id))
+            .map((block) => block.id)
+        : [];
+    const key = JSON.stringify([settled, managed, inlineWork, undelivered]);
     const previous = variants?.get(key);
     if (previous) return previous;
     const blocks = turn.filter(
       (block) => !block.orchestration && (managed || !block.internal),
     );
     const items = inlineWork
-      ? groupMonoTurnItems(blocks, { live: !settled })
+      ? groupMonoTurnItems(blocks, { live: !settled, undeliveredMessageIds })
       : groupTurnItems(blocks, { settled });
     if (!variants) {
       variants = new Map();

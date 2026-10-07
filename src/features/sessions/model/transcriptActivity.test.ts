@@ -10,6 +10,7 @@ import {
   foldableWork,
   foldedBlocks,
   groupMonoTurnItems,
+  groupMonoTurns,
   groupTurnItems,
   groupTurns,
   hasRunningSubagent,
@@ -109,6 +110,58 @@ function irc(id: string, text = "new message in #general"): Block {
 }
 
 describe("groupMonoTurnItems", () => {
+  it("keeps a queued message promoted to a new turn separate and hides its process", () => {
+    const blocks: Block[] = [
+      { id: "first", role: "user", text: "First request", startedAt: 1 },
+      note("first-answer", "Done."),
+      {
+        id: "queued",
+        role: "user",
+        text: "Next request",
+        sentAt: 10,
+        startedAt: 20,
+      },
+      note("intro", "Checking the next request."),
+      shell("next-work", "in_progress"),
+    ];
+    const turns = groupMonoTurns(blocks);
+    expect(turns).toHaveLength(2);
+    expect(groupMonoTurnItems(turns[1], { live: true })).toMatchObject([
+      { type: "block", block: { id: "queued" } },
+      {
+        type: "activity",
+        blocks: [{ id: "intro" }, { id: "next-work" }],
+      },
+    ]);
+  });
+
+  it("keeps replies after mid-turn follow-ups visible while tools continue", () => {
+    const blocks: Block[] = [
+      { id: "user", role: "user", text: "Review the PR" },
+      note("intro", "I will inspect the files."),
+      shell("first"),
+      { id: "status", role: "user", text: "What are you doing?", sentAt: 10 },
+      note("status-reply", "I am checking browser security."),
+      shell("second", "in_progress"),
+      { id: "stop", role: "user", text: "You can stop", sentAt: 20 },
+      note("stop-reply", "Stopping the background review now."),
+      shell("cancel", "in_progress"),
+    ];
+    for (const live of [true, false]) {
+      const items = groupMonoTurnItems(blocks, { live });
+      expect(
+        items.flatMap((item) =>
+          item.type === "block" && item.block.role === "assistant"
+            ? [item.block.text]
+            : [],
+        ),
+      ).toEqual([
+        "I am checking browser security.",
+        "Stopping the background review now.",
+      ]);
+    }
+  });
+
   it("keeps live narration compact until the turn settles", () => {
     const blocks = [
       note("intro", "Checking."),

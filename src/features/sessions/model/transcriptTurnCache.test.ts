@@ -105,7 +105,9 @@ describe("transcript turn cache", () => {
     expect(monoTurns[0]).toEqual(blocks);
     const items = cache.turnItems(monoTurns[0], true, { inlineWork: true });
     expect(cache.group(blocks.slice(), false, true)).toBe(monoTurns);
-    expect(cache.turnItems(monoTurns[0], true, { inlineWork: true })).toBe(items);
+    expect(cache.turnItems(monoTurns[0], true, { inlineWork: true })).toBe(
+      items,
+    );
     expect(cache.group(blocks)).toHaveLength(2);
   });
 
@@ -130,6 +132,25 @@ describe("transcript turn cache", () => {
     expect(ordinary[3]).toEqual({ type: "block", block: turn[3] });
     expect(cache.turnItems(turn, false, { inlineWork: true })).toBe(live);
     expect(cache.turnItems(turn, true, { inlineWork: true })).toBe(settled);
+  });
+
+  it("refreshes reply visibility when a queued follow-up is delivered without changing blocks", () => {
+    const cache = new TranscriptTurnCache();
+    const turn: Block[] = [
+      { id: "user", role: "user", text: "Review" },
+      { id: "intro", role: "assistant", text: "Checking." },
+      { id: "follow-up", role: "user", text: "Status?", sentAt: 10 },
+      { id: "reply", role: "assistant", text: "Checking browser security." },
+    ];
+    const pending = cache.turnItems(turn, false, {
+      inlineWork: true,
+      undeliveredMessageIds: new Set(["follow-up"]),
+    });
+    expect(pending).not.toContainEqual({ type: "block", block: turn[3] });
+    const delivered = cache.turnItems(turn, false, { inlineWork: true });
+    expect(delivered).toContainEqual({ type: "block", block: turn[3] });
+    expect(cache.turnItems(turn, false, { inlineWork: true })).toBe(delivered);
+    expect(delivered).not.toBe(pending);
   });
 
   it("retains hidden completion prompts for identity while respecting managed visibility", () => {

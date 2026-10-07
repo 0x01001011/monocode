@@ -17,7 +17,18 @@ let root: Root;
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(copyMessage).mockResolvedValue(undefined);
-  vi.useFakeTimers();
+  vi.useFakeTimers({
+    toFake: [
+      "Date",
+      "setTimeout",
+      "clearTimeout",
+      "setInterval",
+      "clearInterval",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+      "performance",
+    ],
+  });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(HTMLElement.prototype, "animate").mockImplementation(
     () => ({ cancel: vi.fn() }) as unknown as Animation,
@@ -435,6 +446,69 @@ it("keeps interrupted Mono messages together above one working indicator", () =>
   );
   expect(container.querySelectorAll(".transcript-turn")).toHaveLength(2);
 });
+
+it("shows answers to mid-turn follow-ups immediately and retains them during later work", () => {
+  const props = { busy: true, agentName: "MonoInvader" };
+  const blocks: Block[] = [
+    { id: "user", role: "user", text: "Review the PR", startedAt: 1000 },
+    { id: "intro", role: "assistant", text: "I will inspect the files." },
+    tool("first"),
+    {
+      id: "follow-up",
+      role: "user",
+      text: "What are you doing?",
+      sentAt: 1100,
+    },
+    {
+      id: "status-reply",
+      role: "assistant",
+      text: "I am checking browser security.",
+      streaming: true,
+    },
+  ];
+  render(blocks, props);
+  expect(container.textContent).toContain("I am checking browser security.");
+  expect(container.textContent).not.toContain("I will inspect the files.");
+  const continued: Block[] = [
+    ...blocks.map((block) =>
+      block.id === "status-reply" ? { ...block, streaming: false } : block,
+    ),
+    tool("second", "in_progress"),
+    { id: "stop", role: "user", text: "You can stop", sentAt: 1200 },
+    { id: "stop-reply", role: "assistant", text: "Stopping the review now." },
+    tool("cancel", "in_progress"),
+  ];
+  render(continued, props);
+  act(() => vi.advanceTimersByTime(1000));
+  expect(container.textContent).toContain("I am checking browser security.");
+  expect(container.textContent).toContain("Stopping the review now.");
+  expect(container.textContent).not.toContain("Inspect second");
+  expect(container.querySelectorAll("[data-mono-work]")).toHaveLength(1);
+  render(continued, { ...props, busy: false });
+  expect(container.textContent).toContain("I am checking browser security.");
+  expect(container.textContent).toContain("Stopping the review now.");
+});
+
+it.each(["pending", "paused", "failed"] as const)(
+  "keeps narration hidden until a %s follow-up is delivered",
+  (delivery) => {
+    const blocks: Block[] = [
+      { id: "user", role: "user", text: "Review the PR", startedAt: 1000 },
+      { id: "intro", role: "assistant", text: "I will inspect the files." },
+      tool("first"),
+      { id: "follow-up", role: "user", text: "Status?", sentAt: 1100 },
+      { id: "reply", role: "assistant", text: "Checking browser security." },
+    ];
+    render(blocks, {
+      busy: true,
+      messageDeliveries: new Map([["follow-up", { status: delivery }]]),
+    });
+    expect(container.textContent).not.toContain("Checking browser security.");
+    render(blocks, { busy: true, messageDeliveries: new Map() });
+    expect(container.textContent).toContain("Checking browser security.");
+    expect(container.textContent).not.toContain("I will inspect the files.");
+  },
+);
 
 it.each(["Follow up", "👍"])(
   "keeps a failed optimistic message visible with inline retry: %s",

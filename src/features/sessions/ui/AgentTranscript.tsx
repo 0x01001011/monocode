@@ -601,6 +601,10 @@ function AgentTranscriptComponent({
   useTurnScrollAnchor(scrollerEl, visible, stickToBottom, rememberScroll);
 
   const [turnCache] = useState(() => new TranscriptTurnCache());
+  const undeliveredMessageIds = useMemo(
+    () => new Set(messageDeliveries?.keys()),
+    [messageDeliveries],
+  );
   const turns = turnCache.group(blocks, managed, inlineWork);
   // A scheduled update can land while the chat's own turn is still running.
   const activeTurnIndex = turns.reduce(
@@ -950,6 +954,7 @@ function AgentTranscriptComponent({
           const items = turnCache.turnItems(turn, settled, {
             managed,
             inlineWork,
+            undeliveredMessageIds,
           });
           // Earlier activity groups have already been followed by prose or
           // more work. Only the last one can still be the live group.

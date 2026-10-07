@@ -378,7 +378,8 @@ export function groupMonoTurns(blocks: Block[], managed = false): Block[][] {
     if (
       previous?.[0].role === "user" &&
       turn[0].role === "user" &&
-      turn[0].sentAt != null
+      turn[0].sentAt != null &&
+      turn[0].startedAt == null
     ) {
       previous.push(...turn);
     } else groups.push([...turn]);
@@ -444,14 +445,33 @@ export function groupTurnItems(
 
 /**
  * A Mono keeps its process, including the opening message, in the activity
- * trail. All live prose stays there; settling reveals the trailing reply.
+ * trail. Live prose stays there until the user joins the running turn; replies
+ * after a delivered follow-up stay visible even when more work arrives.
+ * Settling reveals the trailing reply for uninterrupted turns.
  * Cards, notices and interjections keep their
  * own rows, and work resumed after a yielded reply does not absorb that reply.
  */
 export function groupMonoTurnItems(
   blocks: Block[],
-  options?: { live?: boolean },
+  options?: { live?: boolean; undeliveredMessageIds?: ReadonlySet<string> },
 ): TurnItem[] {
+  // Read the original order before moving user bubbles above the work. Once
+  // the user joins in, hiding subsequent replies makes a delivered message
+  // look ignored. Queued or failed messages have not reached the agent yet.
+  const followUpReplies = new Set<string>();
+  let interactive = false;
+  for (const block of blocks) {
+    if (
+      block.role === "user" &&
+      block.sentAt != null &&
+      block.startedAt == null &&
+      !block.internal &&
+      !block.draft &&
+      !options?.undeliveredMessageIds?.has(block.id)
+    )
+      interactive = true;
+    if (interactive && isProseBlock(block)) followUpReplies.add(block.id);
+  }
   // Keep the user's messages together above the work, without mutating history.
   const items = groupTurnItems([
     ...blocks.filter((block) => block.role === "user"),
@@ -487,6 +507,7 @@ export function groupMonoTurnItems(
     if (
       index >= start &&
       index <= end &&
+      !(item.type === "block" && followUpReplies.has(item.block.id)) &&
       // A reply already delivered before background work resumed stays put.
       !(boundary < items.length && index === boundary - 1) &&
       (item.type !== "block" ||
