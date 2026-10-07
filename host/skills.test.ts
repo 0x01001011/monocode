@@ -1,5 +1,6 @@
 import {
   cpSync,
+  symlinkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { listSkills, type DiscoveredSkill } from "./skills";
+import { listSkills, parseFrontmatter, type DiscoveredSkill } from "./skills";
 
 const fixture = resolve(__dirname, "../test-fixtures/skills");
 const expected = JSON.parse(
@@ -151,5 +152,72 @@ describe("listSkills", () => {
     expect(
       ok(listSkills({ cwd: join(dir, "p"), home: join(dir, "h") })).skills,
     ).toEqual([]);
+  });
+});
+
+describe("symlink containment", () => {
+  const link = (target: string, path: string) =>
+    symlinkSync(target, path, process.platform === "win32" ? "junction" : undefined);
+  const names = (project: string, home: string) =>
+    ok(listSkills({ cwd: project, home })).skills.map((skill) => skill.name);
+
+  it("does not list a SKILL.md symlinked to a non-skill file", () => {
+    const { dir, project, home } = copyFixture();
+    mkdirSync(join(dir, "secret"));
+    writeFileSync(join(dir, "secret/id_rsa"), "name: stolen\ndescription: private key\n");
+    const evil = join(project, ".claude/skills/evil");
+    mkdirSync(evil);
+    link(join(dir, "secret/id_rsa"), join(evil, "SKILL.md"));
+    const listed = ok(listSkills({ cwd: project, home })).skills;
+    expect(listed.map((skill) => skill.name)).not.toContain("evil");
+    expect(listed.map((skill) => skill.name)).not.toContain("stolen");
+    expect(listed.map((skill) => skill.description)).not.toContain("private key");
+  });
+
+  it("still lists a symlinked skill folder that holds a real SKILL.md", () => {
+    const { dir, project, home } = copyFixture();
+    mkdirSync(join(dir, "dev/foo"), { recursive: true });
+    writeFileSync(join(dir, "dev/foo/SKILL.md"), "---\nname: foo\ndescription: Linked\n---\n");
+    link(join(dir, "dev/foo"), join(home, ".claude/skills/foo"));
+    const found = ok(listSkills({ cwd: project, home })).skills.find(
+      (skill) => skill.name === "foo",
+    );
+    expect(found?.path).toBe(join(home, ".claude/skills/foo/SKILL.md"));
+  });
+
+  it("lists skills under a symlinked skills root by the same rule", () => {
+    const { dir, project, home } = copyFixture();
+    mkdirSync(join(dir, "dev/shared/bar"), { recursive: true });
+    writeFileSync(join(dir, "dev/shared/bar/SKILL.md"), "---\nname: bar\n---\n");
+    mkdirSync(join(dir, "dev/shared/baz"));
+    writeFileSync(join(dir, "secret.txt"), "name: baz\n");
+    link(join(dir, "secret.txt"), join(dir, "dev/shared/baz/SKILL.md"));
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    link(join(dir, "dev/shared"), join(home, ".hermes/skills"));
+    expect(names(project, home)).toContain("bar");
+    expect(names(project, home)).not.toContain("baz");
+  });
+});
+
+describe("parseFrontmatter", () => {
+  it("reads CRLF frontmatter with a folded description", () => {
+    expect(
+      parseFrontmatter(
+        "---\r\nname: crlf-skill\r\ndescription: >\r\n  One\r\n  two\r\n---\r\nbody\r\n",
+        "fallback",
+      ),
+    ).toEqual({ name: "crlf-skill", description: "One two" });
+  });
+
+  it("ignores leading byte order marks", () => {
+    expect(
+      parseFrontmatter("\uFEFF---\nname: bom-skill\ndescription: Hi\n---\n", "fallback"),
+    ).toEqual({ name: "bom-skill", description: "Hi" });
+  });
+
+  it("reads to the end when the frontmatter is never closed", () => {
+    expect(
+      parseFrontmatter("---\nname: open-ended\ndescription: Still read\n", "fallback"),
+    ).toEqual({ name: "open-ended", description: "Still read" });
   });
 });

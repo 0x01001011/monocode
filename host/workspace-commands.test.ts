@@ -1,19 +1,29 @@
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostStore } from "./store";
+import * as skills from "./skills";
 import { WorkspaceCommands } from "./workspace-commands";
+
+vi.mock("./skills", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./skills")>();
+  return { ...original, listSkills: vi.fn(original.listSkills) };
+});
 
 const fixture = resolve(__dirname, "../test-fixtures/skills");
 const cleanups: string[] = [];
 afterEach(() => {
+  vi.mocked(skills.listSkills).mockClear();
   for (const dir of cleanups.splice(0))
     rmSync(dir, { recursive: true, force: true });
 });
@@ -107,5 +117,90 @@ describe("skill root read-only allowance", () => {
       await expect(commands.run("read_text_file", { path })).rejects.toThrow(
         "outside",
       );
+  });
+});
+
+describe("skill read containment", () => {
+  const link = (target: string, path: string) =>
+    symlinkSync(target, path, process.platform === "win32" ? "junction" : undefined);
+
+  it("does not read a secret through a symlinked SKILL.md", async () => {
+    const { dir, project, home, commands } = setup();
+    mkdirSync(join(dir, "secret"));
+    writeFileSync(join(dir, "secret/id_rsa"), "PRIVATE KEY");
+    for (const root of [project, home]) {
+      const evil = join(root, ".claude/skills/evil");
+      mkdirSync(evil);
+      link(join(dir, "secret/id_rsa"), join(evil, "SKILL.md"));
+      await expect(
+        commands.run("read_text_file", { path: join(evil, "SKILL.md") }),
+      ).rejects.toThrow("outside");
+      await expect(
+        commands.run("read_binary_file", { path: join(evil, "SKILL.md") }),
+      ).rejects.toThrow("outside");
+    }
+    const listed = (await commands.run("list_skills", { cwd: project })) as {
+      skills: { name: string }[];
+    };
+    expect(listed.skills.map((skill) => skill.name)).not.toContain("evil");
+  });
+
+  it("reads a SKILL.md inside a symlinked skill folder", async () => {
+    const { dir, home, commands } = setup();
+    mkdirSync(join(dir, "dev/foo"), { recursive: true });
+    writeFileSync(join(dir, "dev/foo/SKILL.md"), "---\nname: foo\n---\n");
+    link(join(dir, "dev/foo"), join(home, ".claude/skills/foo"));
+    expect(
+      await commands.run("read_text_file", {
+        path: join(home, ".claude/skills/foo/SKILL.md"),
+      }),
+    ).toBe("---\nname: foo\n---\n");
+  });
+
+  it("reads a SKILL.md under a symlinked skills root", async () => {
+    const { dir, home, commands } = setup();
+    mkdirSync(join(dir, "dev/shared/bar"), { recursive: true });
+    writeFileSync(join(dir, "dev/shared/bar/SKILL.md"), "---\nname: bar\n---\n");
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    link(join(dir, "dev/shared"), join(home, ".hermes/skills"));
+    expect(
+      await commands.run("read_text_file", {
+        path: join(home, ".hermes/skills/bar/SKILL.md"),
+      }),
+    ).toBe("---\nname: bar\n---\n");
+  });
+
+  it("rejects a prefix-sibling of a skills directory without scanning", async () => {
+    const { home, commands } = setup();
+    const evil = join(home, ".claude/skills-evil/x");
+    mkdirSync(evil, { recursive: true });
+    writeFileSync(join(evil, "SKILL.md"), "---\nname: x\n---\n");
+    await expect(
+      commands.run("read_text_file", { path: join(evil, "SKILL.md") }),
+    ).rejects.toThrow("outside");
+    expect(skills.listSkills).not.toHaveBeenCalled();
+  });
+
+  it("does not scan skills for other missing or unrelated files", async () => {
+    const { project, home, commands } = setup();
+    await expect(
+      commands.run("read_text_file", { path: join(project, "missing.txt") }),
+    ).rejects.toThrow();
+    await expect(
+      commands.run("read_text_file", { path: join(home, ".claude/skills/user-only/notes.md") }),
+    ).rejects.toThrow("outside");
+    await expect(
+      commands.run("read_text_file", { path: join(project, "docs/SKILL.md") }),
+    ).rejects.toThrow();
+    expect(skills.listSkills).not.toHaveBeenCalled();
+  });
+
+  it("still rejects writes to a listed skill path", async () => {
+    const { home, commands } = setup();
+    const path = join(home, ".claude/skills/user-only/SKILL.md");
+    await commands.run("read_text_file", { path });
+    await expect(
+      commands.run("write_text_file", { path, content: "x" }),
+    ).rejects.toThrow("outside");
   });
 });

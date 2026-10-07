@@ -16,7 +16,7 @@ import { promisify } from "node:util";
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../src/platform/tauri/fs";
 import { hostWorktrees } from "./git-worktrees";
 import { createHostBranch, hostBranches, switchHostBranch } from "./git-branches";
-import { listSkills } from "./skills";
+import { isSkillFile, listSkills } from "./skills";
 import type { HostStore } from "./store";
 import {
   createHostPath,
@@ -307,11 +307,15 @@ export class WorkspaceCommands {
    * lie outside every project. Read-only commands may open it; nothing may
    * write or delete there. */
   private async listedSkillFile(input: unknown): Promise<string | undefined> {
+    // Cheap pre-filter so ordinary missing or foreign paths never trigger a
+    // scan: only `.../skills/.../SKILL.md` shaped paths can be skill files.
     if (
       typeof input !== "string" ||
       !isAbsolute(input) ||
       input.length > 4096 ||
-      input.includes("\0")
+      input.includes("\0") ||
+      !/^skill\.md$/i.test(basename(input)) ||
+      !input.split(/[\\/]/).includes("skills")
     )
       return undefined;
     const wanted = slashed(resolve(input));
@@ -324,8 +328,12 @@ export class WorkspaceCommands {
       if (
         "skills" in listed &&
         listed.skills.some((skill) => same(slashed(skill.path)))
-      )
-        return realpath(input).catch(() => undefined);
+      ) {
+        // The listing matched the string path; the target must still be a
+        // regular skill file, never an arbitrary file a symlink points at.
+        const real = await realpath(input).catch(() => undefined);
+        return real && isSkillFile(real) ? real : undefined;
+      }
     }
     return undefined;
   }

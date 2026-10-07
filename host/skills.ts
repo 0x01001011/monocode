@@ -8,7 +8,7 @@ import {
   realpathSync,
   statSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /**
  * Port of the desktop skill scanner (`src-tauri/src/skills.rs`): same roots,
@@ -366,6 +366,10 @@ function scanRoot(root: string, scope: "project" | "user", source: string): Scan
     if (folder.startsWith(".") || folder === "skills-cursor") continue;
     const skillMd = skillMdPath(dir);
     if (!skillMd) continue;
+    // Host-only hardening (the desktop scanner does not do this): a SKILL.md
+    // that is a symlink must still resolve to a regular skill file, so a
+    // cloned repo cannot make the host parse or serve an arbitrary file.
+    if (!isSkillFile(skillMd)) continue;
     const fallback = slugName(folder);
     if (!fallback) continue;
     const stamp = stampOf(skillMd);
@@ -393,6 +397,17 @@ function skillMdPath(dir: string): string | undefined {
   if (isFile(upper)) return upper;
   const lower = join(dir, "skill.md");
   return isFile(lower) ? lower : undefined;
+}
+
+/** True when `path` resolves (through symlinks) to a regular file named
+ * SKILL.md or skill.md. Symlinked skill folders and roots stay valid. */
+export function isSkillFile(path: string): boolean {
+  try {
+    const real = realpathSync(path);
+    return /^skill\.md$/i.test(basename(real)) && statSync(real).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function readPrefix(path: string, max: number): Buffer | undefined {
