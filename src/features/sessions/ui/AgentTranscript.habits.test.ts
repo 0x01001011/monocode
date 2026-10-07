@@ -242,7 +242,10 @@ it.each(["current", "older"])(
     expect(completionTurn).not.toBeNull();
     expect(
       completionTurn.querySelector('[role="status"]')?.textContent,
-    ).toContain("Captain Awesome working");
+    ).toContain("Thinking…");
+    expect(
+      completionTurn.querySelector("[data-mono-work]")?.textContent,
+    ).toContain("Captain Awesome");
     const events = [
       { type: "reasoning.delta", text: "Checking the session report" },
       {
@@ -305,8 +308,11 @@ it("keeps a posted report actionable while the conversation is still running", a
   );
   const chat = container.querySelector('[data-transcript-turn="user"]')!;
   const habit = container.querySelector('[data-transcript-turn="report"]')!;
+  expect(chat.querySelector("[data-mono-work]")?.textContent).toContain(
+    "Captain Awesome",
+  );
   expect(chat.querySelector('[role="status"]')?.textContent).toContain(
-    "Captain Awesome working",
+    "Thinking…",
   );
   expect(chat.textContent).not.toContain(report.text);
   expect(habit.querySelector('[role="status"]')).toBeNull();

@@ -122,7 +122,11 @@ type CompletionBatch = {
   closed: boolean;
   results: Map<
     string,
-    { sessionId: string; value?: MonoSessionCompletionResult }
+    {
+      sessionId: string;
+      accepted: boolean;
+      value?: MonoSessionCompletionResult;
+    }
   >;
 };
 
@@ -143,6 +147,7 @@ export class MonoSessionCompletionBatches {
     origin: MonoCompletionOrigin,
     requestId: string,
     sessionId = requestId,
+    options: { awaitAcceptance?: boolean } = {},
   ) {
     const key = `${origin.monoId}:${origin.turn}`;
     let batch = this.batches.get(key);
@@ -159,7 +164,7 @@ export class MonoSessionCompletionBatches {
     // A rejected submission can be retried with the same receipt before this
     // launching turn ends. Wait for its new attempt, ignoring stale callbacks.
     if (!result || result.value) {
-      result = { sessionId };
+      result = { sessionId, accepted: !options.awaitAcceptance };
       batch.results.set(requestId, result);
     }
     const entry = result;
@@ -172,6 +177,13 @@ export class MonoSessionCompletionBatches {
         this.release(key, group);
       },
       {
+        // A terminal event can arrive before the CLI knows whether a launch
+        // was accepted. Keep it pending until that decision is confirmed.
+        accept: () => {
+          if (group.results.get(requestId) !== entry) return;
+          entry.accepted = true;
+          this.release(key, group);
+        },
         // A rejected CLI launch was already reported in the calling turn.
         discard: () => {
           if (group.results.get(requestId) !== entry) return;
@@ -207,7 +219,9 @@ export class MonoSessionCompletionBatches {
   private release(key: string, batch: CompletionBatch) {
     if (
       !batch.closed ||
-      [...batch.results.values()].some((result) => !result.value)
+      [...batch.results.values()].some(
+        (result) => !result.accepted || !result.value,
+      )
     )
       return;
     // Removing before delivery prevents reentrant or repeated callbacks from replaying it.

@@ -116,8 +116,10 @@ describe("groupMonoTurnItems", () => {
       note("reply", "The result."),
     ];
     expect(groupMonoTurnItems(blocks, { live: true })).toMatchObject([
-      { type: "block", block: { id: "intro" } },
-      { type: "activity", blocks: [{ id: "first" }, { id: "reply" }] },
+      {
+        type: "activity",
+        blocks: [{ id: "intro" }, { id: "first" }, { id: "reply" }],
+      },
     ]);
     expect(groupMonoTurnItems(blocks).at(-1)).toMatchObject({
       type: "block",
@@ -125,7 +127,7 @@ describe("groupMonoTurnItems", () => {
     });
   });
 
-  it("keeps the opening and trailing reply around one chronological work group", () => {
+  it("keeps the opening in the chronological work group and reveals only the trailing reply", () => {
     const items = groupMonoTurnItems([
       { id: "user", role: "user", text: "Inspect" },
       note("intro", "I will inspect the files."),
@@ -137,10 +139,14 @@ describe("groupMonoTurnItems", () => {
     ]);
     expect(items).toMatchObject([
       { type: "block", block: { id: "user" } },
-      { type: "block", block: { id: "intro" } },
       {
         type: "activity",
-        blocks: [{ id: "first" }, { id: "progress" }, { id: "second" }],
+        blocks: [
+          { id: "intro" },
+          { id: "first" },
+          { id: "progress" },
+          { id: "second" },
+        ],
       },
       { type: "block", block: { id: "answer" } },
       { type: "block", block: { id: "answer-more" } },
@@ -178,7 +184,12 @@ describe("groupMonoTurnItems", () => {
       groupMonoTurnItems([...blocks, shell("second", "in_progress")]).at(-1),
     ).toMatchObject({
       type: "activity",
-      blocks: [{ id: "first" }, { id: "progress" }, { id: "second" }],
+      blocks: [
+        { id: "intro" },
+        { id: "first" },
+        { id: "progress" },
+        { id: "second" },
+      ],
     });
   });
 
@@ -233,6 +244,46 @@ describe("groupMonoTurnItems", () => {
     expect(groupMonoTurnItems([])).toEqual([]);
     expect(groupMonoTurnItems([note("answer", "Hello.")])).toMatchObject([
       { type: "block", block: { id: "answer" } },
+    ]);
+    expect(
+      groupMonoTurnItems([note("answer", "Hello.")], { live: true }),
+    ).toMatchObject([{ type: "activity", blocks: [{ id: "answer" }] }]);
+  });
+
+  it("keeps a final answer visible when a status ping arrives after it", () => {
+    expect(
+      groupMonoTurnItems([
+        note("intro", "Checking."),
+        shell("first"),
+        note("answer", "Everything passed."),
+        status("reviewed"),
+      ]),
+    ).toMatchObject([
+      { type: "activity", blocks: [{ id: "intro" }, { id: "first" }] },
+      { type: "block", block: { id: "answer" } },
+      { type: "activity", blocks: [{ id: "reviewed" }] },
+    ]);
+  });
+
+  it("hides new streamed narration after a previously delivered background reply", () => {
+    const background: Block = {
+      ...shell("background"),
+      tool: { kind: "shell", status: "completed", background: true },
+    };
+    expect(
+      groupMonoTurnItems(
+        [
+          shell("first"),
+          note("yielded", "The task is still running."),
+          background,
+          note("update", "It finished."),
+        ],
+        { live: true },
+      ),
+    ).toMatchObject([
+      { type: "activity", blocks: [{ id: "first" }] },
+      { type: "block", block: { id: "yielded" } },
+      { type: "activity", blocks: [{ id: "background" }, { id: "update" }] },
     ]);
   });
 });
@@ -992,11 +1043,7 @@ describe("the settled work trail", () => {
     const items = groupTurnItems(turn, { settled: true });
     expect(items).toHaveLength(1);
     if (items[0]?.type !== "activity") throw new Error("expected activity");
-    expect(items[0].blocks.map((block) => block.id)).toEqual([
-      "a",
-      "ag",
-      "b",
-    ]);
+    expect(items[0].blocks.map((block) => block.id)).toEqual(["a", "ag", "b"]);
     expect(workSummaryLine(items[0].blocks)).toBe(
       "Ran 2 commands · Ran a subagent",
     );
@@ -1501,13 +1548,21 @@ describe("resolveToolCallDisplay", () => {
       path: "/Users/dev/project/src/App.tsx",
       fileName: "App.tsx",
     };
-    const result = resolveToolCallDisplay("Read", preview, "/Users/dev/project");
+    const result = resolveToolCallDisplay(
+      "Read",
+      preview,
+      "/Users/dev/project",
+    );
     expect(result.target).toBe("src/App.tsx");
     expect(result.filePath).toBe("/Users/dev/project/src/App.tsx");
   });
 
   it("falls back to the raw label when there is no recognisable action", () => {
-    const result = resolveToolCallDisplay("Thinking", undefined, "/Users/dev/project");
+    const result = resolveToolCallDisplay(
+      "Thinking",
+      undefined,
+      "/Users/dev/project",
+    );
     expect(result.action).toBeUndefined();
     expect(result.target).toBeUndefined();
   });
@@ -1545,7 +1600,11 @@ describe("resolveToolCallDisplay", () => {
       path: "/Users/dev/project/src/App.tsx",
       fileName: "App.tsx",
     };
-    const result = resolveToolCallDisplay("Write", preview, "/Users/dev/project");
+    const result = resolveToolCallDisplay(
+      "Write",
+      preview,
+      "/Users/dev/project",
+    );
     expect(result.previewMatchesFile).toBe(true);
   });
 

@@ -443,8 +443,8 @@ export function groupTurnItems(
 }
 
 /**
- * A Mono keeps its opening message and reply outside one compact work group.
- * Live narration stays in the group; settling reveals the trailing reply.
+ * A Mono keeps its process, including the opening message, in the activity
+ * trail. All live prose stays there; settling reveals the trailing reply.
  * Cards, notices and interjections keep their
  * own rows, and work resumed after a yielded reply does not absorb that reply.
  */
@@ -457,23 +457,21 @@ export function groupMonoTurnItems(
     ...blocks.filter((block) => block.role === "user"),
     ...blocks.filter((block) => block.role !== "user"),
   ]);
-  const first = items.findIndex(
+  const start = items.findIndex(
     (item) => item.type !== "block" || item.block.role !== "user",
   );
-  const opening = items[first];
-  const start =
-    opening?.type === "block" && isProseBlock(opening.block)
-      ? first + 1
-      : first;
   if (start < 0) return items;
   let end = -1;
   const boundary = yieldedAt(items);
-  for (let index = start; index < boundary; index += 1) {
+  for (let index = start; index < items.length; index += 1) {
     const item = items[index];
+    // Status pings after an answer are not new work that should absorb it.
     if (
-      item.type !== "block" ||
-      isToolBlock(item.block) ||
-      (options?.live && isProseBlock(item.block))
+      item.type !== "block"
+        ? item.blocks.some(
+            (block) => isToolBlock(block) || isThinkingBlock(block),
+          )
+        : isToolBlock(item.block) || (options?.live && isProseBlock(item.block))
     )
       end = index;
   }
@@ -489,6 +487,8 @@ export function groupMonoTurnItems(
     if (
       index >= start &&
       index <= end &&
+      // A reply already delivered before background work resumed stays put.
+      !(boundary < items.length && index === boundary - 1) &&
       (item.type !== "block" ||
         isProseBlock(item.block) ||
         isToolBlock(item.block))

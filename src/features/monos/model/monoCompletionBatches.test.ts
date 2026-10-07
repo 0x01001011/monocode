@@ -260,6 +260,85 @@ describe("Mono completion batches", () => {
     expect(ready).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])(
+    "does not deliver a rejected submission when the Mono becomes idle before acceptance (throws: %s)",
+    async (throws) => {
+      const ready = vi.fn();
+      const batches = new MonoSessionCompletionBatches(ready);
+      const rejected = batches.watch(origin, "request", "worker", {
+        awaitAcceptance: true,
+      });
+      let finish!: (accepted: boolean) => void;
+      let fail!: (error: Error) => void;
+      const acceptance = new Promise<boolean>((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
+      const submission = submitWithSettlement({
+        submit: () => acceptance,
+        onSettled: (outcome) =>
+          rejected(
+            monoSessionCompletionResult({
+              requestId: "request",
+              sessionId: "worker",
+              project: "/code/project",
+              prompt: "Review",
+              outcome,
+            }),
+          ),
+        rejectionMessage: "Could not start",
+      });
+      batches.closeInactive(() => false);
+      if (throws) fail(new Error("Session was not open"));
+      else finish(false);
+      expect(await submission).toBe(false);
+      // No delivery may start in the gap before the caller handles rejection.
+      expect(ready).not.toHaveBeenCalled();
+      rejected.discard();
+      rejected.accept();
+      rejected(result("worker", "failed"));
+      batches.closeInactive(() => false);
+      expect(ready).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "keeps an early %s event from an accepted submission and releases it after acceptance",
+    (status) => {
+      const ready = vi.fn();
+      const batches = new MonoSessionCompletionBatches(ready);
+      const watched = batches.watch(origin, "request", "worker", {
+        awaitAcceptance: true,
+      });
+      batches.closeInactive(() => false);
+      watched(result("worker", status));
+      expect(ready).not.toHaveBeenCalled();
+      watched.accept();
+      expect(ready).toHaveBeenCalledOnce();
+      expect(ready.mock.calls[0][1].monoSessionCompletion.status).toBe(status);
+      watched.accept();
+      expect(ready).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("releases an accepted sibling when an undecided submission is rejected", () => {
+    const ready = vi.fn();
+    const batches = new MonoSessionCompletionBatches(ready);
+    const rejected = batches.watch(origin, "rejected-request", "rejected", {
+      awaitAcceptance: true,
+    });
+    batches.watch(origin, "accepted-request", "accepted")(result("accepted"));
+    batches.closeInactive(() => false);
+    rejected(result("rejected", "failed"));
+    expect(ready).not.toHaveBeenCalled();
+    rejected.discard();
+    expect(ready).toHaveBeenCalledOnce();
+    expect(ready.mock.calls[0][1].monoSessionCompletion.sessionId).toBe(
+      "accepted",
+    );
+    expect(ready.mock.calls[0][1].text).not.toContain('"sessionId":"rejected"');
+  });
+
   it("lets a discarded request retry while ignoring the old callback and discard", () => {
     const ready = vi.fn();
     const batches = new MonoSessionCompletionBatches(ready);

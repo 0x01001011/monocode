@@ -10291,6 +10291,7 @@ function Workspace({
             { monoId, turn: sourceTurn },
             requestId,
             sessionId,
+            { awaitAcceptance: true },
           );
           return Object.assign(
             (outcome: ControlOutcome) =>
@@ -10306,7 +10307,7 @@ function Workspace({
                   ),
                 }),
               ),
-            { discard: settle.discard },
+            { accept: settle.accept, discard: settle.discard },
           );
         };
         const dismissCompletion = (sessionId: string) => {
@@ -10371,6 +10372,7 @@ function Workspace({
                   placement,
                   onSettled,
                 );
+                onSettled?.accept();
               } catch (error) {
                 onSettled?.discard();
                 throw error;
@@ -10478,6 +10480,7 @@ function Workspace({
                 onSettled?.discard();
                 throw new Error("Session could not accept the follow-up");
               }
+              onSettled?.accept();
               return { alreadySubmitted: false };
             },
             draft: async (id, prompt, requestId) => {
