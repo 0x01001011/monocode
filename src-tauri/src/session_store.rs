@@ -2185,13 +2185,15 @@ fn count_usage(
         "INSERT INTO skill_usage (project_key, invocation, count, last_used_at)
          VALUES (?1, ?2, 1, ?3)
          ON CONFLICT (project_key, invocation) DO UPDATE SET
-           count = count + 1, last_used_at = excluded.last_used_at",
+           count = count + 1,
+           last_used_at = MAX(last_used_at, excluded.last_used_at)",
     )?;
     let mut pair = conn.prepare(
         "INSERT INTO skill_pair (project_key, a, b, count, last_used_at)
          VALUES (?1, ?2, ?3, 1, ?4)
          ON CONFLICT (project_key, a, b) DO UPDATE SET
-           count = count + 1, last_used_at = excluded.last_used_at",
+           count = count + 1,
+           last_used_at = MAX(last_used_at, excluded.last_used_at)",
     )?;
     for (index, first) in distinct.iter().enumerate() {
         usage.execute(params![key, first, now])?;
@@ -2438,7 +2440,7 @@ fn backfill_usage_batch(conn: &Connection, batch: usize) -> rusqlite::Result<u32
     let cursor = usage_meta(&tx, USAGE_BACKFILL_CURSOR)?.unwrap_or_default();
     let sessions = tx
         .prepare(
-            "SELECT id, cwd, blocks_json FROM sessions
+            "SELECT id, cwd, blocks_json, updated_at FROM sessions
              WHERE id > ?1 ORDER BY id LIMIT ?2",
         )?
         .query_map(params![cursor, batch as i64], |row| {
@@ -2446,11 +2448,16 @@ fn backfill_usage_batch(conn: &Connection, batch: usize) -> rusqlite::Result<u32
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let now = now_millis();
-    for (id, cwd, blocks_json) in &sessions {
+    for (id, cwd, blocks_json, updated_at) in &sessions {
+        // Same rule as the live command: no project, no key.
+        if cwd.trim().is_empty() {
+            continue;
+        }
         let mut messages: Vec<Vec<String>> = Vec::new();
         if let Ok(Value::Array(blocks)) = serde_json::from_str::<Value>(blocks_json) {
             messages.extend(blocks.iter().filter_map(block_invocations));
@@ -2473,11 +2480,11 @@ fn backfill_usage_batch(conn: &Connection, batch: usize) -> rusqlite::Result<u32
             }
         }
         for names in &messages {
-            count_usage(&tx, cwd, names, now)?;
+            count_usage(&tx, cwd, names, *updated_at)?;
         }
     }
     match sessions.last() {
-        Some((last, _, _)) => set_usage_meta(&tx, USAGE_BACKFILL_CURSOR, last)?,
+        Some((last, ..)) => set_usage_meta(&tx, USAGE_BACKFILL_CURSOR, last)?,
         None => set_usage_meta(&tx, USAGE_BACKFILL_DONE, &now.to_string())?,
     }
     tx.commit()?;
@@ -4365,5 +4372,50 @@ mod tests {
             .unwrap();
         assert_eq!(recorded, 1);
         record_usage(&conn, "/p", &names(&["a"]), 1).unwrap();
+    }
+
+    #[test]
+    fn backfill_stamps_usage_with_session_time_and_live_records_stay_newer() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            let mut old = sample("old", "/p", "Old");
+            old.blocks = json!([{ "id": "u1", "role": "user", "text": "/a /b" }]);
+            upsert_session(&conn, &old).unwrap();
+            conn.execute("UPDATE sessions SET updated_at = 1234 WHERE id = 'old'", [])
+                .unwrap();
+        }
+        assert_eq!(backfill_usage(&store, 10).unwrap(), 1);
+        let conn = store.lock_conn().unwrap();
+        let snapshot = usage_snapshot(&conn, "/p").unwrap();
+        assert!(snapshot.usage.iter().all(|row| row.last_used_at == 1234));
+        assert_eq!(snapshot.pairs[0].last_used_at, 1234);
+
+        // A newer live record wins, and an older stamp never lowers it.
+        record_usage(&conn, "/p", &names(&["a", "b"]), 9_000).unwrap();
+        record_usage(&conn, "/p", &names(&["a", "b"]), 500).unwrap();
+        let snapshot = usage_snapshot(&conn, "/p").unwrap();
+        assert!(snapshot.usage.iter().all(|row| row.last_used_at == 9_000));
+        assert_eq!(snapshot.pairs[0].last_used_at, 9_000);
+        assert_eq!(snapshot.usage[0].count, 3);
+    }
+
+    #[test]
+    fn backfill_skips_sessions_without_a_project() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            conn.execute(
+                "INSERT INTO sessions (id, cwd, harness, model, runtime_mode, title,
+                   blocks_json, created_at, updated_at)
+                 VALUES ('s', '  ', 'codex', 'm', 'supervised', 'T',
+                   '[{\"id\":\"u\",\"role\":\"user\",\"text\":\"/a\"}]', 1, 1)",
+                [],
+            )
+            .unwrap();
+        }
+        assert_eq!(backfill_usage(&store, 10).unwrap(), 1);
+        let conn = store.lock_conn().unwrap();
+        assert!(usage_snapshot(&conn, "/").unwrap().usage.is_empty());
     }
 }
