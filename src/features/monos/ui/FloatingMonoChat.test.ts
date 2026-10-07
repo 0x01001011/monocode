@@ -122,6 +122,45 @@ it("shows this window's Mono with its status beneath the name", async () => {
   ).not.toBeNull();
 });
 
+it("lists every Mono beside the chat and switches or adds from there", async () => {
+  await render();
+  const rail = container.querySelector("[data-floating-mono-rail]")!;
+  const current = rail.querySelector('[aria-current="true"]');
+  expect(current?.getAttribute("aria-label")).toBe("Captain");
+  await act(async () =>
+    rail.querySelector<HTMLButtonElement>('[aria-label="Scout"]')!.click(),
+  );
+  expect(native.invoke).toHaveBeenCalledWith("mono_chat_switch", {
+    from: "first",
+    to: "second",
+  });
+  await act(async () =>
+    rail.querySelector<HTMLButtonElement>('[aria-label="New mono"]')!.click(),
+  );
+  expect(native.invoke).toHaveBeenCalledWith("mono_chat_action", {
+    monoId: "first",
+    action: { kind: "create" },
+  });
+});
+
+it("switches Monos inside the same frame, loading only the conversation", async () => {
+  await render();
+  const frame = container.querySelector("[data-floating-mono]");
+  const rail = container.querySelector("[data-floating-mono-rail]");
+  act(() => receive({ payload: { ...snapshot(1), session: null } }));
+  expect(container.querySelector("[data-floating-mono]")).toBe(frame);
+  expect(container.querySelector("[data-floating-mono-rail]")).toBe(rail);
+  expect(container.querySelector("header h1")?.textContent).toBe("Scout");
+  expect(
+    container.querySelector("[data-floating-mono-loader]")?.textContent,
+  ).toBe("Loading conversation…");
+  expect(
+    rail?.querySelector('[aria-current="true"]')?.getAttribute("aria-label"),
+  ).toBe("Scout");
+  act(() => receive({ payload: snapshot(1) }));
+  expect(container.textContent).toContain("Scout's conversation");
+});
+
 it("keeps one loading screen through initial lookup and roster updates until the conversation arrives", async () => {
   let initial!: (view: FloatingMonoView) => void;
   native.invoke.mockImplementation((command) => {
@@ -135,9 +174,9 @@ it("keeps one loading screen through initial lookup and roster updates until the
       expect(
         container.querySelector("[data-floating-mono-loading]"),
       ).not.toBeNull();
-      expect(container.querySelector('[role="status"]')?.textContent).toBe(
-        "Loading conversation…",
-      );
+      expect(
+        container.querySelector("[data-floating-mono-loader]")?.textContent,
+      ).toBe("Loading conversation…");
     }
     return Promise.resolve();
   });
@@ -153,7 +192,9 @@ it("keeps one loading screen through initial lookup and roster updates until the
   expect(container.querySelector("[data-floating-mono-loading]")).toBe(loader);
   act(() => receive({ payload: { ...opening, monos: [...monos] } }));
   expect(container.querySelector("[data-floating-mono-loading]")).toBe(loader);
-  expect(container.textContent).toBe("Loading conversation…");
+  expect(
+    container.querySelector("[data-floating-mono-loader]")?.textContent,
+  ).toBe("Loading conversation…");
 
   act(() => receive({ payload: snapshot(0) }));
   expect(container.querySelector("[data-floating-mono-loading]")).toBeNull();

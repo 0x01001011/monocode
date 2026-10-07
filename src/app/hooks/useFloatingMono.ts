@@ -14,12 +14,17 @@ import {
   type FloatingMonoRequest,
 } from "../../features/monos/model/floatingMono";
 
+type Host = Omit<FloatingMonoHost, "create"> & {
+  /** Add a Mono to the roster and return its id. */
+  create(): string;
+};
+
 /** The floating webview never boots providers or persists the live transcript. */
 export function useFloatingMono(
   sessions: Session[],
   rosterKey: string,
   enabled: boolean,
-  host: FloatingMonoHost,
+  host: Host,
 ) {
   const current = useRef({ sessions, enabled, host });
   current.current = { sessions, enabled, host };
@@ -77,7 +82,7 @@ export function useFloatingMono(
             try {
               const session = await deliverFloatingMonoRequest(
                 request,
-                current.current.host,
+                { ...current.current.host, create },
                 () =>
                   disposed
                     ? Promise.resolve(false)
@@ -97,7 +102,7 @@ export function useFloatingMono(
         draining = false;
       }
     };
-    const sync = () => {
+    const roster = () => {
       const monos = floatingMonoRoster(current.current.enabled);
       const hosted = monos.flatMap((mono) => {
         const session = current.current.sessions.find(
@@ -105,15 +110,22 @@ export function useFloatingMono(
         );
         return session ? [{ monoId: mono.id, busy: !!session.busy }] : [];
       });
+      return { monos, hosted, mascots: floatingMonoMenuMascots(monos) };
+    };
+    // The native side only opens Monos it has heard of. This runs inside a
+    // drain, so it must not wait on the sync queue, which waits on the drain.
+    const create = async (from: string) => {
+      const to = current.current.host.create();
+      await invoke("mono_chat_sync", roster());
+      await invoke("mono_chat_switch", { from, to });
+    };
+    const sync = () => {
+      const args = roster();
       syncing.current = syncing.current
         .catch(() => undefined)
         .then(async () => {
           if (disposed) return;
-          await invoke("mono_chat_sync", {
-            monos,
-            hosted,
-            mascots: floatingMonoMenuMascots(monos),
-          });
+          await invoke("mono_chat_sync", args);
           await drain();
           publish.current();
         })
