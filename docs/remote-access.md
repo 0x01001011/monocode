@@ -25,6 +25,24 @@ The forward binds to a temporary port on the laptop's loopback interface. Quitti
 
 **Remove** in Settings asks for confirmation and offers two choices. **Remove from this desktop only** deletes the saved connection and closes its forward. The host keeps running, and this desktop's device credential stays valid on it. **Revoke access and remove** first asks the host to revoke the credential this desktop is using, then removes the connection. It needs the machine to be reachable, and if revocation fails the connection is kept. Neither option stops the host, affects other desktops' credentials, or deletes sessions. Adding the same machine again reconnects its projects, tabs, and history.
 
+### Supported SSH setups
+
+Handled:
+
+- **Key authentication** through your SSH keys and agent. Restoring a lost tunnel happens in the background without prompts.
+- **Password, passphrase, one-time code and new host key prompts** appear in Settings while you connect. Each prompt waits up to 5 minutes for an answer.
+- **Tailscale SSH check mode and NetBird SSO.** When ssh prints a sign-in link, Settings shows it while ssh waits. Approve the request in the browser and setup continues. If a background tunnel restore needs sign-in, the machine shows **Approval needed** and **Reconnect** in Settings starts it again.
+- **ProxyJump, aliases and other `~/.ssh/config` options.** MonoCode runs your OpenSSH client with your normal config.
+- **MOTD and banner noise.** Login banners, MOTD text and logout messages around the setup output are ignored. A remote `sh` that rejects `-l` gets the setup script again without it.
+- **Changed host keys.** OpenSSH rejects the connection. Settings explains how to check the host and remove the old key with `ssh-keygen -R <host>`.
+- **Sleep, wake and network changes.** Going back online, or focusing the app after more than 2 minutes without contact, drops cached tunnels and checks every machine at once. A tunnel that stops answering 3 requests in a row is restarted.
+- **Backoff.** A failed tunnel restart waits 2 s, then twice as long after each failure, up to 60 s. The status check backs off from 6 s up to 30 s. **Reconnect** or a network change retries at once.
+
+Not handled yet:
+
+- **ControlMaster multiplexing.** MonoCode turns it off for its own ssh processes, so each tunnel opens its own connection, even if your SSH config enables it.
+- **Orphaned ssh processes after a crash.** If the desktop app crashes or is killed, its `ssh -N` forwards can keep running until you end them yourself. A normal quit closes them.
+
 ## Start a session
 
 1. In the project rail, click **+** next to Projects and choose **Open folder on a machine…**.
@@ -38,6 +56,18 @@ The **Explorer** sidebar and Go to File use the normal file views for host folde
 The composer’s **+** menu supports file and image attachments, Plan mode, and saved drafts when the host advertises these capabilities. Attachments are copied to the host’s private data directory before the turn or draft is recorded; each file is limited to 20 MiB. Image previews are restored from the host when you reopen a conversation. A draft can be sent or removed from its transcript card. Plan mode uses the host provider and produces a reviewable plan card whose Build action continues on the host with the session’s current model. Update older hosts to enable these menu actions.
 
 The slash picker lists the host's own skills (the project's and the host account's skill folders, including plugin skills), ranked by your usage of them in that project. The list refreshes at most every 30 seconds and keeps the last result if the host cannot be reached. Disabling a skill in Settings applies to that machine only. Choosing a skill inserts `/name`, and the prompt is sent to the host provider as typed. Skill instructions are not expanded on this computer. Features that read or run on this computer are not available in these projects: `@` file mentions, slash commands other than `/plan`, `/compact`, and the host's skills, operator mode, and terminals. Worktree deletion and the local worktree settings page are not available remotely yet. Plans from the transcript open normal read-only plan tabs. Source files stay on the host; this feature shares host-owned sessions, not working-directory synchronization.
+
+### Footer status
+
+The footer of a remote project shows a chip for the machine the project lives on, to the left of the terminal control. Local projects have no chip. It shows the machine's name, a coloured dot and one of these labels:
+
+- **Connected** (green): the machine answered its latest check. The chip also shows the round trip of that check, such as `40 ms`. It is rounded to the nearest 10 ms, so small changes do not redraw the chip, and it is left out when the answer came back in under 5 ms. The first check after the tunnel was dropped can include the time to set the tunnel up again.
+- **Connecting** (grey): no answer yet, or a retry is running.
+- **Offline** (grey): the machine did not answer. The status check keeps retrying with backoff.
+- **Needs sign-in** (amber): ssh is waiting for you to approve a sign-in or the machine refused the credentials. It is not retried until you act.
+- **Error** (red): a failure that retrying cannot fix, such as a changed host key or a missing `ssh`.
+
+The latency shows only while connected. Hover the chip for the reason, the round trip and the time of the last contact. Clicking the chip opens **Settings → Connections**. **Reconnect** appears next to the chip for Offline, Error and Needs sign-in. It retries that machine at once and drops its cached tunnel. The chip reads the same status check as the project rail, so it adds no requests of its own.
 
 ## Manual connection (advanced / development)
 
@@ -95,6 +125,8 @@ On Windows, the launcher is `%USERPROFILE%\.monocode-host\bin\monocode-host.cmd`
 The release workflow publishes `monocode-host-{darwin,linux}-{arm64,x64}.tar.gz`, `monocode-host-win32-{arm64,x64}.zip`, and their `.sha256` files alongside the desktop release. SSH setup downloads from the exact desktop version's GitHub release, then installs under `~/.monocode-host/runtime`.
 
 **Unreleased development builds:** automatic first-time installation and **Update Host** require host archives published for the desktop version. Release builds from v0.5.0 onward include the matching archives; an unreleased checkout may not have them. Until the matching release is available, use the manual development connection above. A missing archive produces an explicit error in Settings. No fallback to an arbitrary latest release or unverified download is used. Connecting does not automatically upgrade a running host. When an SSH host lacks Explorer or Changes, Settings → Connections offers **Update Host**. This downloads and verifies the matching package, restarts the host service, and reconnects using the existing device credential. The restart interrupts active agent turns; sessions and history remain on the host. URL connections must be updated on the host manually.
+
+**Deploying a development host:** **Update Host** installs the published release, so a checkout's host changes (a new workspace command, for example) never reach a machine that way, and the machine keeps its old host. To install the host built from this checkout, run `npm run host:deploy -- user@machine [--port 3774] [--dry-run] [--no-build]`. It detects the machine's OS and architecture, builds that package, uploads it over SSH, verifies its checksum and version, switches the launcher and service to it, and restarts the host, which interrupts active agent turns. The previous runtime stays on the machine and its path is saved in `~/.monocode-host/previous-runtime` for rollback. Do not use **Update Host** afterwards, because it installs the published release again.
 
 ## Scope of this first version
 
