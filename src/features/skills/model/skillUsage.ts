@@ -68,8 +68,9 @@ function usageKey(projectKey: string): string {
 
 /**
  * Imports usage from stored transcripts once per app session. Live recording
- * and snapshot reads wait for it so a message is never counted by both the
- * backfill and a live record.
+ * and snapshot reads wait for it, so messages sent from now on are counted
+ * only live. A message saved to a transcript while the very first backfill is
+ * still scanning may be counted by both; that small overcount is accepted.
  */
 function ensureBackfill(): Promise<void> {
   backfill ??= invoke<number>("skill_usage_backfill").then(
