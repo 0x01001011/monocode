@@ -987,6 +987,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                         linked_work_item_json, worktree_cwd, worktree_removed,
                         is_draft, automation_id, sidebar_hidden);",
     )?;
+    ensure_skill_usage_tables(conn)?;
     crate::notes::ensure_notes_table(conn)?;
     crate::reminders::ensure_table(conn)?;
     crate::automations::ensure_tables(conn)?;
@@ -2072,6 +2073,458 @@ pub(crate) fn now_millis() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or(0)
+}
+
+// ---------------------------------------------------------------------------
+// Skill usage. Additive tables only: an older build sharing this database never
+// reads or alters them.
+// ---------------------------------------------------------------------------
+
+fn ensure_skill_usage_tables(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS skill_usage (
+           project_key TEXT NOT NULL,
+           invocation TEXT NOT NULL,
+           count INTEGER NOT NULL,
+           last_used_at INTEGER NOT NULL,
+           PRIMARY KEY (project_key, invocation)
+         );
+         CREATE TABLE IF NOT EXISTS skill_pair (
+           project_key TEXT NOT NULL,
+           a TEXT NOT NULL,
+           b TEXT NOT NULL,
+           count INTEGER NOT NULL,
+           last_used_at INTEGER NOT NULL,
+           PRIMARY KEY (project_key, a, b)
+         );
+         CREATE TABLE IF NOT EXISTS skill_usage_meta (
+           key TEXT PRIMARY KEY,
+           value TEXT
+         );",
+    )
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageRow {
+    pub invocation: String,
+    pub count: u32,
+    pub last_used_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairRow {
+    pub a: String,
+    pub b: String,
+    pub count: u32,
+    pub last_used_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSnapshot {
+    pub usage: Vec<UsageRow>,
+    pub pairs: Vec<PairRow>,
+}
+
+/// Mirrors the frontend's `normalizeProjectPath`, so keys written here match
+/// the ones the UI asks for.
+fn normalize_project_key(path: &str) -> String {
+    let bytes = path.as_bytes();
+    let windows = (bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/'))
+        || path.starts_with("\\\\")
+        || path.starts_with("//")
+        || (cfg!(windows) && !path.starts_with('/'));
+    let slashed = if windows {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    };
+    let trimmed = slashed.trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn record_usage(
+    conn: &Connection,
+    project_key: &str,
+    invocations: &[String],
+    now: i64,
+) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    count_usage(&tx, project_key, invocations, now)?;
+    tx.commit()
+}
+
+/// Counts one message. Callers own the transaction.
+fn count_usage(
+    conn: &Connection,
+    project_key: &str,
+    invocations: &[String],
+    now: i64,
+) -> rusqlite::Result<()> {
+    let mut distinct: Vec<&str> = Vec::new();
+    for name in invocations {
+        let name = name.trim();
+        if !name.is_empty() && !distinct.contains(&name) {
+            distinct.push(name);
+        }
+    }
+    if distinct.is_empty() {
+        return Ok(());
+    }
+    let key = normalize_project_key(project_key);
+    let mut usage = conn.prepare(
+        "INSERT INTO skill_usage (project_key, invocation, count, last_used_at)
+         VALUES (?1, ?2, 1, ?3)
+         ON CONFLICT (project_key, invocation) DO UPDATE SET
+           count = count + 1, last_used_at = excluded.last_used_at",
+    )?;
+    let mut pair = conn.prepare(
+        "INSERT INTO skill_pair (project_key, a, b, count, last_used_at)
+         VALUES (?1, ?2, ?3, 1, ?4)
+         ON CONFLICT (project_key, a, b) DO UPDATE SET
+           count = count + 1, last_used_at = excluded.last_used_at",
+    )?;
+    for (index, first) in distinct.iter().enumerate() {
+        usage.execute(params![key, first, now])?;
+        for second in &distinct[index + 1..] {
+            let (a, b) = if first < second {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            pair.execute(params![key, a, b, now])?;
+        }
+    }
+    Ok(())
+}
+
+fn usage_snapshot(conn: &Connection, project_key: &str) -> rusqlite::Result<UsageSnapshot> {
+    let key = normalize_project_key(project_key);
+    let usage = conn
+        .prepare(
+            "SELECT invocation, count, last_used_at FROM skill_usage
+             WHERE project_key = ?1 ORDER BY invocation",
+        )?
+        .query_map([&key], |row| {
+            Ok(UsageRow {
+                invocation: row.get(0)?,
+                count: row.get(1)?,
+                last_used_at: row.get(2)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let pairs = conn
+        .prepare(
+            "SELECT a, b, count, last_used_at FROM skill_pair
+             WHERE project_key = ?1 ORDER BY a, b",
+        )?
+        .query_map([&key], |row| {
+            Ok(PairRow {
+                a: row.get(0)?,
+                b: row.get(1)?,
+                count: row.get(2)?,
+                last_used_at: row.get(3)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(UsageSnapshot { usage, pairs })
+}
+
+/// `/skill` tokens a user message typed, once each. Port of the composer's
+/// `skillNamesInText`: a token is a whole whitespace-delimited word
+/// `/name` or `/scope:name` (lowercase, digits, inner hyphens), outside a
+/// markdown blockquote line.
+fn skill_names_in_text(text: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let mut offset = 0;
+    for word in text.split_inclusive(char::is_whitespace) {
+        let start = offset;
+        offset += word.len();
+        let word = word.trim_end_matches(char::is_whitespace);
+        let Some(name) = word.strip_prefix('/') else {
+            continue;
+        };
+        if !is_skill_token_name(name) || names.iter().any(|seen| seen == name) {
+            continue;
+        }
+        if is_markdown_blockquote_position(text, start) {
+            continue;
+        }
+        names.push(name.to_string());
+    }
+    names
+}
+
+fn is_skill_token_name(name: &str) -> bool {
+    fn segment(part: &str) -> bool {
+        !part.is_empty()
+            && part.split('-').all(|piece| {
+                !piece.is_empty()
+                    && piece
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+            })
+    }
+    match name.split_once(':') {
+        Some((scope, rest)) => segment(scope) && segment(rest),
+        None => segment(name),
+    }
+}
+
+fn is_markdown_blockquote_position(text: &str, position: usize) -> bool {
+    let line_start = text[..position].rfind('\n').map_or(0, |index| index + 1);
+    let prefix = text[line_start..position].trim_start_matches(' ');
+    let indent = position - line_start - prefix.len();
+    indent <= 3 && prefix.starts_with('>')
+}
+
+/// Port of `isSkillTool`: an explicit skill kind, or an unlabeled tool whose
+/// title starts with the word "Skill".
+fn is_skill_tool(kind: &str, title: &str) -> bool {
+    let key = kind.trim().to_lowercase();
+    if key == "skill" || key == "skills" {
+        return true;
+    }
+    if !key.is_empty() && key != "other" {
+        return false;
+    }
+    strip_skill_word(title.trim()).is_some()
+}
+
+/// The text after a leading "Skill" word, matching `/^skill\b/i`.
+fn strip_skill_word(title: &str) -> Option<&str> {
+    let head = title.get(..5)?;
+    if !head.eq_ignore_ascii_case("skill") {
+        return None;
+    }
+    let rest = &title[5..];
+    match rest.chars().next() {
+        Some(ch) if ch.is_alphanumeric() || ch == '_' => None,
+        _ => Some(rest),
+    }
+}
+
+fn is_weak_tool_title(value: &str) -> bool {
+    const WEAK: &[&str] = &[
+        "tool",
+        "shell",
+        "bash",
+        "execute",
+        "command",
+        "skill",
+        "read",
+        "edit",
+        "search",
+        "find",
+        "grep",
+        "glob",
+        "fetch",
+        "other",
+        "write",
+        "delete",
+        "move",
+        "think",
+        "run",
+        "list",
+        "working",
+        "reading",
+        "editing",
+        "searching",
+        "writing",
+        "running",
+        "listing",
+        "fetching",
+        "thinking",
+        "deleting",
+        "moving",
+        "read file",
+        "edit file",
+        "write file",
+        "run command",
+        "ran command",
+        "unnamed",
+    ];
+    let lower = value.trim().to_lowercase();
+    WEAK.contains(&lower.as_str())
+        || lower
+            .strip_prefix("mcp:")
+            .is_some_and(|rest| rest.trim() == "tool")
+}
+
+/// The skill a persisted Skill tool block invoked. The transcript keeps the
+/// harness's title ("Skill /name"), which is where the name survives.
+fn skill_tool_name(block: &Value) -> Option<String> {
+    let tool = block.get("tool")?;
+    let kind = tool.get("kind").and_then(Value::as_str).unwrap_or("");
+    let title = tool
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if !is_skill_tool(kind, title) {
+        return None;
+    }
+    let rest = strip_skill_word(title).unwrap_or(title).trim();
+    let name = rest.trim_start_matches('/');
+    if name.is_empty()
+        || name.chars().count() > 80
+        || name.contains(char::is_whitespace)
+        || is_weak_tool_title(name)
+    {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// One entry per message: a typed user turn contributes its distinct `/name`
+/// tokens, a Skill tool call contributes its own name.
+fn block_invocations(block: &Value) -> Option<Vec<String>> {
+    match block.get("role").and_then(Value::as_str) {
+        Some("user") => {
+            if block.get("draft").and_then(Value::as_bool) == Some(true)
+                || block.get("internal").and_then(Value::as_bool) == Some(true)
+            {
+                return None;
+            }
+            let names = skill_names_in_text(block.get("text").and_then(Value::as_str)?);
+            (!names.is_empty()).then_some(names)
+        }
+        Some("tool") => skill_tool_name(block).map(|name| vec![name]),
+        _ => None,
+    }
+}
+
+const USAGE_BACKFILL_BATCH: usize = 25;
+const USAGE_BACKFILL_DONE: &str = "backfill_done";
+const USAGE_BACKFILL_CURSOR: &str = "backfill_cursor";
+
+fn usage_meta(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT value FROM skill_usage_meta WHERE key = ?1",
+        [key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(Option::flatten)
+}
+
+fn set_usage_meta(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO skill_usage_meta (key, value) VALUES (?1, ?2)
+         ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+/// Counts one batch of sessions after the stored cursor. The cursor moves in
+/// the same transaction as the counts, so every session is counted exactly once
+/// even if the app quits mid-way or two callers interleave. Returns the number
+/// of sessions scanned, 0 once everything is done.
+fn backfill_usage_batch(conn: &Connection, batch: usize) -> rusqlite::Result<u32> {
+    let tx = conn.unchecked_transaction()?;
+    if usage_meta(&tx, USAGE_BACKFILL_DONE)?.is_some() {
+        return Ok(0);
+    }
+    let cursor = usage_meta(&tx, USAGE_BACKFILL_CURSOR)?.unwrap_or_default();
+    let sessions = tx
+        .prepare(
+            "SELECT id, cwd, blocks_json FROM sessions
+             WHERE id > ?1 ORDER BY id LIMIT ?2",
+        )?
+        .query_map(params![cursor, batch as i64], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let now = now_millis();
+    for (id, cwd, blocks_json) in &sessions {
+        let mut messages: Vec<Vec<String>> = Vec::new();
+        if let Ok(Value::Array(blocks)) = serde_json::from_str::<Value>(blocks_json) {
+            messages.extend(blocks.iter().filter_map(block_invocations));
+        }
+        // Mono transcripts live in their own table, with `blocks_json` emptied.
+        let mono_blocks = tx
+            .prepare(
+                "SELECT block_json FROM mono_blocks
+                 WHERE session_id = ?1 ORDER BY seq",
+            )?
+            .query_map([id], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for block_json in mono_blocks {
+            if let Some(names) = serde_json::from_str::<Value>(&block_json)
+                .ok()
+                .as_ref()
+                .and_then(block_invocations)
+            {
+                messages.push(names);
+            }
+        }
+        for names in &messages {
+            count_usage(&tx, cwd, names, now)?;
+        }
+    }
+    match sessions.last() {
+        Some((last, _, _)) => set_usage_meta(&tx, USAGE_BACKFILL_CURSOR, last)?,
+        None => set_usage_meta(&tx, USAGE_BACKFILL_DONE, &now.to_string())?,
+    }
+    tx.commit()?;
+    Ok(sessions.len() as u32)
+}
+
+/// Runs the one-shot backfill, taking the database lock per batch so saving a
+/// session never waits for a whole history scan.
+fn backfill_usage(store: &SessionStore, batch: usize) -> Result<u32, String> {
+    let mut scanned = 0u32;
+    loop {
+        let done = {
+            let conn = store.lock_conn()?;
+            backfill_usage_batch(&conn, batch).map_err(|e| e.to_string())?
+        };
+        if done == 0 {
+            return Ok(scanned);
+        }
+        scanned = scanned.saturating_add(done);
+    }
+}
+
+#[tauri::command(async)]
+pub fn skill_usage_record(
+    store: State<'_, SessionStore>,
+    project_key: String,
+    invocations: Vec<String>,
+) -> Result<(), String> {
+    if project_key.trim().is_empty() {
+        return Err("project key is required".into());
+    }
+    let conn = store.lock_conn()?;
+    record_usage(&conn, &project_key, &invocations, now_millis()).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn skill_usage_snapshot(
+    store: State<'_, SessionStore>,
+    project_key: String,
+) -> Result<UsageSnapshot, String> {
+    let conn = store.lock_conn()?;
+    usage_snapshot(&conn, &project_key).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn skill_usage_backfill(store: State<'_, SessionStore>) -> Result<u32, String> {
+    backfill_usage(&store, USAGE_BACKFILL_BATCH)
 }
 
 #[cfg(test)]
@@ -3714,5 +4167,203 @@ mod tests {
         .unwrap();
         assert!(result.hits.is_empty());
         assert!(!result.truncated);
+    }
+
+    fn usage_counts(snapshot: &UsageSnapshot) -> Vec<(String, u32)> {
+        snapshot
+            .usage
+            .iter()
+            .map(|row| (row.invocation.clone(), row.count))
+            .collect()
+    }
+
+    fn pair_counts(snapshot: &UsageSnapshot) -> Vec<(String, String, u32)> {
+        snapshot
+            .pairs
+            .iter()
+            .map(|row| (row.a.clone(), row.b.clone(), row.count))
+            .collect()
+    }
+
+    fn names(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn record_counts_once_per_message_and_pairs() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        record_usage(&conn, "/p", &names(&["a", "b", "a"]), 1_000).unwrap();
+        let snapshot = usage_snapshot(&conn, "/p").unwrap();
+        assert_eq!(
+            usage_counts(&snapshot),
+            vec![("a".to_string(), 1), ("b".to_string(), 1)]
+        );
+        assert_eq!(
+            pair_counts(&snapshot),
+            vec![("a".to_string(), "b".to_string(), 1)]
+        );
+        assert!(snapshot.usage.iter().all(|row| row.last_used_at == 1_000));
+        assert_eq!(snapshot.pairs[0].last_used_at, 1_000);
+
+        // The reversed order maps onto the same pair row.
+        record_usage(&conn, "/p", &names(&["b", "a"]), 2_000).unwrap();
+        let snapshot = usage_snapshot(&conn, "/p").unwrap();
+        assert_eq!(
+            usage_counts(&snapshot),
+            vec![("a".to_string(), 2), ("b".to_string(), 2)]
+        );
+        assert_eq!(
+            pair_counts(&snapshot),
+            vec![("a".to_string(), "b".to_string(), 2)]
+        );
+        assert_eq!(snapshot.pairs[0].last_used_at, 2_000);
+
+        // One invocation (or none) records usage only.
+        record_usage(&conn, "/p", &names(&["c", "c"]), 3_000).unwrap();
+        record_usage(&conn, "/p", &[], 3_000).unwrap();
+        let snapshot = usage_snapshot(&conn, "/p").unwrap();
+        assert_eq!(snapshot.pairs.len(), 1);
+        assert_eq!(
+            snapshot
+                .usage
+                .iter()
+                .find(|r| r.invocation == "c")
+                .unwrap()
+                .count,
+            1
+        );
+    }
+
+    #[test]
+    fn snapshot_scoped_by_project_key() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        record_usage(&conn, "/one", &names(&["a", "b"]), 1).unwrap();
+        record_usage(&conn, "/two/", &names(&["x"]), 1).unwrap();
+        record_usage(&conn, "remote://box/home/me", &names(&["r"]), 1).unwrap();
+
+        let one = usage_snapshot(&conn, "/one").unwrap();
+        assert_eq!(one.usage.len(), 2);
+        assert_eq!(one.pairs.len(), 1);
+        // Keys are normalized the way the frontend normalizes project paths.
+        let two = usage_snapshot(&conn, "/two").unwrap();
+        assert_eq!(usage_counts(&two), vec![("x".to_string(), 1)]);
+        let remote = usage_snapshot(&conn, "remote://box/home/me").unwrap();
+        assert_eq!(usage_counts(&remote), vec![("r".to_string(), 1)]);
+        let none = usage_snapshot(&conn, "/nowhere").unwrap();
+        assert!(none.usage.is_empty() && none.pairs.is_empty());
+    }
+
+    #[test]
+    fn skill_tokens_follow_the_composer_rules() {
+        assert_eq!(
+            skill_names_in_text("/a  and /b:c-d and /a\n/e"),
+            names(&["a", "b:c-d", "e"])
+        );
+        assert_eq!(skill_names_in_text("x\n/e"), names(&["e"]));
+        assert!(skill_names_in_text("see /usr/bin and a/b and /A and /a_b").is_empty());
+        assert!(skill_names_in_text("> /quoted\n   > /quoted").is_empty());
+        assert_eq!(skill_names_in_text("/a, /b"), names(&["b"]));
+    }
+
+    #[test]
+    fn backfill_reads_typed_slash_tokens_and_skill_tool_blocks_once() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            let mut first = sample("s1", "/p/", "One");
+            first.blocks = json!([
+                { "id": "u1", "role": "user", "text": "/a /b please /a" },
+                { "id": "u2", "role": "user", "text": "> /quoted and /usr/bin" },
+                { "id": "u3", "role": "user", "text": "/draft", "draft": true },
+                { "id": "t1", "role": "tool", "tool": { "kind": "skill", "title": "Skill /d" } },
+                { "id": "t2", "role": "tool", "tool": { "kind": "other", "title": "Skill e" } },
+                { "id": "t3", "role": "tool", "tool": { "kind": "execute", "title": "Skill /f" } },
+                { "id": "t4", "role": "tool", "tool": { "kind": "skill", "title": "Skill" } }
+            ]);
+            upsert_session(&conn, &first).unwrap();
+            let mut second = sample("s2", "/q", "Two");
+            second.blocks = json!([{ "id": "u1", "role": "user", "text": "/a" }]);
+            upsert_session(&conn, &second).unwrap();
+            let mut mono = sample("s3", "/p", "Mono");
+            mono.blocks = json!([{ "id": "m1", "role": "user", "text": "/m /a" }]);
+            upsert_session(&conn, &mono).unwrap();
+            crate::mono_transcript::migrate_transcript(&conn, "s3").unwrap();
+        }
+
+        // Two sessions per batch exercises more than one batch.
+        assert_eq!(backfill_usage(&store, 2).unwrap(), 3);
+        let check = || {
+            let conn = store.lock_conn().unwrap();
+            let p = usage_snapshot(&conn, "/p").unwrap();
+            assert_eq!(
+                usage_counts(&p),
+                vec![
+                    ("a".to_string(), 2),
+                    ("b".to_string(), 1),
+                    ("d".to_string(), 1),
+                    ("e".to_string(), 1),
+                    ("m".to_string(), 1),
+                ]
+            );
+            assert_eq!(
+                pair_counts(&p),
+                vec![
+                    ("a".to_string(), "b".to_string(), 1),
+                    ("a".to_string(), "m".to_string(), 1),
+                ]
+            );
+            let q = usage_snapshot(&conn, "/q").unwrap();
+            assert_eq!(usage_counts(&q), vec![("a".to_string(), 1)]);
+        };
+        check();
+
+        // Already done: nothing is scanned and nothing changes.
+        assert_eq!(backfill_usage(&store, 2).unwrap(), 0);
+        check();
+    }
+
+    #[test]
+    fn migrating_the_previous_schema_keeps_existing_tables_and_data() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        upsert_session(&conn, &sample("s1", "/tmp/a", "Keep me")).unwrap();
+        let schema = |conn: &Connection| -> Vec<(String, String)> {
+            conn.prepare(
+                "SELECT name, sql FROM sqlite_master
+                 WHERE name NOT LIKE 'skill_%' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL
+                 ORDER BY name",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+        };
+        let before = schema(&conn);
+        // Roll the database back to the schema an older build left behind.
+        conn.execute_batch(
+            "DROP TABLE skill_usage; DROP TABLE skill_pair; DROP TABLE skill_usage_meta;
+             DELETE FROM schema_migrations WHERE version >= 19;",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        assert_eq!(schema(&conn), before);
+        let title: String = conn
+            .query_row("SELECT title FROM sessions WHERE id = 's1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(title, "Keep me");
+        let recorded: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 19",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(recorded, 1);
+        record_usage(&conn, "/p", &names(&["a"]), 1).unwrap();
     }
 }
