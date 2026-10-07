@@ -159,6 +159,28 @@ describe("remote skill catalogs", () => {
     expect(catalog[0]?.kind).toBe("builtin");
   });
 
+  it("re-requests the whole list when an unchanged answer has no cache, never an empty catalog", async () => {
+    const context = {
+      harness: "claude",
+      cwd: "remote://env-a/home/me/no-cache",
+    } as const;
+    answer(
+      { unchanged: true, revision: 9 },
+      { revision: 9, skills: [remoteSkill("env-a", "ship")] },
+    );
+    expect(fileNames(await loadSkills(context))).toEqual(["ship"]);
+    expect(runner).toHaveBeenCalledTimes(2);
+    // Both calls were full requests: nothing was cached to revalidate.
+    expect(runner).toHaveBeenNthCalledWith(1, "list_skills", { cwd: context.cwd });
+    expect(runner).toHaveBeenNthCalledWith(2, "list_skills", { cwd: context.cwd });
+
+    const other = { harness: "claude", cwd: "remote://env-a/home/me/odd-host" } as const;
+    answer({ unchanged: true, revision: 1 }, { unchanged: true, revision: 1 });
+    const catalog = await loadSkills(other);
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0]?.kind).toBe("builtin");
+  });
+
   it("scopes disabled skill paths to the machine that owns them", async () => {
     const hostPath = "/home/me/.claude/skills/ship/SKILL.md";
     runner.mockImplementation(async (_cmd, args: { cwd: string }) => ({

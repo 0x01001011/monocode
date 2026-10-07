@@ -199,3 +199,20 @@ it("omits sinceRevision when there is none and passes an unchanged answer throug
     args: { cwd: "/home/me/repo" },
   });
 });
+
+it("round-trips a Windows host skill path through the remote path", async () => {
+  const hostPath = "C:\\Users\\x\\.claude\\skills\\a\\SKILL.md";
+  remoteRequest.mockResolvedValueOnce({
+    revision: 3,
+    skills: [{ name: "a", description: "", path: hostPath, scope: "user", source: "claude" }],
+  });
+  const result = (await listRemoteSkills("remote://env/C:/work/repo")) as {
+    skills: { path: string }[];
+  };
+  const remote = result.skills[0].path;
+  expect(remote).toBe("remote://env/C:/Users/x/.claude/skills/a/SKILL.md");
+  expect(parseRemotePath(remote)).toMatchObject({
+    environmentId: "env",
+    hostPath: hostPath.replace(/\\/g, "/"),
+  });
+});

@@ -538,7 +538,7 @@ export function Composer({
     harness,
     executionCwd: skillsCwd,
     sessionId,
-    pickerOpen,
+    pickerOpen: pickerOpen && !(remote && hasNativeCommands(harness)),
   });
   const skills = skillCatalog.skills;
   const slashItems = useMemo(

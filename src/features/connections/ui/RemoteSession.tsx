@@ -37,6 +37,7 @@ import {
   savePendingRemoteCommand,
   useRemoteMachines,
 } from "../model/connections";
+import { recordSkillsUsedInTurn } from "../../skills/model/skills";
 import { parseRemotePath, remotePath, remoteProjectFor, type RemoteProject } from "../model/remoteProjects";
 import {
   carryModelSettings,
@@ -580,6 +581,13 @@ function ConnectedRemoteSession({
         machine.environmentId,
         command.commandId,
       );
+      // Counted once the host has accepted the message, never while it is
+      // only prepared, failed, or waiting to be retried.
+      if (command.type === "send")
+        void recordSkillsUsedInTurn(command.text, {
+          harness: configuration.harness,
+          cwd: remotePath(machine.environmentId, executionCwd),
+        });
       if (!alive.current || version !== bindingVersion.current) return receipt;
       if (command.type === "draft") {
         // Accepted drafts are actionable before the next snapshot arrives.

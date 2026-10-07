@@ -9,6 +9,8 @@ import {
 } from "../../sessions/ui/SessionPane";
 import type { Block, Session } from "../../sessions/model/session";
 import type { AgentModel } from "../../sessions/model/models";
+import { invalidateSkills } from "../../skills/model/skills";
+import { resetSkillUsageForTests } from "../../skills/model/skillUsage";
 import { rememberRemoteProject } from "../model/remoteProjects";
 import { preloadRemoteSession } from "./RemoteSession";
 import { rememberRemoteSession, remoteSessionFor } from "../model/connections";
@@ -122,6 +124,9 @@ let currentBranch: string;
 let createdBranch: string | undefined;
 let createdWorktree: string | undefined;
 let deletedSessions: string[];
+let hostSkills: string[];
+let skillRevision = 0;
+let sendFailure: string | undefined;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -137,6 +142,11 @@ beforeEach(() => {
   createdBranch = undefined;
   createdWorktree = undefined;
   deletedSessions = [];
+  hostSkills = [];
+  sendFailure = undefined;
+  skillRevision += 1;
+  invalidateSkills();
+  resetSkillUsageForTests();
   catalog = { models: { codex: [gpt] }, errors: {} };
   providers = ["codex"];
   projectKey = rememberRemoteProject("env", {
@@ -157,6 +167,17 @@ beforeEach(() => {
       : undefined;
     const operation = workspace?.command ?? method;
     const commandParams = workspace?.args ?? params;
+    if (operation === "list_skills")
+      return {
+        revision: skillRevision,
+        skills: hostSkills.map((name) => ({
+          name,
+          description: `${name} skill`,
+          path: `/home/me/.claude/skills/${name}/SKILL.md`,
+          scope: "user",
+          source: "claude",
+        })),
+      };
     if (method === "environment.describe")
       return {
         protocolVersion: 1,
@@ -243,6 +264,7 @@ beforeEach(() => {
       return { offset: (params as { size: number }).size };
     if (method === "commands.dispatch") {
       if (dispatchDelay) await dispatchDelay;
+      if (sendFailure && params.type === "send") throw new Error(sendFailure);
       return dispatch(params);
     }
     if (method === "sessions.delete") {
@@ -1073,4 +1095,36 @@ it("ignores a late create response after its tab has switched conversations", as
   expect(remoteSessionFor("shell")).toBe("different-session");
   expect(commands.map((command) => command.type)).toEqual(["create"]);
   expect(container.textContent).not.toContain("Pending first message");
+});
+
+const usageRecords = () =>
+  vi
+    .mocked(invoke)
+    .mock.calls.filter(([command]) => command === "skill_usage_record")
+    .map(([, args]) => args);
+
+it("records a delivered remote skill message once under the remote project key", async () => {
+  hostSkills = ["ship"];
+  await render();
+  await send("/ship the release");
+  expect(commands.map((command) => command.type)).toEqual(["create", "send"]);
+  expect(usageRecords()).toEqual([
+    { projectKey: "remote://env/home/me/repo", invocations: ["ship"] },
+  ]);
+});
+
+it("records nothing when the host rejects the message", async () => {
+  hostSkills = ["ship"];
+  sendFailure = "host is down";
+  await render();
+  await send("/ship the release");
+  expect(usageRecords()).toEqual([]);
+});
+
+it("records nothing for a typed skill that is not in the remote catalog", async () => {
+  hostSkills = ["ship"];
+  await render();
+  await send("/nope the release");
+  expect(commands.at(-1)).toMatchObject({ type: "send" });
+  expect(usageRecords()).toEqual([]);
 });
