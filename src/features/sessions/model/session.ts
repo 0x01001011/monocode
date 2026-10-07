@@ -52,6 +52,15 @@ export type BlockRole =
   | "system"
   | "handoff";
 
+/** A session created by a Mono during this conversation turn. */
+export type MonoSpawnedSession = {
+  sessionId: string;
+  cwd: string;
+  title: string;
+  harness: HarnessId;
+  model: string;
+};
+
 export type TaskListItemStatus =
   "pending" | "in_progress" | "completed" | "cancelled";
 
@@ -356,6 +365,8 @@ export type Block = {
   internal?: boolean;
   /** Hidden app prompt that starts a separate completion report in a Mono chat. */
   monoSessionCompletion?: MonoSessionCompletion;
+  /** Accepted session launches, kept on the originating user turn. */
+  monoSpawnedSessions?: MonoSpawnedSession[];
   handoff?: HandoffMeta;
   secondOpinion?: SecondOpinionMeta;
   /** Independent read-only side conversations anchored to this user turn. */

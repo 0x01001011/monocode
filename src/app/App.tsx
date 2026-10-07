@@ -92,6 +92,12 @@ import { TitleBar, type Tab as TitleTab } from "./shell/TitleBar";
 import { WindowControls } from "./shell/WindowControls";
 import { MonoDetails } from "../features/monos/ui/MonoDetails";
 import { MonoActivityPanel } from "../features/monos/ui/MonoActivityPanel";
+import { MonoSessionsPanel } from "../features/monos/ui/MonoSessionsPanel";
+import {
+  monoSpawnedSessions,
+  recordMonoSpawnedSession,
+} from "../features/monos/model/monoSpawnedSessions";
+import { groupMonoTurns } from "../features/sessions/model/transcriptActivity";
 import {
   resolveMonoActivity,
   type MonoActivitySelection,
@@ -1066,10 +1072,25 @@ function Workspace({
   const [monoDetailsOpen, setMonoDetailsOpen] = useState(false);
   const [monoActivity, setMonoActivity] =
     useState<MonoActivitySelection | null>(null);
+  const [monoSessions, setMonoSessions] =
+    useState<MonoActivitySelection | null>(null);
   const onShowMonoActivity = useCallback(
     (sessionId: string, turnId: string, blocks: Block[]) => {
       setMonoDetailsOpen(false);
+      setMonoSessions(null);
       setMonoActivity((previous) =>
+        previous?.sessionId === sessionId && previous.turnId === turnId
+          ? null
+          : { sessionId, turnId, blocks },
+      );
+    },
+    [],
+  );
+  const onShowMonoSessions = useCallback(
+    (sessionId: string, turnId: string, blocks: Block[]) => {
+      setMonoDetailsOpen(false);
+      setMonoActivity(null);
+      setMonoSessions((previous) =>
         previous?.sessionId === sessionId && previous.turnId === turnId
           ? null
           : { sessionId, turnId, blocks },
@@ -1085,6 +1106,7 @@ function Workspace({
     monoViewIdRef.current = null;
     setMonoViewId(null);
     setMonoActivity(null);
+    setMonoSessions(null);
   }, []);
   const [composerFocused, setComposerFocused] = useState(() => {
     if (windowTransfer) return true;
@@ -4423,6 +4445,7 @@ function Workspace({
   const onOpenMono = useCallback(
     async (monoId: string) => {
       setMonoActivity(null);
+      setMonoSessions(null);
       workspaceNavigation.cancel();
       const request = ++monoViewRequest.current;
       setSearchViewOpen(false);
@@ -4585,6 +4608,17 @@ function Workspace({
       replaceBlankPaneWithSession,
       revealLinkedSessionUpdate,
     ],
+  );
+
+  const onOpenMonoLaunchedSession = useCallback(
+    async (sessionId: string) => {
+      const session = await ensureOpenSession(sessionId);
+      if (!session) throw new Error("This session is no longer available.");
+      closeMonoView();
+      setSidebarTab("sessions", session.cwd);
+      await onSelectHistorySession(sessionId);
+    },
+    [ensureOpenSession, closeMonoView, setSidebarTab, onSelectHistorySession],
   );
 
   const openReminderSession = useCallback(
@@ -10280,6 +10314,10 @@ function Workspace({
         const canAccessProject = (cwd: string) =>
           canAccessAgentAppProject(source, cwd, sourceMono?.projects);
         const sourceTurn = turnGen.current.get(source.id) ?? 0;
+        const sourceTurns = isMonoSession(source.id)
+          ? groupMonoTurns(source.blocks)
+          : [];
+        const sourceTurnId = sourceTurns[sourceTurns.length - 1]?.[0]?.id;
         const monitorCompletion = (
           monoId: string,
           sessionId: string,
@@ -10330,6 +10368,34 @@ function Workspace({
           payload.input,
           {
             start: async (launch, id, placement, notifyMonoId) => {
+              const rememberLaunch = () => {
+                if (!sourceTurnId) return;
+                const created =
+                  sessionsRef.current.find((session) => session.id === id) ??
+                  existing;
+                const next = sessionsRef.current.map((session) =>
+                  session.id === source.id
+                    ? recordMonoSpawnedSession(session, sourceTurnId, {
+                        sessionId: id,
+                        cwd: created?.cwd ?? launch.cwd,
+                        title:
+                          created?.title ?? launch.prompt.trim().slice(0, 300),
+                        harness: created?.harness ?? launch.harness,
+                        model:
+                          created?.model ??
+                          resolveModel(launch.harness, launch.model).id,
+                      })
+                    : session,
+                );
+                if (
+                  next.every(
+                    (session, index) => session === sessionsRef.current[index],
+                  )
+                )
+                  return;
+                sessionsRef.current = next;
+                setSessions(next);
+              };
               const open = sessionsRef.current.find(
                 (session) => session.id === id,
               );
@@ -10346,14 +10412,17 @@ function Workspace({
                   throw new Error(
                     "Request ID was already used for another session launch",
                   );
+                rememberLaunch();
                 return;
               }
               if (
                 existing?.blocks.some(
                   (block) => block.role === "user" && !block.draft,
                 )
-              )
+              ) {
+                rememberLaunch();
                 return;
+              }
               if (existing && sessionDraftBlock(existing))
                 throw new Error("Session ID already has a different draft");
               const onSettled = notifyMonoId
@@ -10372,6 +10441,7 @@ function Workspace({
                   placement,
                   onSettled,
                 );
+                rememberLaunch();
                 onSettled?.accept();
               } catch (error) {
                 onSettled?.discard();
@@ -11951,12 +12021,17 @@ function Workspace({
     monoActivity,
     monoViewSession,
   );
-  const monoSidebarOpen = monoDetailsOpen || !!selectedMonoActivity;
+  const selectedMonoSessions = resolveMonoActivity(
+    monoSessions,
+    monoViewSession,
+  );
+  const monoSidebarOpen =
+    monoDetailsOpen || !!selectedMonoActivity || !!selectedMonoSessions;
   const monoDetailsPanel =
     monoViewMono && monoViewSession ? (
       <MonoDetails
         key={monoViewMono.id}
-        open={monoDetailsOpen && !selectedMonoActivity}
+        open={monoDetailsOpen && !selectedMonoActivity && !selectedMonoSessions}
         monoId={monoViewMono.id}
         cwd={monoViewSession.cwd}
         agent={monoLook(monoViewMono)}
@@ -12000,6 +12075,19 @@ function Workspace({
         windowControls={monoCovers && !IS_MAC ? <WindowControls /> : undefined}
       />
     ) : null;
+  const monoSessionsPanel =
+    monoViewMono && selectedMonoSessions ? (
+      <MonoSessionsPanel
+        key={`${monoViewMono.id}:${selectedMonoSessions.turnId}`}
+        agent={monoLook(monoViewMono)}
+        launches={monoSpawnedSessions(selectedMonoSessions.blocks)}
+        sessions={sessions}
+        history={history}
+        onOpenSession={onOpenMonoLaunchedSession}
+        onClose={() => setMonoSessions(null)}
+        windowControls={monoCovers && !IS_MAC ? <WindowControls /> : undefined}
+      />
+    ) : null;
   const monoRail = useMemo(() => {
     const states = new Map<string, MonoState>();
     const unseen = new Set<string>();
@@ -12039,6 +12127,7 @@ function Workspace({
         monoCovers && !monoDetailsOpen
           ? () => {
               setMonoActivity(null);
+              setMonoSessions(null);
               setMonoDetailsOpen(true);
             }
           : undefined
@@ -12428,6 +12517,10 @@ function Workspace({
                                       monoActivityTurnId={
                                         selectedMonoActivity?.turnId
                                       }
+                                      onShowMonoSessions={onShowMonoSessions}
+                                      monoSessionsTurnId={
+                                        selectedMonoSessions?.turnId
+                                      }
                                     />
                                   </div>
                                 );
@@ -12466,6 +12559,7 @@ function Workspace({
                   </div>
                   {monoCovers ? monoDetailsPanel : null}
                   {monoCovers ? monoActivityPanel : null}
+                  {monoCovers ? monoSessionsPanel : null}
                 </div>
               </div>
               {searchViewOpen ? (

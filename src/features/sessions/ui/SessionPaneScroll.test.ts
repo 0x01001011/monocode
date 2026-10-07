@@ -162,6 +162,52 @@ it("routes a Mono footer activity click to its session and selected turn", () =>
   expect(container.querySelector('[data-turn-actions] [aria-label="Hide activity"]')?.getAttribute("aria-expanded")).toBe("true");
 });
 
+it("routes launched sessions from a Mono footer to its session and turn", () => {
+  const pane = props();
+  pane.session.blocks[0] = {
+    ...pane.session.blocks[0],
+    monoSpawnedSessions: [
+      {
+        sessionId: "app-review",
+        cwd: "/repo",
+        title: "Review",
+        harness: "codex",
+        model: "gpt-6",
+      },
+    ],
+  };
+  const onShowMonoSessions = vi.fn();
+  act(() =>
+    root.render(createElement(SessionPane, { ...pane, onShowMonoSessions })),
+  );
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '[data-turn-actions] [aria-label="Show sessions"]',
+      )!
+      .click(),
+  );
+  expect(onShowMonoSessions).toHaveBeenCalledWith(
+    "chat",
+    "user",
+    pane.session.blocks,
+  );
+  act(() =>
+    root.render(
+      createElement(SessionPane, {
+        ...pane,
+        onShowMonoSessions,
+        monoSessionsTurnId: "user",
+      }),
+    ),
+  );
+  expect(
+    container
+      .querySelector('[aria-label="Hide sessions"]')
+      ?.getAttribute("aria-expanded"),
+  ).toBe("true");
+});
+
 it("renders older replies immediately when scrolling up loads a Mono page", async () => {
   const pane = props();
   pane.session.monoTranscript = { before: 20, firstBlockId: "user" };

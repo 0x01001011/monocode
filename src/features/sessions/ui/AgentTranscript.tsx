@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  AppWindow,
   Check,
   ChevronRight,
   CircleDashed,
@@ -51,6 +52,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { PixelMascot } from "../../projects/ui/PixelMascot";
 import type { MonoLook } from "../../monos/model/mono";
+import { monoSpawnedSessions } from "../../monos/model/monoSpawnedSessions";
 import type { MessageDelivery } from "../../monos/model/monoMessaging";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import {
@@ -197,6 +199,8 @@ type Props = {
   /** Inspect a Mono turn in the activity sidebar. */
   onShowWork?: (turnId: string, blocks: Block[]) => void;
   activeWorkTurnId?: string;
+  onShowSessions?: (turnId: string, blocks: Block[]) => void;
+  activeSessionsTurnId?: string;
   /** Marks when each message was sent, for one conversation kept over days. */
   daySeparators?: boolean;
   /** Leaves token and speed details out of each turn's footer. */
@@ -260,6 +264,8 @@ function AgentTranscriptComponent({
   onRetryMessage,
   onShowWork,
   activeWorkTurnId,
+  onShowSessions,
+  activeSessionsTurnId,
   daySeparators = false,
   hideTurnMetrics = false,
   harness,
@@ -994,6 +1000,7 @@ function AgentTranscriptComponent({
           // Work the turn has already answered for folds away behind one line,
           // leaving the prompt and the answer to it.
           const turnId = turn[0].id;
+          const spawnedSessions = inlineWork ? monoSpawnedSessions(turn) : [];
           const fold = inlineWork ? undefined : foldableWork(items);
           const folded = fold ? foldedBlocks(items, fold) : [];
           const summarizedWork = inlineWork
@@ -1340,7 +1347,8 @@ function AgentTranscriptComponent({
               {settled &&
               (durationMs != null ||
                 standaloneReply ||
-                (inlineWork && firstWork >= 0)) ? (
+                (inlineWork && firstWork >= 0) ||
+                (spawnedSessions.length > 0 && onShowSessions)) ? (
                 <TurnDuration
                   elapsedMs={durationMs ?? null}
                   label={
@@ -1369,6 +1377,13 @@ function AgentTranscriptComponent({
                       : undefined
                   }
                   workExpanded={activeWorkTurnId === turnId}
+                  onShowSessions={
+                    spawnedSessions.length && onShowSessions
+                      ? () => onShowSessions(turnId, turn)
+                      : undefined
+                  }
+                  sessionsExpanded={activeSessionsTurnId === turnId}
+                  sessionCount={spawnedSessions.length}
                   harness={turnHarness}
                   fromHarness={turnHarness}
                   fromModel={turnModel?.id}
@@ -1565,6 +1580,9 @@ function TurnDuration({
   onSaveNote,
   onShowWork,
   workExpanded,
+  onShowSessions,
+  sessionsExpanded,
+  sessionCount,
   fromHarness,
   fromModel,
   onSecondOpinion,
@@ -1582,6 +1600,9 @@ function TurnDuration({
   onSaveNote?: (text: string) => void | Promise<void>;
   onShowWork?: () => void;
   workExpanded?: boolean;
+  onShowSessions?: () => void;
+  sessionsExpanded?: boolean;
+  sessionCount?: number;
   fromHarness?: HarnessId;
   /** The turn's own model, so a same-harness second opinion can hide it. */
   fromModel?: string;
@@ -1623,6 +1644,19 @@ function TurnDuration({
             className={`rounded-md p-1 outline-none hover:bg-content/8 hover:text-content/70 focus-visible:ring-1 focus-visible:ring-accent ${workExpanded ? "bg-content/8 text-content/70" : "text-content/40"}`}
           >
             <ListBullet className="size-3.5" strokeWidth={1.75} />
+          </button>
+        ) : null}
+        {onShowSessions ? (
+          <button
+            type="button"
+            title={`${sessionsExpanded ? "Hide" : "Show"} sessions (${sessionCount})`}
+            aria-label={sessionsExpanded ? "Hide sessions" : "Show sessions"}
+            aria-expanded={!!sessionsExpanded}
+            onClick={onShowSessions}
+            className={`flex items-center gap-1 rounded-md p-1 outline-none hover:bg-content/8 hover:text-content/70 focus-visible:ring-1 focus-visible:ring-accent ${sessionsExpanded ? "bg-content/8 text-content/70" : "text-content/40"}`}
+          >
+            <AppWindow className="size-3.5" strokeWidth={1.75} />
+            <span className="text-[11px] leading-none">{sessionCount}</span>
           </button>
         ) : null}
         {fromHarness && onHandoff ? (

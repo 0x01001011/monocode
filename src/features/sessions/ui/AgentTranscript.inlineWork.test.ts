@@ -83,6 +83,117 @@ function settleTicker() {
   act(() => vi.advanceTimersByTime(340));
 }
 
+it("shows sessions beside the footer actions only for the turn that launched them", () => {
+  const onShowSessions = vi.fn();
+  const launches = [
+    {
+      sessionId: "app-mono-review",
+      cwd: "/repo",
+      title: "PR review",
+      harness: "codex" as const,
+      model: "gpt-6",
+    },
+  ];
+  const blocks: Block[] = [
+    { id: "old", role: "user", text: "Earlier", durationMs: 1000 },
+    { id: "old-reply", role: "assistant", text: "Earlier answer" },
+    {
+      id: "user",
+      role: "user",
+      text: "Review",
+      durationMs: 1000,
+      monoSpawnedSessions: launches,
+    },
+    { id: "answer", role: "assistant", text: "Started your reviewer." },
+  ];
+  render(blocks, { onShowSessions, onShowWork: vi.fn(), onSaveNote: vi.fn() });
+  const button = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Show sessions"]',
+  )!;
+  expect(
+    container.querySelectorAll('[aria-label="Show sessions"]'),
+  ).toHaveLength(1);
+  expect(
+    button
+      .closest("[data-transcript-turn]")
+      ?.getAttribute("data-transcript-turn"),
+  ).toBe("user");
+  expect(
+    [...button.parentElement!.querySelectorAll("button")].map((entry) =>
+      entry.getAttribute("aria-label"),
+    ),
+  ).toEqual([
+    "Copy response",
+    "Save as note",
+    "Show activity",
+    "Show sessions",
+  ]);
+  expect(button.title).toBe("Show sessions (1)");
+  act(() => button.click());
+  expect(onShowSessions).toHaveBeenCalledWith("user", blocks.slice(2));
+  render(blocks, { onShowSessions, activeSessionsTurnId: "user" });
+  expect(
+    container
+      .querySelector('[aria-label="Hide sessions"]')
+      ?.getAttribute("aria-expanded"),
+  ).toBe("true");
+});
+
+it("keeps the action row hidden until the final response is delivered, then places it beneath the answer", () => {
+  const user: Block = {
+    id: "user",
+    role: "user",
+    text: "Review",
+    startedAt: 1000,
+    monoSpawnedSessions: [
+      {
+        sessionId: "app-review",
+        cwd: "/repo",
+        title: "Review",
+        harness: "codex",
+        model: "gpt-6",
+      },
+    ],
+  };
+  const actions = {
+    onShowSessions: vi.fn(),
+    onShowWork: vi.fn(),
+    agentName: "MonoInvader",
+  };
+  render([user, tool("call", "in_progress")], { ...actions, busy: true });
+  expect(container.querySelector("[data-turn-actions]")).toBeNull();
+  expect(container.querySelector('[aria-label="Show sessions"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Show activity"]')).toBeNull();
+
+  const reply: Block = {
+    id: "answer",
+    role: "assistant",
+    text: "Started your reviewer.",
+    streaming: true,
+  };
+  render([user, tool("call"), reply], { ...actions, busy: true });
+  expect(container.querySelector("[data-turn-actions]")).toBeNull();
+  expect(container.textContent).not.toContain(reply.text);
+
+  render(
+    [
+      { ...user, durationMs: 17000 },
+      tool("call"),
+      { ...reply, streaming: false },
+    ],
+    actions,
+  );
+  act(() => vi.advanceTimersByTime(2500));
+  const answer = container.querySelector('[data-chat-message="answer"]')!;
+  const footer = container.querySelector("[data-turn-actions]")!;
+  expect(answer.textContent).toBe(reply.text);
+  expect(footer.querySelector('[aria-label="Show sessions"]')).not.toBeNull();
+  expect(footer.querySelector('[aria-label="Show activity"]')).not.toBeNull();
+  expect(
+    answer.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
 it("shows only the final reply, with no separate work summary or opening narration", () => {
   render([
     { id: "user", role: "user", text: "Inspect" },

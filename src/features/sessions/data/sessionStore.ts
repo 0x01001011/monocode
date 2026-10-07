@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isMonoSession } from "../../monos/model/mono";
+import { sanitizeMonoSpawnedSessions } from "../../monos/model/monoSpawnedSessions";
 import {
   isWeakToolTitle,
   titleFromToolInput,
@@ -936,6 +937,9 @@ function sanitizeBlock(
   const completion = sanitizeMonoSessionCompletion(block.monoSessionCompletion);
   if (block.role === "user" && block.internal && completion)
     next.monoSessionCompletion = completion;
+  const spawned = sanitizeMonoSpawnedSessions(block.monoSpawnedSessions);
+  if (block.role === "user" && spawned.length)
+    next.monoSpawnedSessions = spawned;
   const turnMetrics = sanitizeTurnMetrics(block.turnMetrics);
   if (block.role === "user" && turnMetrics) next.turnMetrics = turnMetrics;
   if (block.tool) next.tool = block.tool;
