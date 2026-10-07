@@ -466,7 +466,11 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
     };
     let mut out = Vec::new();
     let mut seen: HashSet<PathBuf> = HashSet::new();
-    for ent in reader.flatten() {
+    // Name order, like the host scanner: when two folders declare the same
+    // `name:`, the first folder wins on every filesystem and on both scanners.
+    let mut entries: Vec<_> = reader.flatten().collect();
+    entries.sort_by_key(|ent| ent.file_name());
+    for ent in entries {
         let dir = ent.path();
         if !dir.is_dir() {
             continue;
@@ -1246,6 +1250,35 @@ mod tests {
         .unwrap();
         let second = scan_root(&root.0, "user", "agents");
         assert_eq!(second[0].description, "bbbb");
+    }
+
+    #[test]
+    fn same_name_folders_resolve_to_the_alphabetically_first() {
+        let root = tmp("same-name");
+        let folders: Vec<String> = (0..16).rev().map(|i| format!("dup-{i:02}")).collect();
+        for folder in &folders {
+            write_skill(
+                &root.0,
+                folder,
+                &format!("---\nname: shared\ndescription: From {folder}\n---\n"),
+            );
+        }
+        // Folders are read in name order, like the host scanner, so the
+        // winner never depends on the filesystem's directory order.
+        let scanned = scan_root(&root.0, "user", "agents");
+        let order: Vec<&str> = scanned
+            .iter()
+            .map(|skill| skill.description.trim_start_matches("From "))
+            .collect();
+        let mut sorted = order.clone();
+        sorted.sort();
+        assert_eq!(order, sorted);
+        let project = tmp("same-name-project");
+        std::fs::create_dir_all(project.0.join(".agents")).unwrap();
+        std::fs::rename(&root.0, project.0.join(".agents/skills")).unwrap();
+        let skills = list_skills_from(&project.0, None, None);
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].description, "From dup-00");
     }
 
     #[test]

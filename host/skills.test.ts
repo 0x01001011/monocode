@@ -68,6 +68,23 @@ describe("listSkills", () => {
     expect(revision).toBeGreaterThan(0);
   });
 
+  it("resolves same-name folders to the alphabetically first, like the desktop", () => {
+    const { project, home } = copyFixture();
+    for (let i = 15; i >= 0; i--) {
+      const folder = `dup-${String(i).padStart(2, "0")}`;
+      const dir = join(project, ".agents/skills", folder);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "SKILL.md"),
+        `---\nname: shared\ndescription: From ${folder}\n---\n`,
+      );
+    }
+    const shared = ok(listSkills({ cwd: project, home })).skills.find(
+      (skill) => skill.name === "shared",
+    );
+    expect(shared?.description).toBe("From dup-00");
+  });
+
   it("returns unchanged when the revision still matches", () => {
     const { project, home } = copyFixture();
     const first = ok(listSkills({ cwd: project, home }));
