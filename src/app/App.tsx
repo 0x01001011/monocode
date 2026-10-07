@@ -591,6 +591,7 @@ import {
 import {
   warmNativeSkills,
   isNativeCommandPrompt,
+  recordSkillsUsedInTurn,
 } from "../features/skills/model/skills";
 import { nativeSkillContextForSession } from "../features/sessions/model/sessionSkills";
 import {
@@ -6781,6 +6782,12 @@ function Workspace({
               attachments: prepared.attachments,
             }),
           delivered: () => {
+            // Counted here, not in prepare: a deferred attempt prepares again.
+            void recordSkillsUsedInTurn(harnessText, {
+              harness: current.harness,
+              sessionId,
+              cwd: initialWorkCwd,
+            });
             change((session) =>
               acknowledgeMonoMessage(session, message, {
                 mode: "follow-up",
@@ -6913,6 +6920,11 @@ function Workspace({
                 prompt,
               ),
               attachments: prepared,
+            });
+            void recordSkillsUsedInTurn(harnessText, {
+              harness: current.harness,
+              sessionId,
+              cwd: initialWorkCwd,
             });
           } catch (error: unknown) {
             const message =
@@ -7708,6 +7720,15 @@ function Workspace({
           else if (appContext.length)
             sendText += `\n\n${appContext.join("\n\n")}`;
           await sendTurn(sendText);
+          // The provider took the message; a failed turn is not counted. A
+          // build turn sends the approved plan, not what the user typed.
+          if (!providerFailureSeen && !(intent === "build" && approvedPlan)) {
+            void recordSkillsUsedInTurn(harnessText, {
+              harness: current.harness,
+              sessionId,
+              cwd: workCwd,
+            });
+          }
           if (agentFiles) {
             recordAgentContext(
               sessionId,

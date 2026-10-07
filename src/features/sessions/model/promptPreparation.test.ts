@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   applyNotesToTurn: vi.fn(),
   applySkillsToTurn: vi.fn(),
   events: [] as string[],
-  recordSkillsUsedInTurn: vi.fn(),
   warmNativeSkills: vi.fn(),
 }));
 
@@ -19,7 +18,6 @@ vi.mock("../../notes", () => ({
 
 vi.mock("../../skills/model/skills", () => ({
   applySkillsToTurn: mocks.applySkillsToTurn,
-  recordSkillsUsedInTurn: mocks.recordSkillsUsedInTurn,
   warmNativeSkills: mocks.warmNativeSkills,
   isNativeCommandPrompt: (text: string, harness: string) =>
     harness === "omp" && text.startsWith("/"),
@@ -41,7 +39,6 @@ beforeEach(() => {
   mocks.applyNotesToTurn.mockReset();
   mocks.applyNotesToTurn.mockImplementation(async (text: string) => text);
   mocks.applySkillsToTurn.mockReset();
-  mocks.recordSkillsUsedInTurn.mockReset();
   mocks.warmNativeSkills.mockReset();
   mocks.warmNativeSkills.mockImplementation(() => {
     mocks.events.push("warm");
@@ -49,20 +46,6 @@ beforeEach(() => {
 });
 
 describe("preparePrompt", () => {
-  it("records skill usage for the sent text without waiting for it", async () => {
-    mocks.recordSkillsUsedInTurn.mockReturnValue(new Promise(() => undefined));
-    mocks.applyFileMentionsToTurn.mockImplementation(async (t: string) => t);
-    mocks.applySkillsToTurn.mockImplementation(async (t: string) => t);
-    const context = { harness: "claude" as const, cwd: "/repo" };
-    await expect(preparePrompt("/review go", context)).resolves.toBe(
-      "/review go",
-    );
-    expect(mocks.recordSkillsUsedInTurn).toHaveBeenCalledWith(
-      "/review go",
-      context,
-    );
-  });
-
   it.each([
     "/workflow foo @README.md",
     "/Review_Code a:b",

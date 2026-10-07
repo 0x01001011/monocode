@@ -151,4 +151,62 @@ describe("pending Mono follow-up delivery", () => {
     expect(d.session().queuedMessages?.[0]).toBe(d.options.message);
     expect(d.options.failed).not.toHaveBeenCalled();
   });
+
+  describe("skill usage is counted at delivery, not preparation", () => {
+    // Mirrors the App wiring: recording hangs off `delivered`, never `prepare`.
+    function counted() {
+      const d = delivery();
+      const record = vi.fn();
+      const options = {
+        ...d.options,
+        delivered: () => {
+          record(d.options.message.text);
+          d.options.delivered();
+        },
+      };
+      return { d, options, record };
+    }
+
+    it("records once when the first attempt is deferred and the second succeeds", async () => {
+      const { d, options, record } = counted();
+      d.options.steer.mockRejectedValueOnce(
+        new TurnNotReadyError("provider not connected yet"),
+      );
+      expect(await deliverQueuedFollowUp(options)).toBe(false);
+      expect(record).not.toHaveBeenCalled();
+      d.patch({ turnReady: true });
+      expect(await deliverQueuedFollowUp(options)).toBe(true);
+      expect(d.options.prepare).toHaveBeenCalledTimes(2);
+      expect(record).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(["preparation", "provider"])(
+      "records nothing when %s fails",
+      async (failure) => {
+        const { d, options, record } = counted();
+        (failure === "preparation"
+          ? d.options.prepare
+          : d.options.steer
+        ).mockRejectedValueOnce(new Error("Connection lost"));
+        expect(await deliverQueuedFollowUp(options)).toBe(false);
+        expect(record).not.toHaveBeenCalled();
+      },
+    );
+
+    it("records nothing when the message is no longer deliverable after preparing", async () => {
+      const { d, options, record } = counted();
+      d.options.prepare.mockImplementationOnce(async () => {
+        d.stop();
+        return "x";
+      });
+      expect(await deliverQueuedFollowUp(options)).toBe(false);
+      expect(record).not.toHaveBeenCalled();
+    });
+
+    it("records once for a successful delivery", async () => {
+      const { options, record } = counted();
+      expect(await deliverQueuedFollowUp(options)).toBe(true);
+      expect(record).toHaveBeenCalledTimes(1);
+    });
+  });
 });
