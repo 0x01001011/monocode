@@ -1,6 +1,6 @@
 import {
   ArrowUp,
-  AppWindow,
+  Chatting,
   Check,
   ChevronRight,
   CircleDashed,
@@ -1655,7 +1655,7 @@ function TurnDuration({
             onClick={onShowSessions}
             className={`flex items-center gap-1 rounded-md p-1 outline-none hover:bg-content/8 hover:text-content/70 focus-visible:ring-1 focus-visible:ring-accent ${sessionsExpanded ? "bg-content/8 text-content/70" : "text-content/40"}`}
           >
-            <AppWindow className="size-3.5" strokeWidth={1.75} />
+            <Chatting className="size-3.5" strokeWidth={1.75} />
             <span className="text-[11px] leading-none">{sessionCount}</span>
           </button>
         ) : null}
