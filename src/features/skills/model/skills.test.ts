@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BUILTIN_CREATE_SKILL,
   applySkillsToTurn,
@@ -388,5 +388,63 @@ describe("skills-changed event", () => {
     off();
     handler?.({ payload: { revision: 8 } });
     expect(seen).toEqual([7]);
+  });
+});
+
+describe("unwatched project fallback", () => {
+  const TTL_MS = 30_000;
+  const calls = (cmd: string): number =>
+    vi.mocked(invoke).mock.calls.filter(([name]) => name === cmd).length;
+  const mockBackend = (watch: () => Promise<boolean> | boolean) => {
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async (cmd) =>
+      cmd === "skills_watch_project" ? watch() : [],
+    );
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refetches an unwatched project's catalog after the TTL", async () => {
+    vi.useFakeTimers();
+    mockBackend(() => false);
+    const context = { harness: "claude", cwd: "/work/unwatched-ttl" } as const;
+    await loadSkills(context);
+    await loadSkills(context);
+    expect(calls("list_skills")).toBe(1);
+
+    vi.advanceTimersByTime(TTL_MS + 1);
+    await loadSkills(context);
+    expect(calls("list_skills")).toBe(2);
+  });
+
+  it("keeps a watched project's catalog cached past the TTL", async () => {
+    vi.useFakeTimers();
+    mockBackend(() => true);
+    const context = { harness: "claude", cwd: "/work/watched-ttl" } as const;
+    await loadSkills(context);
+    vi.advanceTimersByTime(TTL_MS * 10);
+    await loadSkills(context);
+    expect(calls("list_skills")).toBe(1);
+    expect(calls("skills_watch_project")).toBe(1);
+  });
+
+  it("retries registration after a failed watch invoke", async () => {
+    let attempt = 0;
+    mockBackend(async () => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("watcher down");
+      return true;
+    });
+    const context = { harness: "claude", cwd: "/work/watch-retry" } as const;
+    await loadSkills(context);
+    expect(calls("skills_watch_project")).toBe(1);
+
+    await loadSkills(context, { refresh: true });
+    expect(calls("skills_watch_project")).toBe(2);
+
+    await loadSkills(context, { refresh: true });
+    expect(calls("skills_watch_project")).toBe(2);
   });
 });

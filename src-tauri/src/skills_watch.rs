@@ -100,10 +100,21 @@ impl WatchState {
 impl Shared {
     /// Existing roots get a recursive watch. Missing roots fall back to their
     /// nearest existing ancestor (non-recursive) so creation is noticed, and
-    /// are upgraded by the next call once they exist.
-    fn apply(&self, roots: &[PathBuf]) {
-        let targets: Vec<(PathBuf, bool)> = {
+    /// are upgraded by the next call once they exist. Watches whose directory
+    /// has since been deleted are dropped first: on some platforms the OS
+    /// watch dies with the directory, and a recreated root must be re-added.
+    ///
+    /// Returns true when every root in `roots` is covered by a live watch.
+    fn apply(&self, roots: &[PathBuf]) -> bool {
+        let (stale, targets): (Vec<PathBuf>, Vec<(PathBuf, bool)>) = {
             let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+            let stale: Vec<PathBuf> = state
+                .watched
+                .iter()
+                .filter(|(path, _)| !path.is_dir())
+                .map(|(path, _)| path.clone())
+                .collect();
+            state.watched.retain(|(path, _)| !stale.contains(path));
             for root in roots {
                 if !state.requested.contains(root) {
                     state.requested.push(root.clone());
@@ -111,23 +122,22 @@ impl Shared {
                 state.roots.insert(root.clone());
                 state.roots.insert(canonical_form(root));
             }
-            state
+            let targets = state
                 .requested
                 .iter()
-                .filter_map(|root| {
-                    if root.is_dir() {
-                        // The plugins directory holds whole plugin caches; only
-                        // its registry file matters.
-                        Some((root.clone(), !root.ends_with(".claude/plugins")))
-                    } else {
-                        nearest_existing_dir(root).map(|ancestor| (ancestor, false))
-                    }
-                })
+                .filter_map(|root| watch_target(root))
                 .filter(|target| !state.watched.contains(target))
-                .collect()
+                .collect();
+            (stale, targets)
         };
         // The state lock is released before talking to the OS: the event
         // handler takes it, and some backends wait on their event thread.
+        {
+            let mut watcher = self.watcher.lock().unwrap_or_else(|p| p.into_inner());
+            for path in &stale {
+                let _ = watcher.unwatch(path);
+            }
+        }
         for (target, recursive) in targets {
             let mode = if recursive {
                 RecursiveMode::Recursive
@@ -150,6 +160,22 @@ impl Shared {
                 Err(err) => eprintln!("monocode: skills watch {}: {err}", target.display()),
             }
         }
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        roots
+            .iter()
+            .all(|root| watch_target(root).is_some_and(|target| state.watched.contains(&target)))
+    }
+}
+
+/// The OS watch that covers `root`: the root itself when it exists, otherwise
+/// its nearest existing ancestor.
+fn watch_target(root: &Path) -> Option<(PathBuf, bool)> {
+    if root.is_dir() {
+        // The plugins directory holds whole plugin caches; only its registry
+        // file matters.
+        Some((root.to_path_buf(), !root.ends_with(".claude/plugins")))
+    } else {
+        nearest_existing_dir(root).map(|ancestor| (ancestor, false))
     }
 }
 
@@ -218,8 +244,9 @@ impl SkillsWatcher {
         Ok(Self { shared })
     }
 
-    pub(crate) fn watch_roots(&self, roots: &[PathBuf]) {
-        self.shared.apply(roots);
+    /// Returns true when every root is covered by a live OS watch.
+    pub(crate) fn watch_roots(&self, roots: &[PathBuf]) -> bool {
+        self.shared.apply(roots)
     }
 }
 
@@ -252,21 +279,30 @@ pub fn start(app: &AppHandle) {
     });
 }
 
-/// Adds a project's skill roots to the watcher. Idempotent and best effort.
+/// Adds a project's skill roots to the watcher. Returns true only when every
+/// root is covered by a live watch; false tells the frontend to fall back to
+/// refreshing that project's catalog on demand.
 #[tauri::command(async)]
-pub fn skills_watch_project(state: State<'_, SkillsWatchState>, cwd: String) {
-    let Some(watcher) = &state.watcher else {
-        return;
-    };
+pub fn skills_watch_project(state: State<'_, SkillsWatchState>, cwd: String) -> bool {
     let project = expand_home(&cwd);
     if !project.is_dir() {
-        return;
+        return false;
     }
-    let roots = project_roots(&project);
-    let mut count = state
-        .project_roots
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
+    register_project(
+        state.watcher.as_ref(),
+        &state.project_roots,
+        &project_roots(&project),
+    )
+}
+
+fn register_project(
+    watcher: Option<&SkillsWatcher>,
+    count: &Mutex<usize>,
+    roots: &[PathBuf],
+) -> bool {
+    let Some(watcher) = watcher else {
+        return false;
+    };
     let known = {
         let st = watcher
             .shared
@@ -275,15 +311,15 @@ pub fn skills_watch_project(state: State<'_, SkillsWatchState>, cwd: String) {
             .unwrap_or_else(|p| p.into_inner());
         roots.iter().all(|r| st.requested.contains(r))
     };
-    if known {
-        return;
+    if !known {
+        let mut count = count.lock().unwrap_or_else(|p| p.into_inner());
+        if *count + roots.len() > MAX_PROJECT_ROOTS {
+            return false;
+        }
+        *count += roots.len();
     }
-    if *count + roots.len() > MAX_PROJECT_ROOTS {
-        return;
-    }
-    *count += roots.len();
-    drop(count);
-    watcher.watch_roots(&roots);
+    // Idempotent: also retries roots whose earlier registration failed.
+    watcher.watch_roots(roots)
 }
 
 #[cfg(test)]
@@ -341,5 +377,87 @@ mod tests {
         assert!(wait_for(|| fired.load(Ordering::SeqCst) > 0));
         assert!(skills_revision() > before);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn counting_watcher() -> (SkillsWatcher, Arc<AtomicUsize>) {
+        let fired = Arc::new(AtomicUsize::new(0));
+        let counter = fired.clone();
+        let watcher = SkillsWatcher::new(Duration::from_millis(20), move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap();
+        (watcher, fired)
+    }
+
+    #[test]
+    fn recreated_root_is_watched_again() {
+        let root = temp_root("recreate");
+        let (watcher, fired) = counting_watcher();
+        assert!(watcher.watch_roots(std::slice::from_ref(&root)));
+
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(wait_for(|| fired.load(Ordering::SeqCst) > 0));
+        std::thread::sleep(Duration::from_millis(300));
+        let after_delete = fired.load(Ordering::SeqCst);
+
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(wait_for(|| fired.load(Ordering::SeqCst) > after_delete));
+        std::thread::sleep(Duration::from_millis(300));
+        let after_recreate = fired.load(Ordering::SeqCst);
+
+        std::fs::create_dir_all(root.join("foo")).unwrap();
+        std::fs::write(
+            root.join("foo/SKILL.md"),
+            "---\nname: foo\ndescription: Foo\n---\n",
+        )
+        .unwrap();
+        assert!(wait_for(|| fired.load(Ordering::SeqCst) > after_recreate));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn apply_prunes_watches_for_deleted_directories() {
+        let root = temp_root("prune");
+        let (watcher, _fired) = counting_watcher();
+        assert!(watcher.watch_roots(std::slice::from_ref(&root)));
+        let watched = |w: &SkillsWatcher| {
+            w.shared
+                .state
+                .lock()
+                .unwrap()
+                .watched
+                .contains(&(root.clone(), true))
+        };
+        assert!(watched(&watcher));
+
+        std::fs::remove_dir_all(&root).unwrap();
+        watcher.watch_roots(&[]);
+        assert!(
+            !watched(&watcher),
+            "deleted root must leave the watched set"
+        );
+
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(watcher.watch_roots(&[]));
+        assert!(watched(&watcher), "recreated root must be watched again");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn project_registration_reports_false_without_a_live_watch() {
+        let project = temp_root("register");
+        let roots = project_roots(&project);
+        let count = Mutex::new(0);
+        assert!(!register_project(None, &count, &roots));
+
+        let (watcher, _fired) = counting_watcher();
+        let full = Mutex::new(MAX_PROJECT_ROOTS);
+        assert!(!register_project(Some(&watcher), &full, &roots));
+
+        assert!(register_project(Some(&watcher), &count, &roots));
+        // Idempotent: a second call neither double-counts nor fails.
+        assert!(register_project(Some(&watcher), &count, &roots));
+        assert_eq!(*count.lock().unwrap(), roots.len());
+        let _ = std::fs::remove_dir_all(&project);
     }
 }

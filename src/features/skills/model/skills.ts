@@ -117,6 +117,8 @@ const SKILL_TOKEN_RE =
   /(^|\s)\/([a-z0-9]+(?:-[a-z0-9]+)*(?::[a-z0-9]+(?:-[a-z0-9]+)*)?)(?=\s|$)/g;
 const NATIVE_SKILL_TTL_MS = 30_000;
 const NATIVE_SKILL_RETRY_MS = 5_000;
+/** File catalogs of projects the backend is not watching go stale on their own. */
+const UNWATCHED_SKILL_TTL_MS = 30_000;
 
 export type SkillCatalogContext = {
   harness: HarnessId;
@@ -140,8 +142,13 @@ type CatalogEntry = {
 
 const catalogEntries = new Map<string, CatalogEntry>();
 /** Raw scan results per project, shared by the Skills page. */
-const discoveredCache = new Map<string, Promise<DiscoveredSkill[]>>();
+const discoveredCache = new Map<
+  string,
+  { promise: Promise<DiscoveredSkill[]>; loadedAt: number }
+>();
+/** Projects the backend confirmed are covered by a live watcher. */
 const watchedProjects = new Set<string>();
+const watchRequests = new Map<string, Promise<boolean>>();
 
 export function skillCatalogKey(context: SkillCatalogContext): string {
   const sessionScoped = !!getHarness(context.harness)?.commands?.subscribe;
@@ -246,7 +253,11 @@ export function loadSkills(
   if (entry.inFlight?.generation === entry.generation) {
     return entry.inFlight.promise;
   }
-  if (!hasNativeCommands(normalized.harness) && entry.skills) {
+  if (
+    !hasNativeCommands(normalized.harness) &&
+    entry.skills &&
+    !isFileCatalogStale(entry.cwd, entry.loadedAt, now)
+  ) {
     return Promise.resolve(entry.skills);
   }
   if (
@@ -325,21 +336,42 @@ async function loadCatalog(context: SkillCatalogContext): Promise<Skill[]> {
   return mergeCatalog(discovered.filter((skill) => !disabled.has(skill.path)));
 }
 
-function scanSkills(
+async function scanSkills(
   cwd: string,
   disabledPaths?: readonly string[] | null,
 ): Promise<DiscoveredSkill[]> {
-  watchProject(cwd);
+  // Watch first so a change between the scan and the watch cannot be missed.
+  await watchProject(cwd);
   return listSkills(cwd, disabledPaths);
 }
 
-/** Registers a local project's skill folders with the backend watcher once. */
-function watchProject(cwd: string): void {
-  if (!isLocalProject(cwd)) return;
+/**
+ * Registers a local project's skill folders with the backend watcher. Only a
+ * confirmed registration is remembered, so a failure is retried on the next
+ * scan. Resolves whether the project is now watched.
+ */
+function watchProject(cwd: string): Promise<boolean> {
+  if (!isLocalProject(cwd)) return Promise.resolve(false);
   const key = normalizeProjectPath(cwd);
-  if (watchedProjects.has(key)) return;
-  watchedProjects.add(key);
-  void skillsWatchProject(cwd);
+  if (watchedProjects.has(key)) return Promise.resolve(true);
+  const pending = watchRequests.get(key);
+  if (pending) return pending;
+  const request = skillsWatchProject(cwd)
+    .catch(() => false)
+    .then((watched) => {
+      if (watched) watchedProjects.add(key);
+      return watched;
+    })
+    .finally(() => {
+      watchRequests.delete(key);
+    });
+  watchRequests.set(key, request);
+  return request;
+}
+
+/** Cached file catalogs stay valid for as long as the backend watches them. */
+function isFileCatalogStale(cwd: string, loadedAt: number, now: number): boolean {
+  return !watchedProjects.has(cwd) && now - loadedAt >= UNWATCHED_SKILL_TTL_MS;
 }
 
 /**
@@ -353,13 +385,20 @@ export function loadDiscoveredSkills(
   ensureSkillsWatch();
   const key = normalizeProjectPath(cwd);
   const cached = options?.refresh ? undefined : discoveredCache.get(key);
-  if (cached) return cached;
+  if (cached && !isFileCatalogStale(key, cached.loadedAt, Date.now())) {
+    return cached.promise;
+  }
   const promise = scanSkills(cwd);
-  discoveredCache.set(key, promise);
-  const drop = (): void => {
-    if (discoveredCache.get(key) === promise) discoveredCache.delete(key);
-  };
-  promise.catch(drop);
+  const entry = { promise, loadedAt: Date.now() };
+  discoveredCache.set(key, entry);
+  promise.then(
+    () => {
+      entry.loadedAt = Date.now();
+    },
+    () => {
+      if (discoveredCache.get(key) === entry) discoveredCache.delete(key);
+    },
+  );
   return promise;
 }
 

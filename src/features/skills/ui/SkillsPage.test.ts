@@ -94,6 +94,7 @@ beforeEach(() => {
   vi.mocked(invoke).mockReset();
   vi.mocked(invoke).mockImplementation(async (command) => {
     if (command === "list_skills") return skills;
+    if (command === "skills_watch_project") return true;
     if (command === "read_text_file") return markdown;
     throw new Error(`Unexpected command: ${command}`);
   });
