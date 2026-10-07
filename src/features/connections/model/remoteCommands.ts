@@ -46,6 +46,7 @@ const HOST_COMMANDS = new Set([
   "git_stash",
   "git_worktrees",
   "search_project",
+  "list_skills",
 ]);
 /** Arguments that hold paths; everything else is passed through untouched. */
 const PATH_ARGS = ["path", "cwd", "parent", "from", "destParent", "paths"];
@@ -149,6 +150,18 @@ export async function runRemoteCommand(
     return {
       ...search,
       matches: search.matches.map((match) => ({ ...match, path: fromHost(match.path) })),
+    };
+  }
+  if (command === "list_skills" && result && typeof result === "object") {
+    // `{unchanged: true}` has no list; a full answer carries host skill paths.
+    const listed = result as { skills?: { path: string }[] };
+    if (!Array.isArray(listed.skills)) return result;
+    return {
+      ...listed,
+      skills: listed.skills.map((skill) => ({
+        ...skill,
+        path: fromHost(skill.path),
+      })),
     };
   }
   if (command === "git_worktrees" && result && typeof result === "object") {

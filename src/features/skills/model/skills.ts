@@ -2,6 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   createPath,
   homeDir,
+  listRemoteSkills,
   listSkills,
   readTextFile,
   writeTextFile,
@@ -10,7 +11,11 @@ import {
 import { skillsWatchProject } from "../../../platform/tauri/skillsWatch";
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
 import { joinPath } from "../../../shared/lib/paths";
-import { isLocalProject, normalizeProjectPath } from "../../projects/model/recents";
+import {
+  isLocalProject,
+  isRemoteProjectPath,
+  normalizeProjectPath,
+} from "../../projects/model/recents";
 import { recordSkillUse } from "./skillUsage";
 import { isMarkdownBlockquotePosition } from "../../sessions/model/quoteDraft";
 import type { HarnessId } from "../../sessions/model/session";
@@ -146,6 +151,12 @@ const catalogEntries = new Map<string, CatalogEntry>();
 const discoveredCache = new Map<
   string,
   { promise: Promise<DiscoveredSkill[]>; loadedAt: number }
+>();
+/** Last good host answer per remote project: the revision to revalidate with,
+ * and the skills to keep serving while the machine is unreachable. */
+const remoteScans = new Map<
+  string,
+  { skills: DiscoveredSkill[]; revision: number }
 >();
 /** Projects the backend confirmed are covered by a live watcher. */
 const watchedProjects = new Set<string>();
@@ -341,9 +352,45 @@ async function scanSkills(
   cwd: string,
   disabledPaths?: readonly string[] | null,
 ): Promise<DiscoveredSkill[]> {
+  if (isRemoteProjectPath(cwd)) return scanRemoteSkills(cwd);
   // Watch first so a change between the scan and the watch cannot be missed.
   await watchProject(cwd);
   return listSkills(cwd, disabledPaths);
+}
+
+/**
+ * Skills on a connected machine. Remote projects are never watched, so callers
+ * revalidate after the unwatched TTL: the host is asked with the cached
+ * `sinceRevision` and answers `{unchanged: true}` when nothing moved. Any
+ * failure keeps serving the last good list; only a project that never loaded
+ * rejects (the catalog then falls back to the built-in skill).
+ * Disabled paths are applied by the caller on `remote://<env>/…` paths, which
+ * already keeps them per machine.
+ */
+async function scanRemoteSkills(cwd: string): Promise<DiscoveredSkill[]> {
+  const key = normalizeProjectPath(cwd);
+  const cached = remoteScans.get(key);
+  try {
+    let result = await listRemoteSkills(cwd, cached?.revision);
+    if ("unchanged" in result && !cached) {
+      // Nothing to keep: ask again for the whole list.
+      result = await listRemoteSkills(cwd);
+    }
+    if ("unchanged" in result) {
+      const kept = remoteScans.get(key) ?? cached;
+      if (!kept) throw new Error("The machine returned no skills.");
+      kept.revision = result.revision;
+      return kept.skills;
+    }
+    remoteScans.set(key, {
+      skills: result.skills,
+      revision: result.revision,
+    });
+    return result.skills;
+  } catch (error) {
+    if (cached) return cached.skills;
+    throw error;
+  }
 }
 
 /**

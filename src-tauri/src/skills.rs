@@ -1303,4 +1303,50 @@ mod tests {
             "distinct backslash path on Unix must not be disabled by colliding slash path"
         );
     }
+
+    /// The host's TypeScript scanner is checked against this same fixture and
+    /// `expected.json`, so the two implementations cannot drift apart.
+    #[test]
+    fn fixture_matches_expected_json() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("test-fixtures")
+            .join("skills");
+        let fixture = std::fs::canonicalize(&fixture).unwrap();
+        // Forward slashes without the Windows verbatim prefix, as `path` is reported.
+        let base = fixture.to_string_lossy().replace('\\', "/");
+        let base = base.strip_prefix("//?/").unwrap_or(&base).to_string();
+
+        // A lowercase `skill.md` is reported as `SKILL.md` on a case-insensitive
+        // file system, so compare the base name without case.
+        let comparable = |path: &str| match path.rsplit_once('/') {
+            Some((dir, file)) => format!("{dir}/{}", file.to_lowercase()),
+            None => path.to_lowercase(),
+        };
+        let expected: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(fixture.join("expected.json")).unwrap()).unwrap();
+        let expected: Vec<serde_json::Value> = expected["skills"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|skill| {
+                let mut skill = skill.clone();
+                let path = format!("{base}/{}", skill["path"].as_str().unwrap());
+                skill["path"] = serde_json::Value::String(comparable(&path));
+                skill
+            })
+            .collect();
+
+        // The managed-settings root (/Library/Application Support/ClaudeCode)
+        // is read too; the fixture expects it absent.
+        let actual: Vec<serde_json::Value> =
+            list_skills_from(&fixture.join("project"), Some(&fixture.join("home")), None)
+                .into_iter()
+                .map(|mut skill| {
+                    skill.path = comparable(&skill.path);
+                    serde_json::to_value(skill).unwrap()
+                })
+                .collect();
+        assert_eq!(actual, expected);
+    }
 }

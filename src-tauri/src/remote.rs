@@ -687,6 +687,8 @@ mod tests {
             "git.worktreeCreate",
             "attachments.upload",
             "attachments.read",
+            // `list_skills` and every other workspace command ride on this one.
+            "workspace.run",
         ] {
             assert!(supported_remote_method(method), "{method}");
         }

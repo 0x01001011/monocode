@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeLocal }));
 
 import { runRemoteCommand } from "./remoteCommands";
 import { parseRemotePath, remotePath } from "./remoteProjects";
-import { listDir, readBinaryFile, readTextFile, statFiles, writeTextFile } from "../../../platform/tauri/fs";
+import { listDir, listRemoteSkills, readBinaryFile, readTextFile, statFiles, writeTextFile } from "../../../platform/tauri/fs";
 
 beforeEach(() => {
   remoteRequest.mockReset();
@@ -147,4 +147,55 @@ it("refuses what the host cannot do and explains outdated hosts", async () => {
     runRemoteCommand("list_dir", { path: "remote://env/home/me" }),
   ).rejects.toThrow("Update MonoCode Host");
   expect(remoteRequest).toHaveBeenCalledTimes(1);
+});
+
+it("lists skills on the host and maps their paths to remote paths", async () => {
+  remoteRequest.mockResolvedValueOnce({
+    revision: 41,
+    skills: [
+      {
+        name: "ship",
+        description: "Ship it",
+        path: "/home/me/repo/.claude/skills/ship/SKILL.md",
+        scope: "project",
+        source: "claude",
+      },
+      {
+        name: "greet",
+        description: "Hi",
+        path: "/home/me/.agents/skills/greet/SKILL.md",
+        scope: "user",
+        source: "agents",
+      },
+    ],
+  });
+  expect(await listRemoteSkills("remote://env/home/me/repo", 40)).toEqual({
+    revision: 41,
+    skills: [
+      expect.objectContaining({
+        name: "ship",
+        path: "remote://env/home/me/repo/.claude/skills/ship/SKILL.md",
+      }),
+      expect.objectContaining({
+        name: "greet",
+        path: "remote://env/home/me/.agents/skills/greet/SKILL.md",
+      }),
+    ],
+  });
+  expect(remoteRequest).toHaveBeenCalledWith("machine", "workspace.run", {
+    command: "list_skills",
+    args: { cwd: "/home/me/repo", sinceRevision: 40 },
+  });
+});
+
+it("omits sinceRevision when there is none and passes an unchanged answer through", async () => {
+  remoteRequest.mockResolvedValueOnce({ unchanged: true, revision: 7 });
+  expect(await listRemoteSkills("remote://env/home/me/repo")).toEqual({
+    unchanged: true,
+    revision: 7,
+  });
+  expect(remoteRequest).toHaveBeenCalledWith("machine", "workspace.run", {
+    command: "list_skills",
+    args: { cwd: "/home/me/repo" },
+  });
 });

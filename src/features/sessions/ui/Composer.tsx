@@ -489,8 +489,11 @@ export function Composer({
   const [createError, setCreateError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
   const remote = remoteSession;
-  // Local indexes (files, skills) must never read a remote session's path.
+  // Local file indexes must never read a remote session's path.
   const localCwd = remote ? "" : executionCwd;
+  // A remote session lists its machine's skills through the host. Native
+  // harness commands still come from this computer, so they get no remote path.
+  const skillsCwd = remote && hasNativeCommands(harness) ? "" : executionCwd;
   const [files, setFiles] = useState<ProjectFile[]>(
     () => peekProjectFiles(localCwd) ?? [],
   );
@@ -533,15 +536,24 @@ export function Composer({
   const pickerOpen = skillPickerOpen || sessionFolderOpen || mcpPickerOpen;
   const skillCatalog = useComposerSkills({
     harness,
-    executionCwd: localCwd,
+    executionCwd: skillsCwd,
     sessionId,
-    pickerOpen: pickerOpen && !remote,
+    pickerOpen,
   });
   const skills = skillCatalog.skills;
   const slashItems = useMemo(
     () =>
       remote
-        ? [...(remoteFeatures?.plan ? [PLAN_COMMAND] : []), COMPACT_COMMAND]
+        ? [
+            ...(remoteFeatures?.plan ? [PLAN_COMMAND] : []),
+            COMPACT_COMMAND,
+            ...skills.filter(
+              (skill) =>
+                skill.kind === "file" &&
+                skill.name !== PLAN_COMMAND.name &&
+                skill.name !== COMPACT_COMMAND.name,
+            ),
+          ]
         : [
             SESSION_FOLDER_COMMAND,
             MCP_COMMAND,

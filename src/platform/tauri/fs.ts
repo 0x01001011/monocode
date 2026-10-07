@@ -168,6 +168,22 @@ export function listSkills(
   });
 }
 
+export type ListSkillsResult =
+  | { skills: DiscoveredSkill[]; revision: number }
+  | { unchanged: true; revision: number };
+
+/** A connected machine's skills for a `remote://` project. `sinceRevision`
+ * lets the host answer `{unchanged: true}` instead of resending the list. */
+export function listRemoteSkills(
+  cwd: string,
+  sinceRevision?: number,
+): Promise<ListSkillsResult> {
+  return invoke<ListSkillsResult>("list_skills", {
+    cwd,
+    ...(sinceRevision === undefined ? {} : { sinceRevision }),
+  });
+}
+
 export function listProjectFiles(cwd: string): Promise<ProjectFile[]> {
   return invoke<ProjectFile[]>("list_project_files", { cwd });
 }
