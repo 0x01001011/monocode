@@ -191,7 +191,7 @@ fn menu_bar_icon() -> Result<tauri::image::Image<'static>, png::DecodingError> {
     let width = frame.width as usize;
     let height = frame.height as usize;
     let (mut left, mut top, mut right, mut bottom) = (width, height, 0, 0);
-    for (index, pixel) in mask.chunks_exact_mut(4).enumerate() {
+    for (index, pixel) in mask.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let light = u32::from(pixel[0].max(pixel[1]).max(pixel[2]));
         pixel[3] = (light * u32::from(pixel[3]) / 255) as u8;
         pixel[..3].fill(0);
@@ -788,7 +788,12 @@ mod tests {
             height - occupied_rows.last().unwrap() - 1
         );
         // The terminal cutout and space around the orbit remain transparent.
-        assert!(icon.rgba().chunks_exact(4).any(|pixel| pixel[3] == 0));
+        assert!(icon
+            .rgba()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .any(|pixel| pixel[3] == 0));
     }
 
     #[test]
