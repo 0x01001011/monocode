@@ -271,6 +271,7 @@ pub fn run() {
             remote::remote_ssh_poll,
             remote::remote_ssh_answer,
             remote::remote_ssh_cancel,
+            remote::remote_network_changed,
             control::control_enable,
             control::control_disable,
             control::control_reply,

@@ -13,6 +13,12 @@ use std::time::Duration;
 const ADDRESS: &str = "MONOCODE_SSH_ASKPASS_ADDRESS";
 const SECRET: &str = "MONOCODE_SSH_ASKPASS_SECRET";
 
+/// How long the desktop waits for a person to answer one prompt. SSO and OTP
+/// approvals happen in another app, so this is generous.
+pub(crate) const PROMPT_WAIT: Duration = Duration::from_secs(300);
+/// The askpass client must outlive `PROMPT_WAIT` so the desktop answers first.
+pub(crate) const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(310);
+
 #[derive(Serialize, Deserialize)]
 struct Request {
     secret: String,
@@ -33,7 +39,7 @@ pub fn maybe_run() -> Option<i32> {
                 return Ok(1);
             }
             let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(3))?;
-            stream.set_read_timeout(Some(Duration::from_secs(130)))?;
+            stream.set_read_timeout(Some(CLIENT_READ_TIMEOUT))?;
             stream.set_write_timeout(Some(Duration::from_secs(3)))?;
             let prompt = std::env::args()
                 .nth(1)

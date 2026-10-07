@@ -1,6 +1,8 @@
 //! Remote host connections. The renderer receives machine metadata, never the
 //! saved bearer credential. Workspace requests never fall back to local calls.
-use crate::remote_ssh::{self, Job, JobView, SshTarget, Tunnel, Tunnels};
+use crate::remote_ssh::{
+    self, Job, JobView, SshErrorKind, SshTarget, Tunnel, TunnelLease, Tunnels,
+};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -25,6 +27,9 @@ impl RemoteConnections {
             }
         }
         self.tunnels.clear();
+    }
+    fn network_changed(&self) {
+        self.tunnels.network_changed();
     }
     fn job(&self, id: &str) -> Result<Arc<Job>, String> {
         self.jobs
@@ -131,6 +136,21 @@ fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
 /// (`host/sync-transfer.ts`), so it bounds memory without limiting transcripts.
 const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
 
+const UNREACHABLE: &str = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
+const INCOMPLETE: &str = "The host request did not complete. Retry to confirm its result.";
+
+/// Tags transport failures of an SSH-backed machine with their `[ssh:<kind>] `
+/// prefix; host-level errors and already tagged tunnel errors pass through.
+fn ssh_request_error(error: String) -> String {
+    if error == UNREACHABLE {
+        remote_ssh::tag_error(SshErrorKind::Refused, &error)
+    } else if error == INCOMPLETE {
+        remote_ssh::tag_error(SshErrorKind::Timeout, &error)
+    } else {
+        error
+    }
+}
+
 fn rpc(
     endpoint: &str,
     token: &str,
@@ -153,21 +173,18 @@ fn rpc(
         Ok(response) => response,
         Err(ureq::Error::Status(_, response)) => response,
         Err(ureq::Error::Transport(error)) if connection_refused(&error) => {
-            return Err(
-                "Machine is unreachable. Check the host and SSH tunnel, then reconnect.".into(),
-            )
+            return Err(UNREACHABLE.into())
         }
-        Err(_) => {
-            return Err("The host request did not complete. Retry to confirm its result.".into())
-        }
+        Err(_) => return Err(INCOMPLETE.into()),
     };
     let status = response.status();
     let mut bytes = Vec::new();
+    // A reset or early EOF mid-body is as inconclusive as one before headers.
     response
         .into_reader()
         .take(MAX_RESPONSE_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
+        .map_err(|_| INCOMPLETE)?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
         return Err("Host response is too large".into());
     }
@@ -198,6 +215,23 @@ fn connection_refused(error: &ureq::Transport) -> bool {
         source = error.source();
     }
     false
+}
+
+/// Feeds a finished request into its tunnel's health. A refused connection
+/// proves the forward is gone; repeated stalls point to a half-open tunnel.
+fn track_tunnel_health(
+    tunnels: &Tunnels,
+    machine_id: &str,
+    lease: &TunnelLease,
+    response: &Result<Value, String>,
+) {
+    match response {
+        Err(error) if error == UNREACHABLE => tunnels.invalidate(machine_id, lease),
+        Err(error) if error == INCOMPLETE => {
+            tunnels.request_stalled(machine_id, lease);
+        }
+        _ => tunnels.request_succeeded(machine_id, lease),
+    }
 }
 
 fn store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -338,16 +372,14 @@ pub fn remote_request(
         &method,
         params,
     );
-    if response
-        .as_ref()
-        .err()
-        .is_some_and(|error| error.starts_with("Machine is unreachable"))
-    {
-        if let Some(lease) = &tunnel_lease {
-            state.tunnels.invalidate(&machine.id, lease);
-        }
+    if let Some(lease) = &tunnel_lease {
+        track_tunnel_health(&state.tunnels, &machine.id, lease, &response);
     }
-    let result = response?;
+    let result = if machine.ssh.is_some() {
+        response.map_err(ssh_request_error)?
+    } else {
+        response?
+    };
     if method == "environment.describe"
         && result.get("environmentId").and_then(Value::as_str)
             != Some(machine.environment_id.as_str())
@@ -432,8 +464,8 @@ fn start_ssh_job(
                         &job,
                         &askpass,
                     )?;
-                    let info: Value = serde_json::from_str(output.lines().last().unwrap_or(""))
-                        .map_err(|_| "Host update returned an invalid response")?;
+                    let info = remote_ssh::last_json_object(&output)
+                        .ok_or("Host update returned an invalid response")?;
                     target.remote_port = info
                         .get("port")
                         .and_then(Value::as_u64)
@@ -455,8 +487,8 @@ fn start_ssh_job(
                     &job,
                     &askpass,
                 )?;
-                let info: Value = serde_json::from_str(output.lines().last().unwrap_or(""))
-                    .map_err(|_| "Host setup returned an invalid response")?;
+                let info = remote_ssh::last_json_object(&output)
+                    .ok_or("Host setup returned an invalid response")?;
                 target.remote_port = info
                     .get("port")
                     .and_then(Value::as_u64)
@@ -471,8 +503,8 @@ fn start_ssh_job(
                     &job,
                     &askpass,
                 )?;
-                let pair: Value = serde_json::from_str(pair.lines().last().unwrap_or(""))
-                    .map_err(|_| "Host pairing returned an invalid response")?;
+                let pair = remote_ssh::last_json_object(&pair)
+                    .ok_or("Host pairing returned an invalid response")?;
                 let token = pair
                     .get("token")
                     .and_then(Value::as_str)
@@ -577,6 +609,19 @@ pub fn remote_ssh_begin(
     port: Option<u16>,
 ) -> Result<String, String> {
     let target = remote_ssh::validate_target(&target, port)?;
+    // Adding a saved machine again is a manual retry, too.
+    let state = app.state::<RemoteConnections>();
+    if let Ok(_guard) = state.store.lock() {
+        let saved = store_path(&app).and_then(|path| read(&path));
+        for machine in saved.unwrap_or_default() {
+            if machine
+                .ssh
+                .is_some_and(|ssh| ssh.target == target && ssh.port == port)
+            {
+                state.tunnels.forget_failures(&machine.id);
+            }
+        }
+    }
     start_ssh_job(
         app,
         SshTarget {
@@ -611,6 +656,8 @@ pub fn remote_ssh_reconnect(
         .ssh
         .clone()
         .ok_or("This connection does not use SSH")?;
+    // A manual retry must never meet the cached failure of an earlier attempt.
+    state.tunnels.forget_failures(&machine.id);
     start_ssh_job(
         app,
         target,
@@ -644,6 +691,14 @@ pub fn remote_ssh_cancel(
     job_id: String,
 ) -> Result<(), String> {
     state.job(&job_id)?.cancel();
+    Ok(())
+}
+
+/// The UI saw the network come back, the computer wake or the app regain
+/// focus: retry every machine at once, through fresh tunnels.
+#[tauri::command(async)]
+pub fn remote_network_changed(state: State<'_, RemoteConnections>) -> Result<(), String> {
+    state.network_changed();
     Ok(())
 }
 
@@ -712,6 +767,125 @@ mod tests {
         ] {
             assert!(endpoint(url).is_err(), "{url}");
         }
+    }
+    #[test]
+    fn ssh_machines_get_a_kind_prefix_on_transport_failures_only() {
+        let unreachable = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
+        assert_eq!(
+            ssh_request_error(unreachable.into()),
+            format!("[ssh:refused] {unreachable}")
+        );
+        let incomplete = "The host request did not complete. Retry to confirm its result.";
+        assert_eq!(
+            ssh_request_error(incomplete.into()),
+            format!("[ssh:timeout] {incomplete}")
+        );
+        for error in [
+            "Host rejected request: nope",
+            "Host returned HTTP 500",
+            "[ssh:permission-denied] already tagged",
+        ] {
+            assert_eq!(ssh_request_error(error.into()), error);
+        }
+    }
+    #[test]
+    fn a_connected_job_drops_its_stale_sign_in_link() {
+        let job = Job::new();
+        job.set_auth_url("https://login.tailscale.com/a/abc");
+        job.complete(|| {
+            Ok(Machine {
+                id: "id".into(),
+                name: "server".into(),
+                endpoint: "ssh://server".into(),
+                environment_id: "env".into(),
+                ssh: None,
+            })
+        });
+        let view = job.view();
+        assert!(view.machine.is_some());
+        assert_eq!(view.auth_url, None);
+        assert_eq!(view.error_kind, None);
+    }
+    #[cfg(unix)]
+    fn live_tunnel(tunnels: &Tunnels, id: &str) -> TunnelLease {
+        tunnels.insert(id.into(), Tunnel::running_for_tests("exec sleep 60"));
+        let target = SshTarget {
+            target: "mac-mini".into(),
+            port: None,
+            remote_port: 3774,
+        };
+        tunnels.endpoint(id, &target).unwrap()
+    }
+    #[cfg(unix)]
+    #[test]
+    fn two_stalled_requests_then_a_success_keep_the_tunnel() {
+        let tunnels = Tunnels::default();
+        let lease = live_tunnel(&tunnels, "m");
+        let stalled: Result<Value, String> = Err(INCOMPLETE.into());
+        track_tunnel_health(&tunnels, "m", &lease, &stalled);
+        track_tunnel_health(&tunnels, "m", &lease, &stalled);
+        track_tunnel_health(&tunnels, "m", &lease, &Ok(json!({})));
+        // The success started the count over.
+        track_tunnel_health(&tunnels, "m", &lease, &stalled);
+        track_tunnel_health(&tunnels, "m", &lease, &stalled);
+        assert!(tunnels.has_tunnel("m"));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn three_stalled_requests_in_a_row_invalidate_the_tunnel() {
+        let tunnels = Tunnels::default();
+        let lease = live_tunnel(&tunnels, "m");
+        let stalled: Result<Value, String> = Err(INCOMPLETE.into());
+        track_tunnel_health(&tunnels, "m", &lease, &stalled);
+        track_tunnel_health(&tunnels, "m", &lease, &stalled);
+        assert!(tunnels.has_tunnel("m"));
+        track_tunnel_health(&tunnels, "m", &lease, &stalled);
+        assert!(!tunnels.has_tunnel("m"));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn host_errors_prove_the_transport_works() {
+        let tunnels = Tunnels::default();
+        let lease = live_tunnel(&tunnels, "m");
+        let stalled: Result<Value, String> = Err(INCOMPLETE.into());
+        for _ in 0..4 {
+            track_tunnel_health(&tunnels, "m", &lease, &stalled);
+            track_tunnel_health(&tunnels, "m", &lease, &stalled);
+            track_tunnel_health(
+                &tunnels,
+                "m",
+                &lease,
+                &Err("Host rejected request: nope".into()),
+            );
+        }
+        assert!(tunnels.has_tunnel("m"));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn a_refused_request_invalidates_the_tunnel_at_once() {
+        let tunnels = Tunnels::default();
+        let lease = live_tunnel(&tunnels, "m");
+        track_tunnel_health(&tunnels, "m", &lease, &Err(UNREACHABLE.into()));
+        assert!(!tunnels.has_tunnel("m"));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn a_network_change_drops_every_cached_tunnel() {
+        let state = RemoteConnections::default();
+        let first = live_tunnel(&state.tunnels, "a");
+        live_tunnel(&state.tunnels, "b");
+        track_tunnel_health(&state.tunnels, "a", &first, &Err(INCOMPLETE.into()));
+        track_tunnel_health(&state.tunnels, "a", &first, &Err(INCOMPLETE.into()));
+        state.network_changed();
+        assert!(!state.tunnels.has_tunnel("a"));
+        assert!(!state.tunnels.has_tunnel("b"));
+    }
+    #[test]
+    fn a_network_change_without_machines_is_harmless() {
+        let state = RemoteConnections::default();
+        state.network_changed();
+        state.network_changed();
+        assert!(!state.tunnels.has_tunnel("a"));
     }
     #[test]
     fn public_machine_metadata_never_contains_the_token() {
