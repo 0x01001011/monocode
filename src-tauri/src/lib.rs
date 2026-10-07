@@ -415,6 +415,7 @@ pub fn run() {
             fs::claude_shell_commands,
             fs::write_text_file,
             skills::list_skills,
+            skills::skills_revision,
             search::search_project,
             search::cancel_project_search,
             cursor_store::cursor_tool_calls,

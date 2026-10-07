@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::SystemTime;
 
 use serde::Serialize;
 
@@ -363,11 +366,103 @@ fn path_is_within(path: &Path, root: &Path) -> bool {
     path == root || path.starts_with(root)
 }
 
+type MemoEntry = (SystemTime, u64, (String, String));
+
+/// Parsed frontmatter keyed by SKILL.md path. An entry is valid only while
+/// both mtime (full precision) and byte length still match the file.
+static MEMO: Mutex<Option<HashMap<PathBuf, MemoEntry>>> = Mutex::new(None);
+
+static REVISION: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(test)]
+thread_local! {
+    static PARSE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Monotonic counter the frontend compares to know when the local skill set
+/// may have changed.
+#[tauri::command]
+pub(crate) fn skills_revision() -> u64 {
+    REVISION.load(Ordering::SeqCst)
+}
+
+/// Marks the local skill set as changed and returns the new revision.
+/// Called by the skills watcher (added in a later task).
+#[allow(dead_code)]
+pub(crate) fn bump_revision() -> u64 {
+    REVISION.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+fn memo_lock() -> std::sync::MutexGuard<'static, Option<HashMap<PathBuf, MemoEntry>>> {
+    MEMO.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn memo_get(path: &Path, mtime: SystemTime, len: u64) -> Option<(String, String)> {
+    let guard = memo_lock();
+    let (m, l, parsed) = guard.as_ref()?.get(path)?;
+    (*m == mtime && *l == len).then(|| parsed.clone())
+}
+
+fn memo_put(path: PathBuf, mtime: SystemTime, len: u64, parsed: (String, String)) {
+    memo_lock()
+        .get_or_insert_with(HashMap::new)
+        .insert(path, (mtime, len, parsed));
+}
+
+/// Drops entries of `root`'s skills (`root/<folder>/SKILL.md`) that this scan
+/// did not see, so deleted or renamed skills do not accumulate.
+fn memo_prune_root(root: &Path, seen: &HashSet<PathBuf>) {
+    if let Some(map) = memo_lock().as_mut() {
+        map.retain(|path, _| {
+            let in_root = path.parent().and_then(Path::parent) == Some(root);
+            !in_root || seen.contains(path)
+        });
+    }
+}
+
+#[cfg(test)]
+fn reset_parse_count() {
+    PARSE_COUNT.with(|c| c.set(0));
+}
+
+#[cfg(test)]
+fn parse_count() -> usize {
+    PARSE_COUNT.with(|c| c.get())
+}
+
+#[cfg(test)]
+fn memo_contains(path: &Path) -> bool {
+    memo_lock().as_ref().is_some_and(|m| m.contains_key(path))
+}
+
+/// Reads and parses one SKILL.md, consulting the memo first.
+fn load_skill_frontmatter(skill_md: &Path, fallback: &str) -> Option<(String, String)> {
+    let stamp = std::fs::metadata(skill_md)
+        .ok()
+        .and_then(|meta| meta.modified().ok().map(|mtime| (mtime, meta.len())));
+    if let Some((mtime, len)) = stamp {
+        if let Some(hit) = memo_get(skill_md, mtime, len) {
+            return Some(hit);
+        }
+    }
+    #[cfg(test)]
+    PARSE_COUNT.with(|c| c.set(c.get() + 1));
+    let bytes = read_prefix(skill_md, MAX_FRONTMATTER_BYTES).ok()?;
+    let text = String::from_utf8(bytes).ok()?;
+    let parsed = parse_frontmatter(&text, fallback);
+    if let Some((mtime, len)) = stamp {
+        memo_put(skill_md.to_path_buf(), mtime, len, parsed.clone());
+    }
+    Some(parsed)
+}
+
 fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
     let Ok(reader) = std::fs::read_dir(root) else {
+        memo_prune_root(root, &HashSet::new());
         return Vec::new();
     };
     let mut out = Vec::new();
+    let mut seen: HashSet<PathBuf> = HashSet::new();
     for ent in reader.flatten() {
         let dir = ent.path();
         if !dir.is_dir() {
@@ -381,17 +476,14 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
         }
         let skill_md = skill_md_path(&dir);
         let Some(skill_md) = skill_md else { continue };
-        let Ok(bytes) = read_prefix(&skill_md, MAX_FRONTMATTER_BYTES) else {
-            continue;
-        };
-        let Ok(text) = String::from_utf8(bytes) else {
-            continue;
-        };
         let fallback = slug_name(folder);
         if fallback.is_empty() {
             continue;
         }
-        let (name, description) = parse_frontmatter(&text, &fallback);
+        let Some((name, description)) = load_skill_frontmatter(&skill_md, &fallback) else {
+            continue;
+        };
+        seen.insert(skill_md.clone());
         if name.is_empty() {
             continue;
         }
@@ -403,6 +495,7 @@ fn scan_root(root: &Path, scope: &str, source: &str) -> Vec<DiscoveredSkill> {
             source: source.to_string(),
         });
     }
+    memo_prune_root(root, &seen);
     out
 }
 
@@ -1114,6 +1207,68 @@ mod tests {
         let fmt = skills.iter().find(|s| s.name == "fmt").unwrap();
         assert_eq!(fmt.description, "Personal fmt");
         assert_eq!(fmt.scope, "user");
+    }
+
+    #[test]
+    fn memo_skips_unchanged_file() {
+        let root = tmp("memo-skip");
+        write_skill(
+            &root.0,
+            "memo-skip",
+            "---\nname: memo-skip\ndescription: First\n---\n",
+        );
+        reset_parse_count();
+        let first = scan_root(&root.0, "user", "agents");
+        assert_eq!(first.len(), 1);
+        assert_eq!(parse_count(), 1);
+        let second = scan_root(&root.0, "user", "agents");
+        assert_eq!(second, first);
+        assert_eq!(parse_count(), 1, "unchanged file must not be re-read");
+    }
+
+    #[test]
+    fn memo_invalidates_on_content_change_same_len() {
+        let root = tmp("memo-same-len");
+        write_skill(
+            &root.0,
+            "memo-same",
+            "---\nname: memo-same\ndescription: aaaa\n---\n",
+        );
+        let first = scan_root(&root.0, "user", "agents");
+        assert_eq!(first[0].description, "aaaa");
+        std::fs::write(
+            root.0.join("memo-same/SKILL.md"),
+            "---\nname: memo-same\ndescription: bbbb\n---\n",
+        )
+        .unwrap();
+        let second = scan_root(&root.0, "user", "agents");
+        assert_eq!(second[0].description, "bbbb");
+    }
+
+    #[test]
+    fn deleted_skill_disappears() {
+        let root = tmp("memo-delete");
+        write_skill(
+            &root.0,
+            "gone",
+            "---\nname: gone\ndescription: Soon deleted\n---\n",
+        );
+        let skill_md = root.0.join("gone/SKILL.md");
+        assert_eq!(scan_root(&root.0, "user", "agents").len(), 1);
+        assert!(memo_contains(&skill_md));
+        std::fs::remove_dir_all(root.0.join("gone")).unwrap();
+        assert!(scan_root(&root.0, "user", "agents").is_empty());
+        assert!(!memo_contains(&skill_md), "vanished file must leave memo");
+    }
+
+    #[test]
+    fn missing_root_is_empty_and_revision_bumps() {
+        let root = tmp("memo-missing");
+        assert!(scan_root(&root.0.join("nope"), "user", "agents").is_empty());
+        let before = skills_revision();
+        let bumped = bump_revision();
+        assert!(bumped > before);
+        assert_eq!(skills_revision(), bumped);
     }
 
     #[cfg(unix)]
