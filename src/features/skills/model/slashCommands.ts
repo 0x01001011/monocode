@@ -1,5 +1,6 @@
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
 import { isMarkdownBlockquotePosition } from "../../sessions/model/quoteDraft";
+import { pairKey, type SkillUsage } from "./skillUsage";
 import type { Skill } from "./skills";
 
 // Keep picker helpers independent of skill discovery for the floating composer.
@@ -11,20 +12,65 @@ export type SlashToken = {
 
 const MAX_PICKER = 50;
 
+const FRECENCY_CAP = 120;
+const FRECENCY_SCALE = 40;
+const FRECENCY_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;
+const CO_USE_CAP = 80;
+const CO_USE_SCALE = 20;
+
+/**
+ * Ranking boost from past use: frecency (count, halved every 14 days) plus a
+ * co-use bonus for skills already used with a `/other` in the draft. The
+ * maximum is 200, below the +400 a name hit earns, so usage reorders matches
+ * but never lets a description-only hit outrank a name hit.
+ */
+function usageBoost(
+  skill: Skill,
+  usage: SkillUsage,
+  draftInvocations: readonly string[],
+  now: number,
+): number {
+  let boost = 0;
+  const used = usage.counts.get(skill.invocation);
+  if (used && used.count > 0) {
+    const age = Math.max(0, now - used.lastUsedAt);
+    boost +=
+      Math.min(FRECENCY_CAP, FRECENCY_SCALE * Math.log2(1 + used.count)) *
+      0.5 ** (age / FRECENCY_HALF_LIFE_MS);
+  }
+  let coUse = 0;
+  for (const other of draftInvocations) {
+    if (other === skill.invocation) continue;
+    const pairs = usage.pairs.get(pairKey(skill.invocation, other));
+    if (pairs) {
+      coUse += Math.min(CO_USE_CAP, CO_USE_SCALE * Math.log2(1 + pairs));
+    }
+  }
+  return boost + Math.min(CO_USE_CAP, coUse);
+}
+
 export function rankSkills(
   skills: Skill[],
   query: string,
   limit = MAX_PICKER,
+  usage?: SkillUsage,
+  draftInvocations: readonly string[] = [],
+  now = Date.now(),
 ): Skill[] {
+  const boostOf = (skill: Skill) =>
+    usage ? usageBoost(skill, usage, draftInvocations, now) : 0;
   const needle = query.trim().toLowerCase();
   if (!needle) {
-    return [...skills]
+    const rows = skills.map((skill) => ({ skill, boost: boostOf(skill) }));
+    return rows
       .sort((a, b) => {
-        const rank = scopeRank(a) - scopeRank(b);
+        if (b.boost !== a.boost) return b.boost - a.boost;
+        const rank = scopeRank(a.skill) - scopeRank(b.skill);
         if (rank !== 0) return rank;
-        return a.name.localeCompare(b.name);
+        return a.skill.name.localeCompare(b.skill.name);
       })
-      .slice(0, limit);
+      .slice(0, limit)
+      .map((row) => row.skill);
   }
 
   const scored: { skill: Skill; score: number }[] = [];
@@ -43,7 +89,8 @@ export function rankSkills(
       nameHit || invocationHit ? null : fuzzyMatch(needle, skill.description);
     const hit = nameHit ?? invocationHit ?? descHit;
     if (!hit) continue;
-    const score = nameHit || invocationHit ? hit.score + 400 : hit.score;
+    const score =
+      (nameHit || invocationHit ? hit.score + 400 : hit.score) + boostOf(skill);
     scored.push({ skill, score });
   }
   scored.sort((a, b) => {

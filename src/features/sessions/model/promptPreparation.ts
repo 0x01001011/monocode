@@ -4,6 +4,7 @@ import {
   applySkillsToTurn,
   warmNativeSkills,
   isNativeCommandPrompt,
+  recordSkillsUsedInTurn,
   type SkillCatalogContext,
 } from "../../skills/model/skills";
 import { nativeCommandPrompt } from "../../../integrations/harness/core/nativeCommands";
@@ -13,6 +14,8 @@ export async function preparePrompt(
   context: SkillCatalogContext,
 ): Promise<string> {
   warmNativeSkills(context);
+  // Fire and forget: usage ranking must never delay or fail a send.
+  void recordSkillsUsedInTurn(text, context);
   if (isNativeCommandPrompt(text, context.harness))
     return nativeCommandPrompt(context.harness, text);
   const withFiles = await applyFileMentionsToTurn(text, context.cwd);

@@ -91,11 +91,13 @@ import {
   hasNativeCommands,
   isNativeCommandPrompt,
   replaceSlashToken,
+  skillNamesInText,
   skillTextParts,
   slashTokenAt,
   type Skill,
   type SlashToken,
 } from "../../skills/model/skills";
+import { useSkillUsage } from "../../skills/model/skillUsage";
 import { AccessPicker } from "./AccessPicker";
 import { ComposerRunner } from "./ComposerRunner";
 import { ContextMeter } from "./ContextMeter";
@@ -577,7 +579,20 @@ export function Composer({
   const skillLimit = hasNativeCommands(harness)
     ? Number.POSITIVE_INFINITY
     : undefined;
-  const rankedSkills = rankSkills(slashItems, slash?.query ?? "", skillLimit);
+  const skillUsage = useSkillUsage(skillPickerOpen ? executionCwd : null);
+  // Skills already in the draft lift the ones they were used with. Only parse
+  // the draft while the picker is open.
+  const draftForRanking = skillPickerOpen ? draft : "";
+  const draftSkills = useMemo(
+    () => skillNamesInText(draftForRanking),
+    [draftForRanking],
+  );
+  const slashQuery = slash?.query ?? "";
+  const rankedSkills = useMemo(
+    () =>
+      rankSkills(slashItems, slashQuery, skillLimit, skillUsage, draftSkills),
+    [draftSkills, skillLimit, skillUsage, slashItems, slashQuery],
+  );
   const attachmentsSupported =
     (!remote || !!remoteFeatures?.attachments) &&
     harnessSupportsAttachments(harness);

@@ -14,11 +14,13 @@ import {
   hasNativeCommands,
   rankSkills,
   replaceSlashToken,
+  skillNamesInText,
   skillTextParts,
   slashTokenAt,
   type Skill,
   type SlashToken,
 } from "../model/skills";
+import { useSkillUsage } from "../model/skillUsage";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { SkillPicker } from "./SkillPicker";
 import { Popover } from "../../../shared/ui/Popover";
@@ -46,14 +48,22 @@ export function SkillPromptField({ value, harness, cwd, onChange }: Props) {
     pickerOpen: slash !== null,
   });
   const skills = skillCatalog.skills;
+  const skillUsage = useSkillUsage(slash ? cwd : null);
+  const draftForRanking = slash ? value : "";
+  const draftSkills = useMemo(
+    () => skillNamesInText(draftForRanking),
+    [draftForRanking],
+  );
   const rankedSkills = useMemo(
     () =>
       rankSkills(
         skills,
         slash?.query ?? "",
         hasNativeCommands(harness) ? Number.POSITIVE_INFINITY : undefined,
+        skillUsage,
+        draftSkills,
       ),
-    [harness, skills, slash?.query],
+    [draftSkills, harness, skillUsage, skills, slash?.query],
   );
   const skillNames = useMemo(
     () => new Set(skills.map((skill) => skill.invocation)),

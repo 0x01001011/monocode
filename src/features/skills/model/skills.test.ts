@@ -17,6 +17,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  pairKey,
+  resetSkillUsageForTests,
+  type SkillUsage,
+} from "./skillUsage";
+import {
   BUILTIN_CREATE_SKILL,
   applySkillsToTurn,
   blankSkillMarkdown,
@@ -26,6 +31,7 @@ import {
   isNativeCommandPrompt,
   loadSkills,
   mergeCatalog,
+  recordSkillsUsedInTurn,
   onSkillsChanged,
   rankSkills,
   replaceSlashToken,
@@ -362,7 +368,8 @@ describe("skill names", () => {
 
 describe("skills-changed event", () => {
   it("skills-changed invalidates cache", async () => {
-    let handler: ((event: { payload: { revision: number } }) => void) | undefined;
+    let handler:
+      ((event: { payload: { revision: number } }) => void) | undefined;
     vi.mocked(listen).mockImplementation(async (_name, cb) => {
       handler = cb as typeof handler;
       return () => undefined;
@@ -446,5 +453,230 @@ describe("unwatched project fallback", () => {
 
     await loadSkills(context, { refresh: true });
     expect(calls("skills_watch_project")).toBe(2);
+  });
+});
+
+describe("rankSkills with usage", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = 1_800_000_000_000;
+  const file = (name: string, description = "A skill."): Skill => ({
+    kind: "file",
+    name,
+    description,
+    invocation: name,
+    path: `/tmp/.agents/skills/${name}/SKILL.md`,
+    scope: "project",
+    source: "agents",
+  });
+  const usageOf = (
+    counts: Record<string, [number, number]>,
+    pairs: Record<string, number> = {},
+  ): SkillUsage => ({
+    counts: new Map(
+      Object.entries(counts).map(([name, [count, lastUsedAt]]) => [
+        name,
+        { count, lastUsedAt },
+      ]),
+    ),
+    pairs: new Map(Object.entries(pairs)),
+  });
+
+  it("matches the static order when usage is absent or empty", () => {
+    const rows = [review, native, piFile, BUILTIN_CREATE_SKILL];
+    for (const query of ["", "re", "skill"]) {
+      const base = rankSkills(rows, query);
+      expect(rankSkills(rows, query, undefined, undefined)).toEqual(base);
+      expect(rankSkills(rows, query, undefined, usageOf({}), [], NOW)).toEqual(
+        base,
+      );
+    }
+  });
+
+  it("ranks a frecent skill above its alphabetical neighbor on an empty query", () => {
+    const a = file("alpha");
+    const b = file("bravo");
+    const usage = usageOf({ bravo: [3, NOW - DAY] });
+    expect(
+      rankSkills([a, b], "", undefined, usage, [], NOW).map((s) => s.name),
+    ).toEqual(["bravo", "alpha"]);
+  });
+
+  it("keeps the static order between skills with no usage", () => {
+    const rows = [file("delta"), file("charlie"), file("alpha"), file("bravo")];
+    const usage = usageOf({ delta: [1, NOW] });
+    expect(
+      rankSkills(rows, "", undefined, usage, [], NOW).map((s) => s.name),
+    ).toEqual(["delta", "alpha", "bravo", "charlie"]);
+  });
+
+  it("halves the boost every 14 days", () => {
+    const a = file("alpha");
+    const b = file("bravo");
+    const c = file("charlie");
+    // count 3 -> base 80. alpha is fresh, bravo is 14 days old (40),
+    // charlie is 14 days old with a count worth 80 but ranks below bravo.
+    const usage = usageOf({
+      alpha: [1, NOW - 14 * DAY], // 40 * 0.5 = 20
+      bravo: [3, NOW - 14 * DAY], // 80 * 0.5 = 40
+      charlie: [1, NOW], // 40
+    });
+    // charlie (40) ties bravo (40) -> static name order; alpha (20) last.
+    expect(
+      rankSkills([a, b, c], "", undefined, usage, [], NOW).map((s) => s.name),
+    ).toEqual(["bravo", "charlie", "alpha"]);
+    // A hair older than 14 days drops bravo below charlie.
+    const older = usageOf({
+      bravo: [3, NOW - 14 * DAY - 60_000],
+      charlie: [1, NOW],
+    });
+    expect(
+      rankSkills([b, c], "", undefined, older, [], NOW).map((s) => s.name),
+    ).toEqual(["charlie", "bravo"]);
+  });
+
+  it("caps the frecency boost at 120", () => {
+    const hot = file("zeta");
+    const hotter = file("yankee");
+    const other = file("alpha", "Review pull requests.");
+    // Both saturate: count 2^3 - 1 = 7 gives 120, count 10_000 would exceed it.
+    const usage = usageOf({ zeta: [7, NOW], yankee: [10_000, NOW] });
+    // Tied at the cap -> falls back to name order.
+    expect(
+      rankSkills([hotter, hot, other], "", undefined, usage, [], NOW).map(
+        (s) => s.name,
+      ),
+    ).toEqual(["yankee", "zeta", "alpha"]);
+    // On a query the cap keeps the boost below the +400 name bonus.
+    const q = rankSkills(
+      [file("review-x", "x"), file("zzz", "review things")],
+      "review",
+      undefined,
+      usageOf({ zzz: [100_000, NOW] }),
+      [],
+      NOW,
+    );
+    expect(q.map((s) => s.name)).toEqual(["review-x", "zzz"]);
+  });
+
+  it("lets a fuzzy name hit beat a heavily used description-only hit", () => {
+    const named = file("deploy-app", "Ship it.");
+    const described = file("release", "Deploy the application safely.");
+    const usage = usageOf(
+      { release: [100_000, NOW] },
+      { [pairKey("release", "x")]: 100_000 },
+    );
+    expect(
+      rankSkills(
+        [described, named],
+        "deploy",
+        undefined,
+        usage,
+        ["x"],
+        NOW,
+      ).map((s) => s.name),
+    ).toEqual(["deploy-app", "release"]);
+  });
+
+  it("adds a co-use boost when the draft contains the paired skill", () => {
+    const a = file("alpha");
+    const b = file("bravo");
+    const usage = usageOf({}, { [pairKey("bravo", "plan-x")]: 3 });
+    expect(
+      rankSkills([a, b], "", undefined, usage, [], NOW).map((s) => s.name),
+    ).toEqual(["alpha", "bravo"]);
+    expect(
+      rankSkills([a, b], "", undefined, usage, ["plan-x"], NOW).map(
+        (s) => s.name,
+      ),
+    ).toEqual(["bravo", "alpha"]);
+  });
+
+  it("caps the co-use boost at 80 and ignores the skill's own invocation", () => {
+    const a = file("alpha");
+    const b = file("bravo");
+    const c = file("charlie");
+    // pair rows: charlie pairs with p/q/r heavily (sum would exceed 80)
+    const usage = usageOf(
+      { bravo: [7, NOW] }, // frecency 120
+      {
+        [pairKey("charlie", "p")]: 1_000_000,
+        [pairKey("charlie", "q")]: 1_000_000,
+        [pairKey("charlie", "r")]: 1_000_000,
+        [pairKey("alpha", "alpha")]: 1_000_000,
+      },
+    );
+    // charlie boost = 80 (capped), bravo = 120, alpha own-pair ignored = 0.
+    expect(
+      rankSkills(
+        [a, b, c],
+        "",
+        undefined,
+        usage,
+        ["p", "q", "r", "alpha"],
+        NOW,
+      ).map((s) => s.name),
+    ).toEqual(["bravo", "charlie", "alpha"]);
+    // One pair of count 3 yields exactly 20*log2(4) = 40; two such pairs = 80;
+    // so charlie (80) beats a skill with frecency 79-ish but loses to 120.
+    const two = usageOf(
+      { alpha: [3, NOW] }, // 80
+      {
+        [pairKey("charlie", "p")]: 3,
+        [pairKey("charlie", "q")]: 3,
+        [pairKey("charlie", "r")]: 3,
+      },
+    );
+    // charlie = min(80, 120) = 80 ties alpha = 80 -> name order, never above.
+    expect(
+      rankSkills([c, a], "", undefined, two, ["p", "q", "r"], NOW).map(
+        (s) => s.name,
+      ),
+    ).toEqual(["alpha", "charlie"]);
+  });
+});
+
+describe("recordSkillsUsedInTurn", () => {
+  const context = { harness: "claude" as const, cwd: "/p/app/" };
+  const recordCalls = () =>
+    vi
+      .mocked(invoke)
+      .mock.calls.filter(([cmd]) => cmd === "skill_usage_record")
+      .map(([, args]) => args);
+
+  afterEach(() => {
+    resetSkillUsageForTests();
+    vi.mocked(invoke).mockReset();
+  });
+
+  it("records each catalog skill once per message and skips app commands", async () => {
+    vi.mocked(invoke).mockResolvedValue(0);
+    await recordSkillsUsedInTurn(
+      "/review-pr then /review-pr and /plan plus /skill:architect /unknown",
+      context,
+      async () => [review, piNative],
+    );
+    expect(recordCalls()).toEqual([
+      { projectKey: "/p/app", invocations: ["review-pr", "skill:architect"] },
+    ]);
+  });
+
+  it("does not load the catalog or record when the text has no skill token", async () => {
+    const load = vi.fn(async () => [review]);
+    await recordSkillsUsedInTurn("plain text, a/b and :/x", context, load);
+    expect(load).not.toHaveBeenCalled();
+    expect(recordCalls()).toEqual([]);
+  });
+
+  it("swallows catalog and recording failures", async () => {
+    vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    vi.mocked(invoke).mockRejectedValue(new Error("down"));
+    await expect(
+      recordSkillsUsedInTurn("/review-pr", context, async () => [review]),
+    ).resolves.toBeUndefined();
+    await expect(
+      recordSkillsUsedInTurn("/review-pr", context, async () => {
+        throw new Error("scan failed");
+      }),
+    ).resolves.toBeUndefined();
   });
 });

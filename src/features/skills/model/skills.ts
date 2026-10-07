@@ -11,6 +11,7 @@ import { skillsWatchProject } from "../../../platform/tauri/skillsWatch";
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
 import { joinPath } from "../../../shared/lib/paths";
 import { isLocalProject, normalizeProjectPath } from "../../projects/model/recents";
+import { recordSkillUse } from "./skillUsage";
 import { isMarkdownBlockquotePosition } from "../../sessions/model/quoteDraft";
 import type { HarnessId } from "../../sessions/model/session";
 import { getHarness } from "../../../integrations/harness/core/registry";
@@ -568,6 +569,33 @@ export function injectSkillPrompt(
     "",
     text,
   ].join("\n");
+}
+
+/**
+ * Counts the `/skill` tokens of a sent message toward the project's usage
+ * ranking. This is the single recording point: picking a skill in the composer
+ * only edits the draft, so a pick followed by a send counts once, and a typed
+ * `/name` counts the same as a picked one. Only tokens that resolve to a
+ * catalog skill count (app commands such as /mcp or /plan are not in it), each
+ * invocation once per message. Never throws.
+ */
+export async function recordSkillsUsedInTurn(
+  text: string,
+  context: SkillCatalogContext,
+  load: SkillLoader = loadSkills,
+): Promise<void> {
+  try {
+    const names = skillNamesInText(text);
+    if (names.length === 0) return;
+    const catalog = await load(context);
+    const known = new Set(catalog.map((skill) => skill.invocation));
+    await recordSkillUse(
+      context.cwd,
+      names.filter((name) => known.has(name)),
+    );
+  } catch (error) {
+    console.debug("skill usage: record failed", error);
+  }
 }
 
 export async function applySkillsToTurn(
