@@ -9,12 +9,14 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { FileMtime, FsEntry, GitPr, ProjectFile } from "../src/platform/tauri/fs";
 import { hostWorktrees } from "./git-worktrees";
 import { createHostBranch, hostBranches, switchHostBranch } from "./git-branches";
+import { listSkills } from "./skills";
 import type { HostStore } from "./store";
 import {
   createHostPath,
@@ -76,6 +78,7 @@ export const WORKSPACE_COMMANDS = [
   "git_stash",
   "git_worktrees",
   "search_project",
+  "list_skills",
 ] as const;
 export type WorkspaceCommand = (typeof WORKSPACE_COMMANDS)[number];
 
@@ -106,6 +109,7 @@ export class WorkspaceCommands {
   constructor(
     private readonly store: HostStore,
     private readonly withIdleProject: <T>(projectId: string, action: () => Promise<T>) => Promise<T>,
+    private readonly home: string = homedir(),
   ) {}
 
   run(command: unknown, args: unknown): Promise<unknown> {
@@ -201,6 +205,8 @@ export class WorkspaceCommands {
         return this.gitWorktrees(input.cwd);
       case "search_project":
         return this.searchProject(input.options);
+      case "list_skills":
+        return this.listSkills(input.cwd, input.sinceRevision);
     }
   }
 
@@ -285,8 +291,54 @@ export class WorkspaceCommands {
     }));
   }
 
+  private async listSkills(cwd: unknown, sinceRevision: unknown) {
+    await this.existing(cwd, true);
+    return listSkills({
+      cwd: resolve(cwd as string),
+      home: this.home,
+      sinceRevision: Number.isSafeInteger(sinceRevision)
+        ? (sinceRevision as number)
+        : undefined,
+    });
+  }
+
+  /** The real path of `input` when it is a skill file the scanner lists for a
+   * registered project (for example `~/.claude/skills/x/SKILL.md`), which may
+   * lie outside every project. Read-only commands may open it; nothing may
+   * write or delete there. */
+  private async listedSkillFile(input: unknown): Promise<string | undefined> {
+    if (
+      typeof input !== "string" ||
+      !isAbsolute(input) ||
+      input.length > 4096 ||
+      input.includes("\0")
+    )
+      return undefined;
+    const wanted = slashed(resolve(input));
+    const same = (path: string) =>
+      process.platform === "win32"
+        ? path.toLowerCase() === wanted.toLowerCase()
+        : path === wanted;
+    for (const project of this.store.projects()) {
+      const listed = listSkills({ cwd: project.cwd, home: this.home });
+      if (
+        "skills" in listed &&
+        listed.skills.some((skill) => same(slashed(skill.path)))
+      )
+        return realpath(input).catch(() => undefined);
+    }
+    return undefined;
+  }
+
   private async file(input: unknown, limit: number, tooLarge: string) {
-    const { path } = await this.existing(input);
+    const path = await this.existing(input).then(
+      ({ path: actual }) => actual,
+      async (reason) => {
+        const skill = await this.listedSkillFile(input);
+        if (skill) return skill;
+        throw reason;
+      },
+    );
     const info = await stat(path);
     if (!info.isFile()) throw new Error("Not a file");
     if (info.size > limit)

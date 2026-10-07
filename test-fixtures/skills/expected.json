@@ -1,0 +1,74 @@
+{
+  "skills": [
+    {
+      "name": "bad-name-folder",
+      "description": "Invalid name falls back to the folder",
+      "path": "project/.claude/skills/bad-name-folder/SKILL.md",
+      "scope": "project",
+      "source": "claude"
+    },
+    {
+      "name": "cursor-only",
+      "description": "Cursor native",
+      "path": "project/.cursor/skills/cursor-only/SKILL.md",
+      "scope": "project",
+      "source": "cursor"
+    },
+    {
+      "name": "demo:audit",
+      "description": "Plugin skill, enabled by project settings",
+      "path": "home/.claude/plugins/cache/demo/skills/audit/SKILL.md",
+      "scope": "user",
+      "source": "claude"
+    },
+    {
+      "name": "greet",
+      "description": "Hello from home agents",
+      "path": "home/.agents/skills/greet/SKILL.md",
+      "scope": "user",
+      "source": "agents"
+    },
+    {
+      "name": "literal-block",
+      "description": "Line one\nLine two",
+      "path": "home/.codex/skills/literal-block/SKILL.md",
+      "scope": "user",
+      "source": "codex"
+    },
+    {
+      "name": "lower-case",
+      "description": "Lowercase skill.md file",
+      "path": "project/.claude/skills/lower-case/skill.md",
+      "scope": "project",
+      "source": "claude"
+    },
+    {
+      "name": "plain-folder",
+      "description": "",
+      "path": "project/.claude/skills/Plain Folder/SKILL.md",
+      "scope": "project",
+      "source": "claude"
+    },
+    {
+      "name": "review-pr",
+      "description": "Review pull requests. Use when asked to review.",
+      "path": "project/.agents/skills/review-pr/SKILL.md",
+      "scope": "project",
+      "source": "agents"
+    },
+    {
+      "name": "ship",
+      "description": "Project ship",
+      "path": "project/.agents/skills/ship/SKILL.md",
+      "scope": "project",
+      "source": "agents"
+    },
+    {
+      "name": "user-only",
+      "description": "User scope claude",
+      "path": "home/.claude/skills/user-only/SKILL.md",
+      "scope": "user",
+      "source": "claude"
+    }
+  ]
+}

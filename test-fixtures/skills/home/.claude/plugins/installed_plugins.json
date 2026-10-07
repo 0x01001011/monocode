@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "plugins": {
+    "demo@market": [
+      { "scope": "user", "installPath": "~/.claude/plugins/cache/demo", "version": "1.0.0" }
+    ],
+    "off@market": [
+      { "scope": "user", "installPath": "~/.claude/plugins/cache/off", "version": "1.0.0" }
+    ]
+  }
+}
