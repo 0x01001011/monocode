@@ -4444,6 +4444,25 @@ mod tests {
     }
 
     #[test]
+    fn backfill_counts_worktree_sessions_under_their_project() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            let mut session = sample("wt", "/p", "Worktree");
+            session.worktree_cwd = Some("/p-worktrees/feature".to_string());
+            session.blocks = json!([{ "id": "u1", "role": "user", "text": "/a" }]);
+            upsert_session(&conn, &session).unwrap();
+        }
+        assert_eq!(backfill_usage(&store, 10).unwrap(), 1);
+        let conn = store.lock_conn().unwrap();
+        // Live records use the project root too, so both land in one ranking.
+        let project = usage_snapshot(&conn, "/p").unwrap();
+        assert_eq!(usage_counts(&project), vec![("a".to_string(), 1)]);
+        let worktree = usage_snapshot(&conn, "/p-worktrees/feature").unwrap();
+        assert!(worktree.usage.is_empty());
+    }
+
+    #[test]
     fn backfill_skips_sessions_without_a_project() {
         let store = SessionStore::open_in_memory().unwrap();
         {

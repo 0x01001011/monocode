@@ -6787,6 +6787,7 @@ function Workspace({
               harness: current.harness,
               sessionId,
               cwd: initialWorkCwd,
+              projectCwd: current.cwd,
             });
             change((session) =>
               acknowledgeMonoMessage(session, message, {
@@ -6925,6 +6926,7 @@ function Workspace({
               harness: current.harness,
               sessionId,
               cwd: initialWorkCwd,
+              projectCwd: current.cwd,
             });
           } catch (error: unknown) {
             const message =
@@ -7727,6 +7729,7 @@ function Workspace({
               harness: current.harness,
               sessionId,
               cwd: workCwd,
+              projectCwd: current.cwd,
             });
           }
           if (agentFiles) {

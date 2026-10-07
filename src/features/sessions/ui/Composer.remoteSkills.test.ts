@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Skill } from "../../skills/model/skills";
+import { resetSkillUsageForTests } from "../../skills/model/skillUsage";
 import { Composer } from "./Composer";
 
 const { invoke, skillInputs } = vi.hoisted(() => ({
@@ -116,6 +117,41 @@ describe("composer skills for remote sessions", () => {
     expect(text).toContain("ship-it");
     // Only the machine's own file skills join /plan and /compact.
     expect(text).not.toContain("create-skill");
+  });
+
+  const snapshotKeys = () =>
+    invoke.mock.calls
+      .filter(([command]) => command === "skill_usage_snapshot")
+      .map(([, args]) => (args as { projectKey: string }).projectKey);
+  const flush = () =>
+    act(async () => {
+      for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 0));
+    });
+
+  it("ranks a worktree session's picker with its project's usage", async () => {
+    resetSkillUsageForTests();
+    await render({ cwd: "/repo", executionCwd: "/repo-worktrees/feature" });
+    await openPicker();
+    await flush();
+    // Backfilled history and live records are both keyed by the project root.
+    expect(snapshotKeys()).toEqual(["/repo"]);
+    // The catalog still comes from the worktree.
+    expect(
+      skillInputs.every((input) => input.executionCwd === "/repo-worktrees/feature"),
+    ).toBe(true);
+  });
+
+  it("ranks a remote worktree session's picker with its remote project's usage", async () => {
+    resetSkillUsageForTests();
+    await render({
+      remoteSession: true,
+      remoteFeatures: { attachments: false, plan: true, draft: false },
+      cwd: "remote://env/home/me/app",
+      executionCwd: "remote://env/home/me/app-worktrees/feature",
+    });
+    await openPicker();
+    await flush();
+    expect(snapshotKeys()).toEqual(["remote://env/home/me/app"]);
   });
 
   it("keeps a local session on its own cwd", async () => {

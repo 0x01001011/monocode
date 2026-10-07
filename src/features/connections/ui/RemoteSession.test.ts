@@ -14,6 +14,7 @@ import { resetSkillUsageForTests } from "../../skills/model/skillUsage";
 import { rememberRemoteProject } from "../model/remoteProjects";
 import { preloadRemoteSession } from "./RemoteSession";
 import { rememberRemoteSession, remoteSessionFor } from "../model/connections";
+import { remoteSessionActions } from "../model/remoteSessionActions";
 import "../model/remoteCommands";
 import type {
   HostCommand,
@@ -127,6 +128,7 @@ let deletedSessions: string[];
 let hostSkills: string[];
 let skillRevision = 0;
 let sendFailure: string | undefined;
+let planReply: string | undefined;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -144,6 +146,7 @@ beforeEach(() => {
   deletedSessions = [];
   hostSkills = [];
   sendFailure = undefined;
+  planReply = undefined;
   skillRevision += 1;
   invalidateSkills();
   resetSkillUsageForTests();
@@ -329,7 +332,9 @@ function dispatch(command: HostCommand) {
             (block) => block.id !== command.draftBlockId,
           ),
           { id: command.commandId, role: "user", text: command.text },
-          { id: `${command.commandId}-reply`, role: "assistant", text: "Done" },
+          command.intent === "plan" && planReply
+            ? { id: `${command.commandId}-plan`, role: "plan", text: planReply }
+            : { id: `${command.commandId}-reply`, role: "assistant", text: "Done" },
         ],
       },
     };
@@ -1119,6 +1124,56 @@ it("records nothing when the host rejects the message", async () => {
   await render();
   await send("/ship the release");
   expect(usageRecords()).toEqual([]);
+});
+
+it("records nothing for a build turn, whose text is the approved plan", async () => {
+  hostSkills = ["ship"];
+  planReply = "Run the tests, then /ship the release";
+  await render();
+  await act(async () => byLabel("Add files or choose a mode")!.click());
+  const plan = [
+    ...document.body.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((button) => button.textContent?.includes("Plan mode"))!;
+  await act(async () => plan.click());
+  await send("Plan the release");
+  const planBlock = host?.session.blocks.find((block) => block.role === "plan");
+  expect(planBlock).toBeDefined();
+  await act(async () => {
+    remoteSessionActions("shell")?.buildPlan(planBlock!.id);
+  });
+  await settle();
+  expect(commands.at(-1)).toMatchObject({ type: "send", intent: "build" });
+  expect((commands.at(-1) as { text: string }).text).toContain("/ship");
+  expect(usageRecords()).toEqual([]);
+});
+
+it("records a worktree session's skills under the remote project key", async () => {
+  hostSkills = ["ship"];
+  await render();
+  await act(async () => byLabel("Workspace Current checkout")!.click());
+  const existing = [
+    ...document.body.querySelectorAll<HTMLButtonElement>("button"),
+  ].find((button) => button.textContent?.trim() === "Existing worktree…");
+  await act(async () => existing!.click());
+  await settle();
+  const worktree = [
+    ...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+  ].find((button) => button.title === "remote://env/home/me/repo-worktrees/dev");
+  await act(async () => worktree!.click());
+  await send("/ship the release");
+  expect(host?.session.cwd).toBe("/home/me/repo-worktrees/dev");
+  expect(usageRecords()).toEqual([
+    { projectKey: "remote://env/home/me/repo", invocations: ["ship"] },
+  ]);
+  // The catalog itself still comes from the worktree.
+  const skillScans = vi
+    .mocked(invoke)
+    .mock.calls.filter(([command, input]) =>
+      command === "remote_request" &&
+      (input as { params?: { command?: string } }).params?.command === "list_skills",
+    )
+    .map(([, input]) => (input as { params: { args: { cwd: string } } }).params.args.cwd);
+  expect(skillScans).toContain("/home/me/repo-worktrees/dev");
 });
 
 it("records nothing for a typed skill that is not in the remote catalog", async () => {

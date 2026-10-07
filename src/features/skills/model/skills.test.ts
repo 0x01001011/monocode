@@ -654,7 +654,11 @@ describe("rankSkills with usage", () => {
 });
 
 describe("recordSkillsUsedInTurn", () => {
-  const context = { harness: "claude" as const, cwd: "/p/app/" };
+  const context = {
+    harness: "claude" as const,
+    cwd: "/p/app/",
+    projectCwd: "/p/app/",
+  };
   const recordCalls = () =>
     vi
       .mocked(invoke)
@@ -676,6 +680,43 @@ describe("recordSkillsUsedInTurn", () => {
     expect(recordCalls()).toEqual([
       { projectKey: "/p/app", invocations: ["review-pr", "skill:architect"] },
     ]);
+  });
+
+  it("counts a worktree session's skills under its project, with the worktree's catalog", async () => {
+    vi.mocked(invoke).mockResolvedValue(0);
+    const load = vi.fn(async () => [review]);
+    await recordSkillsUsedInTurn(
+      "/review-pr",
+      {
+        harness: "claude",
+        cwd: "/p/app-worktrees/feature",
+        projectCwd: "/p/app",
+      },
+      load,
+    );
+    expect(load).toHaveBeenCalledWith(
+      expect.objectContaining({ cwd: "/p/app-worktrees/feature" }),
+    );
+    expect(recordCalls()).toEqual([
+      { projectKey: "/p/app", invocations: ["review-pr"] },
+    ]);
+  });
+
+  it("never probes a native-command harness on a remote machine", async () => {
+    const load = vi.fn(async () => [piNative]);
+    for (const harness of ["pi", "omp"] as const) {
+      await recordSkillsUsedInTurn(
+        "/skill:architect",
+        {
+          harness,
+          cwd: "remote://env/home/me/app",
+          projectCwd: "remote://env/home/me/app",
+        },
+        load,
+      );
+    }
+    expect(load).not.toHaveBeenCalled();
+    expect(recordCalls()).toEqual([]);
   });
 
   it("does not load the catalog or record when the text has no skill token", async () => {

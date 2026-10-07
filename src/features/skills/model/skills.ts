@@ -134,6 +134,11 @@ export type SkillCatalogContext = {
   sessionId?: string;
 };
 
+export type SkillUsageContext = SkillCatalogContext & {
+  /** Project root that usage is counted under; worktrees share it. */
+  projectCwd: string;
+};
+
 type CatalogRequest = {
   generation: number;
   promise: Promise<Skill[]>;
@@ -631,19 +636,32 @@ export function injectSkillPrompt(
  * `/name` counts the same as a picked one. Only tokens that resolve to a
  * catalog skill count (app commands such as /mcp or /plan are not in it), each
  * invocation once per message. Never throws.
+ *
+ * `cwd` is where the turn runs (a worktree, possibly) and only picks the
+ * catalog; usage is counted under `projectCwd`, the project root, so every
+ * worktree of a project shares one ranking with its backfilled history.
  */
 export async function recordSkillsUsedInTurn(
   text: string,
-  context: SkillCatalogContext,
+  context: SkillUsageContext,
   load: SkillLoader = loadSkills,
 ): Promise<void> {
   try {
+    const { projectCwd, ...catalogContext } = context;
+    // Remote Pi/OMP catalogs come from a local probe, which cannot see the
+    // remote machine's skills.
+    if (
+      hasNativeCommands(catalogContext.harness) &&
+      isRemoteProjectPath(catalogContext.cwd)
+    ) {
+      return;
+    }
     const names = skillNamesInText(text);
     if (names.length === 0) return;
-    const catalog = await load(context);
+    const catalog = await load(catalogContext);
     const known = new Set(catalog.map((skill) => skill.invocation));
     await recordSkillUse(
-      context.cwd,
+      projectCwd,
       names.filter((name) => known.has(name)),
     );
   } catch (error) {

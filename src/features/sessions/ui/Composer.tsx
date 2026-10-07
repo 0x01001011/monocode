@@ -591,7 +591,8 @@ export function Composer({
   const skillLimit = hasNativeCommands(harness)
     ? Number.POSITIVE_INFINITY
     : undefined;
-  const skillUsage = useSkillUsage(skillPickerOpen ? executionCwd : null);
+  // Usage is kept per project root, so a worktree ranks like its project.
+  const skillUsage = useSkillUsage(skillPickerOpen ? cwd : null);
   // Skills already in the draft lift the ones they were used with. Only parse
   // the draft while the picker is open.
   const draftForRanking = skillPickerOpen ? draft : "";

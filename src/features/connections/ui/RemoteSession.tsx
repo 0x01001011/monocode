@@ -582,11 +582,13 @@ function ConnectedRemoteSession({
         command.commandId,
       );
       // Counted once the host has accepted the message, never while it is
-      // only prepared, failed, or waiting to be retried.
-      if (command.type === "send")
+      // only prepared, failed, or waiting to be retried. A build turn sends
+      // the approved plan, not what the user typed.
+      if (command.type === "send" && command.intent !== "build")
         void recordSkillsUsedInTurn(command.text, {
           harness: configuration.harness,
           cwd: remotePath(machine.environmentId, executionCwd),
+          projectCwd: remotePath(machine.environmentId, project.cwd),
         });
       if (!alive.current || version !== bindingVersion.current) return receipt;
       if (command.type === "draft") {

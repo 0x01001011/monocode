@@ -231,6 +231,7 @@ describe("remote skill usage", () => {
     await recordSkillsUsedInTurn("run /ship now", {
       harness: "claude",
       cwd,
+      projectCwd: cwd,
     });
     const record = vi
       .mocked(invoke)
