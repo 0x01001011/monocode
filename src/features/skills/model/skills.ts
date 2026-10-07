@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import {
   createPath,
   homeDir,
@@ -6,6 +7,7 @@ import {
   writeTextFile,
   type DiscoveredSkill,
 } from "../../../platform/tauri/fs";
+import { skillsWatchProject } from "../../../platform/tauri/skillsWatch";
 import { invalidateProjectFiles } from "../../files/model/fileIndex";
 import { joinPath } from "../../../shared/lib/paths";
 import { isLocalProject, normalizeProjectPath } from "../../projects/model/recents";
@@ -137,6 +139,9 @@ type CatalogEntry = {
 };
 
 const catalogEntries = new Map<string, CatalogEntry>();
+/** Raw scan results per project, shared by the Skills page. */
+const discoveredCache = new Map<string, Promise<DiscoveredSkill[]>>();
+const watchedProjects = new Set<string>();
 
 export function skillCatalogKey(context: SkillCatalogContext): string {
   const sessionScoped = !!getHarness(context.harness)?.commands?.subscribe;
@@ -190,9 +195,11 @@ export function peekSkills(context: SkillCatalogContext): Skill[] | null {
 export function invalidateSkills(context?: { cwd: string }) {
   if (!context) {
     catalogEntries.clear();
+    discoveredCache.clear();
     return;
   }
   const cwd = normalizeProjectPath(context.cwd);
+  discoveredCache.delete(cwd);
   for (const entry of catalogEntries.values()) {
     if (entry.cwd !== cwd) continue;
     entry.generation += 1;
@@ -206,6 +213,7 @@ export function loadSkills(
   context: SkillCatalogContext,
   options?: { refresh?: boolean },
 ): Promise<Skill[]> {
+  ensureSkillsWatch();
   const normalized = {
     harness: context.harness,
     cwd: normalizeProjectPath(context.cwd),
@@ -312,9 +320,97 @@ async function loadCatalog(context: SkillCatalogContext): Promise<Skill[]> {
     }));
   }
   const disabledPaths = loadDisabledSkillPaths();
-  const discovered = await listSkills(context.cwd, disabledPaths);
+  const discovered = await scanSkills(context.cwd, disabledPaths);
   const disabled = disabledSkillPathSet();
   return mergeCatalog(discovered.filter((skill) => !disabled.has(skill.path)));
+}
+
+function scanSkills(
+  cwd: string,
+  disabledPaths?: readonly string[] | null,
+): Promise<DiscoveredSkill[]> {
+  watchProject(cwd);
+  return listSkills(cwd, disabledPaths);
+}
+
+/** Registers a local project's skill folders with the backend watcher once. */
+function watchProject(cwd: string): void {
+  if (!isLocalProject(cwd)) return;
+  const key = normalizeProjectPath(cwd);
+  if (watchedProjects.has(key)) return;
+  watchedProjects.add(key);
+  void skillsWatchProject(cwd);
+}
+
+/**
+ * Every skill found for a project, including disabled ones, for the Skills
+ * page. Cached until a watcher event, an edit, or `refresh` invalidates it.
+ */
+export function loadDiscoveredSkills(
+  cwd: string,
+  options?: { refresh?: boolean },
+): Promise<DiscoveredSkill[]> {
+  ensureSkillsWatch();
+  const key = normalizeProjectPath(cwd);
+  const cached = options?.refresh ? undefined : discoveredCache.get(key);
+  if (cached) return cached;
+  const promise = scanSkills(cwd);
+  discoveredCache.set(key, promise);
+  const drop = (): void => {
+    if (discoveredCache.get(key) === promise) discoveredCache.delete(key);
+  };
+  promise.catch(drop);
+  return promise;
+}
+
+type SkillsChangedListener = (revision: number) => void;
+
+const skillsChangedListeners = new Set<SkillsChangedListener>();
+let skillsWatchAttached: Promise<void> | null = null;
+
+/** The backend said skill files changed: drop every cached file catalog.
+ * Native (Pi, OMP) catalogs come from the harness, not the filesystem. */
+function dropFileCatalogs(): void {
+  for (const key of [...catalogEntries.keys()]) {
+    const harness = key.split("\0", 1)[0] as HarnessId;
+    if (!hasNativeCommands(harness)) catalogEntries.delete(key);
+  }
+  discoveredCache.clear();
+}
+
+function ensureSkillsWatch(): Promise<void> {
+  skillsWatchAttached ??= (async () => {
+    try {
+      await listen<{ revision?: number }>("skills-changed", (event) => {
+        dropFileCatalogs();
+        // Mounted composers rescan now, so an open picker is never stale.
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
+        }
+        const revision = event.payload?.revision ?? 0;
+        for (const callback of [...skillsChangedListeners]) callback(revision);
+      });
+    } catch {
+      // No Tauri runtime (tests, browser preview): catalogs stay cached until
+      // something else invalidates them.
+    }
+  })();
+  return skillsWatchAttached;
+}
+
+/**
+ * Subscribes to backend `skills-changed` events. Catalog caches are already
+ * dropped by the time `callback` runs. Resolves once the subscription is live;
+ * the returned function unsubscribes.
+ */
+export async function onSkillsChanged(
+  callback: (revision: number) => void,
+): Promise<() => void> {
+  skillsChangedListeners.add(callback);
+  await ensureSkillsWatch();
+  return () => {
+    skillsChangedListeners.delete(callback);
+  };
 }
 
 export function mergeCatalog(discovered: DiscoveredSkill[]): Skill[] {

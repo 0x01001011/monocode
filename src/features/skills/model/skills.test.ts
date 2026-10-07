@@ -10,15 +10,23 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
       : undefined,
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { describe, expect, it, vi } from "vitest";
 import {
   BUILTIN_CREATE_SKILL,
   applySkillsToTurn,
   blankSkillMarkdown,
   injectSkillPrompt,
+  invalidateSkills,
   isValidSkillName,
   isNativeCommandPrompt,
+  loadSkills,
   mergeCatalog,
+  onSkillsChanged,
   rankSkills,
   replaceSlashToken,
   skillNamesInText,
@@ -349,5 +357,36 @@ describe("skill names", () => {
     const md = blankSkillMarkdown("review-pr");
     expect(md).toContain("name: review-pr");
     expect(md).toContain("# Review Pr");
+  });
+});
+
+describe("skills-changed event", () => {
+  it("skills-changed invalidates cache", async () => {
+    let handler: ((event: { payload: { revision: number } }) => void) | undefined;
+    vi.mocked(listen).mockImplementation(async (_name, cb) => {
+      handler = cb as typeof handler;
+      return () => undefined;
+    });
+    const listCalls = (): number =>
+      vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "list_skills")
+        .length;
+    vi.mocked(invoke).mockImplementation(async () => []);
+    invalidateSkills();
+    const context = { harness: "claude", cwd: "/work/cache-project" } as const;
+
+    const seen: number[] = [];
+    const off = await onSkillsChanged((revision) => seen.push(revision));
+    await loadSkills(context);
+    await loadSkills(context);
+    expect(listCalls()).toBe(1);
+
+    handler?.({ payload: { revision: 7 } });
+    expect(seen).toEqual([7]);
+    await loadSkills(context);
+    expect(listCalls()).toBe(2);
+
+    off();
+    handler?.({ payload: { revision: 8 } });
+    expect(seen).toEqual([7]);
   });
 });

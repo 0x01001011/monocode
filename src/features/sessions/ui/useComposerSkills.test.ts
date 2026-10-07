@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 vi.mock("../../../integrations/harness/core/registry", () => ({
   getHarness: (id: string) =>
     id === "pi" || id === "omp"
@@ -10,11 +11,17 @@ vi.mock("../../../integrations/harness/core/registry", () => ({
       : undefined,
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
 import { describe, expect, it, vi } from "vitest";
-import type { Skill } from "../../skills/model/skills";
+import { invalidateSkills, type Skill } from "../../skills/model/skills";
 import {
   nextComposerSkillContextToken,
-  pickerSkillLoadOptions,
+  useComposerSkills,
   visibleComposerSkills,
 } from "./useComposerSkills";
 
@@ -54,10 +61,41 @@ describe("composer skill catalog policies", () => {
     ).toEqual([cachedSkill]);
   });
 
-  it("preserves filesystem refresh while Pi uses its TTL", () => {
-    expect(pickerSkillLoadOptions("pi")).toBeUndefined();
-    expect(pickerSkillLoadOptions("omp")).toBeUndefined();
-    expect(pickerSkillLoadOptions("claude")).toEqual({ refresh: true });
+  it("picker open does not rescan", async () => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+      true;
+    invalidateSkills();
+    const listCalls = (): number =>
+      vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "list_skills")
+        .length;
+    vi.mocked(invoke).mockImplementation(async (cmd) =>
+      cmd === "list_skills" ? [] : undefined,
+    );
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    const Probe = ({ pickerOpen }: { pickerOpen: boolean }) => {
+      useComposerSkills({
+        harness: "claude",
+        executionCwd: "/work/picker-project",
+        pickerOpen,
+      });
+      return null;
+    };
+    await act(async () => {
+      root.render(createElement(Probe, { pickerOpen: false }));
+    });
+    expect(listCalls()).toBe(1);
+    await act(async () => {
+      root.render(createElement(Probe, { pickerOpen: true }));
+    });
+    await act(async () => {
+      root.render(createElement(Probe, { pickerOpen: false }));
+    });
+    await act(async () => {
+      root.render(createElement(Probe, { pickerOpen: true }));
+    });
+    expect(listCalls()).toBe(1);
+    act(() => root.unmount());
   });
 
   it("does not reuse a context token after A to B to A", () => {

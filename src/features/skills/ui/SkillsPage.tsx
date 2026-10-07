@@ -17,11 +17,13 @@ import {
 import { MarkdownSource } from "../../sessions/ui/AgentMarkdown";
 import { SkillDocumentPreview } from "./SkillDocumentPreview";
 import { copyText } from "../../../platform/tauri/clipboard";
-import { listSkills, readTextFile, type DiscoveredSkill } from "../../../platform/tauri/fs";
+import { readTextFile, type DiscoveredSkill } from "../../../platform/tauri/fs";
 import {
   createBlankSkill,
   invalidateSkills,
+  loadDiscoveredSkills,
   loadDisabledSkillPaths,
+  onSkillsChanged,
   saveDisabledSkillPaths,
   SKILLS_CHANGE_EVENT,
 } from "../model/skills";
@@ -126,7 +128,7 @@ export function SkillsPage({
     let cancelled = false;
     setSkills(null);
     setError(null);
-    listSkills(cwd)
+    loadDiscoveredSkills(cwd)
       .then((next) => {
         if (cancelled) return;
         setSkills(next);
@@ -140,6 +142,20 @@ export function SkillsPage({
       cancelled = true;
     };
   }, [cwd, reload]);
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+    // Files changed on disk: the cache is already dropped, so just re-read.
+    void onSkillsChanged(() => setReload((value) => value + 1)).then((off) => {
+      if (active) unsubscribe = off;
+      else off();
+    });
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
     const onChange = (): void => setDisabledPaths(loadDisabledSkillPaths());

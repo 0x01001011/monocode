@@ -42,6 +42,7 @@ mod remote_ssh;
 mod search;
 mod session_store;
 mod skills;
+mod skills_watch;
 pub mod ssh_askpass;
 #[cfg(target_os = "windows")]
 mod tray;
@@ -235,6 +236,7 @@ pub fn run() {
             control::init(app.handle())?;
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
+            skills_watch::start(app.handle());
             menu::install(app.handle())?;
             #[cfg(target_os = "windows")]
             tray::install(app.handle())?;
@@ -416,6 +418,7 @@ pub fn run() {
             fs::write_text_file,
             skills::list_skills,
             skills::skills_revision,
+            skills_watch::skills_watch_project,
             search::search_project,
             search::cancel_project_search,
             cursor_store::cursor_tool_calls,

@@ -30,12 +30,6 @@ export function nextComposerSkillContextToken(
   return { key, generation: (current?.generation ?? -1) + 1 };
 }
 
-export function pickerSkillLoadOptions(
-  harness: HarnessId,
-): { refresh: true } | undefined {
-  return hasNativeCommands(harness) ? undefined : { refresh: true };
-}
-
 export function visibleComposerSkills(
   state: ComposerSkillState,
   currentKey: string,
@@ -116,8 +110,10 @@ export function useComposerSkills(input: {
 
   useEffect(() => {
     if (!input.pickerOpen) return;
-    void refresh(pickerSkillLoadOptions(input.harness)).catch(() => undefined);
-  }, [input.harness, input.pickerOpen, refresh]);
+    // The backend watcher invalidates file catalogs, so opening the picker
+    // reads the cache; native harnesses keep their TTL inside loadSkills.
+    void refresh().catch(() => undefined);
+  }, [input.pickerOpen, refresh]);
 
   return {
     contextKey,

@@ -98,6 +98,20 @@ pub fn list_skills(
     ))
 }
 
+/// Provider skill directories scanned under both the project and the home
+/// directory, in priority order. The skills watcher reuses this list.
+pub(crate) const PROVIDER_SKILL_DIRS: [(&str, &str); 9] = [
+    (".claude/skills", "claude"),
+    (".cursor/skills", "cursor"),
+    (".codex/skills", "codex"),
+    (".opencode/skills", "opencode"),
+    (".pi/skills", "pi"),
+    (".omp/skills", "omp"),
+    (".fx/skills", "fx"),
+    (".grok/skills", "grok"),
+    (".hermes/skills", "hermes"),
+];
+
 pub(crate) fn list_skills_from(
     project: &Path,
     home: Option<&Path>,
@@ -135,17 +149,7 @@ pub(crate) fn list_skills_from(
         add_root(home.join(".agents/skills"), "user", "agents");
     }
 
-    for (dir, source) in [
-        (".claude/skills", "claude"),
-        (".cursor/skills", "cursor"),
-        (".codex/skills", "codex"),
-        (".opencode/skills", "opencode"),
-        (".pi/skills", "pi"),
-        (".omp/skills", "omp"),
-        (".fx/skills", "fx"),
-        (".grok/skills", "grok"),
-        (".hermes/skills", "hermes"),
-    ] {
+    for (dir, source) in PROVIDER_SKILL_DIRS {
         add_root(project.join(dir), "project", source);
         if let Some(home) = home {
             add_root(home.join(dir), "user", source);
@@ -387,8 +391,7 @@ pub(crate) fn skills_revision() -> u64 {
 }
 
 /// Marks the local skill set as changed and returns the new revision.
-/// Called by the skills watcher (added in a later task).
-#[allow(dead_code)]
+/// Called by the skills watcher.
 pub(crate) fn bump_revision() -> u64 {
     REVISION.fetch_add(1, Ordering::SeqCst) + 1
 }
