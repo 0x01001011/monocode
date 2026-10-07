@@ -1141,7 +1141,6 @@ export function ModelSettingRows({
                   values={values}
                   variant="plain"
                   side={side}
-                  harness={harness}
                   onSettingsChange={onSettingsChange}
                 />
               ),
