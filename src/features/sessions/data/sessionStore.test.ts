@@ -20,6 +20,15 @@ import {
   shouldPersistSession,
 } from "./sessionStore";
 
+it("persists sidebar visibility without making the session ephemeral", () => {
+  const session = newSession("codex", "/tmp");
+  session.blocks = [{ id: "u", role: "user", text: "Review" }];
+  const hidden = { ...session, sidebarHidden: true };
+  expect(shouldPersistSession(hidden)).toBe(true);
+  expect(sanitizeSessionForPersist(hidden).sidebarHidden).toBe(true);
+  expect(persistFingerprint(hidden)).not.toBe(persistFingerprint(session));
+});
+
 it("fingerprints queued message edits, ordering, errors and pause state", () => {
   const session = newSession("codex", "/tmp");
   const first = { id: "first", text: "One", attachments: [] };

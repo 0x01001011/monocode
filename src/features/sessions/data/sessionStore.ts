@@ -52,6 +52,7 @@ import { restoreOrchestrationProposal } from "../../orchestration/model/orchestr
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
 export type SessionSummary = {
+  sidebarHidden?: boolean;
   orchestrationLeadId?: string;
   orchestration?: OrchestrationSummary;
   id: string;
@@ -77,6 +78,7 @@ export type SessionSummary = {
 };
 
 type SessionRecord = {
+  sidebarHidden?: boolean;
   monoTranscript?: Session["monoTranscript"];
   orchestrationLeadId?: string;
   id: string;
@@ -103,6 +105,7 @@ type SessionRecord = {
 };
 
 type SessionUpsertPayload = {
+  sidebarHidden?: boolean;
   id: string;
   cwd: string;
   harness: string;
@@ -158,6 +161,7 @@ function persistableMeta(
     modelSettings: session.modelSettings,
     runtimeMode: session.runtimeMode,
     title: session.title,
+    ...(session.sidebarHidden === true ? { sidebarHidden: true } : {}),
     ...(queuedMessages.length
       ? {
           queuedMessages,
@@ -1367,6 +1371,7 @@ function normalizeSummary(summary: SessionSummary): SessionSummary {
     archived: summary.archived || undefined,
     pinned: summary.pinned || undefined,
     draft: summary.draft || undefined,
+    sidebarHidden: summary.sidebarHidden === true || undefined,
     linkedWorkItem,
     ...(typeof summary.automationId === "string" &&
     isPersistableId(summary.automationId)
@@ -1385,6 +1390,7 @@ function recordToSession(record: SessionRecord): Session {
   const queuedMessages = sanitizeQueuedMessages(record.queuedMessages);
   return {
     id: record.id,
+    sidebarHidden: record.sidebarHidden === true || undefined,
     cwd: record.cwd,
     harness: asHarness(record.harness),
     model: record.model,

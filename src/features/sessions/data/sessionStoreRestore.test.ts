@@ -38,6 +38,19 @@ function codexRecord(): SessionRecord {
 describe("restoring a session whose repair cannot be persisted", () => {
   beforeEach(() => invoke.mockReset());
 
+  it("restores sidebar visibility when a hidden session is opened by id", async () => {
+    const record = codexRecord();
+    record.sidebarHidden = true;
+    invoke.mockImplementation((cmd: string) =>
+      Promise.resolve(cmd === "session_get" ? record : null),
+    );
+    const session = await getSession(record.id);
+    expect(session?.sidebarHidden).toBe(true);
+    expect(session?.blocks[0].text).toBe("list the agents");
+    const repaired = invoke.mock.calls.find(([cmd]) => cmd === "session_upsert");
+    expect(repaired?.[1].session.sidebarHidden).toBe(true);
+  });
+
   it("restores the turn's launched session links", async () => {
     const record = codexRecord();
     const launch = {

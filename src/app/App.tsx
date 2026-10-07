@@ -10647,7 +10647,11 @@ function Workspace({
             monoOf: (id) => {
               const mono =
                 monoForSession(id) ?? findMono(habitRunMono(id) ?? "");
-              return mono && { id: mono.id, projects: mono.projects };
+              return mono && {
+                id: mono.id,
+                projects: mono.projects,
+                showStartedSessionsInSidebar: mono.showStartedSessionsInSidebar,
+              };
             },
             habits: { load: loadHabits, update: updateHabits },
             agentFiles: (monoId) => loadMonoFiles(monoId),

@@ -120,7 +120,11 @@ export type AgentAppHost = {
    * The Mono a session works for: its own conversation or one of its habit
    * runs. Its projects are the ones it may name with "project".
    */
-  monoOf?(sessionId: string): { id: string; projects: readonly string[] } | undefined;
+  monoOf?(sessionId: string): {
+    id: string;
+    projects: readonly string[];
+    showStartedSessionsInSidebar?: boolean;
+  } | undefined;
   /** A hidden run of one of a Mono's habits: it may remember, not schedule. */
   isHabitRun?(sessionId: string): boolean;
   /** Puts a card in the Mono's chat, or holds it for a habit run's report. */
@@ -424,6 +428,9 @@ function startLaunch(
   return {
     cwd,
     prompt,
+    ...(host.monoOf?.(source.id)?.showStartedSessionsInSidebar === false
+      ? { sidebarHidden: true }
+      : {}),
     ...(draft ? { draft: true } : {}),
     harness: chosenHarness,
     model: model.id,

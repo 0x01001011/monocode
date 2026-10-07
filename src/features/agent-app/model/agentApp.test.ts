@@ -114,6 +114,48 @@ function fixture() {
 }
 
 describe("agent app commands", () => {
+  it.each([undefined, true, false])(
+    "uses the Mono's sidebar preference for both submitted and draft sessions: %s",
+    async (showStartedSessionsInSidebar) => {
+      const { source, host } = fixture();
+      host.isMono = () => true;
+      host.monoOf = () => ({
+        id: "mono",
+        projects: [source.cwd],
+        showStartedSessionsInSidebar,
+      });
+      for (const draft of [false, true]) {
+        await handleAgentApp(source, `launch-${draft}`, "sessions.start", {
+          prompt: "Review the project",
+          draft,
+          notifyOnComplete: false,
+        }, host);
+        const launch = vi.mocked(host.start).mock.calls.at(-1)![0];
+        expect(launch.sidebarHidden).toBe(
+          showStartedSessionsInSidebar === false ? true : undefined,
+        );
+      }
+    },
+  );
+
+  it("uses the owning Mono's preference when a habit starts a session", async () => {
+    const { source, host } = fixture();
+    host.isHabitRun = () => true;
+    host.monoOf = () => ({
+      id: "mono",
+      projects: [source.cwd],
+      showStartedSessionsInSidebar: false,
+    });
+    await handleAgentApp(source, "habit-launch", "sessions.start", {
+      prompt: "Review the project",
+      notifyOnComplete: false,
+    }, host);
+    expect(host.start).toHaveBeenCalledWith(
+      expect.objectContaining({ sidebarHidden: true }),
+      "app-lead-habit-launch",
+    );
+  });
+
   describe.each([
     ["sessions.stop", "stopped"],
     ["sessions.archive", "archived"],
