@@ -311,6 +311,15 @@ describe("remote host API", () => {
     expect(capabilities).toContain("workspace.run");
     expect(capabilities).toContain("skills.list");
   });
+  it("reports host load without requiring a project", async () => {
+    const s = await setup();
+    const { capabilities } = (await s.call("environment.describe")).value.result;
+    expect(capabilities).toContain("host.metrics");
+    const metrics = (await s.call("host.metrics")).value.result;
+    expect(typeof metrics.sampledAt).toBe("number");
+    expect(metrics.memory.totalBytes).toBeGreaterThan(0);
+    expect(metrics.disk.totalBytes).toBeGreaterThan(0);
+  });
   it("re-probes models after the provider CLI is updated", async () => {
     const s = await setup();
     cleanups.push(async () => {

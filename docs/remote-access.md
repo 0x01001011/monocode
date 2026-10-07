@@ -69,6 +69,15 @@ The footer of a remote project shows a chip for the machine the project lives on
 
 The latency shows only while connected. Hover the chip for the reason, the round trip and the time of the last contact. Clicking the chip opens **Settings → Connections**. **Reconnect** appears next to the chip for Offline, Error and Needs sign-in. It retries that machine at once and drops its cached tunnel. The chip reads the same status check as the project rail, so it adds no requests of its own.
 
+### Host load
+
+While a machine is connected, the chip also shows its load, such as `CPU 34% · GPU 71% · MEM 62%`. Click the chip for the details: CPU with its core count and temperature, memory, every NVIDIA GPU (utilization, memory, temperature) and the disk holding the home directory with its free space. A value at 90% or more turns amber. A metric the machine cannot report is left out. On narrow windows only the details are shown.
+
+- The host answers `host.metrics`. It reads `/proc/meminfo`, `hwmon` and thermal zones on Linux, `nvidia-smi` when it is installed, and `os` and `statfs` elsewhere. Temperature and GPU readings are Linux and NVIDIA only. Readings are cached for 5 seconds on the host, so any number of desktops costs one collection per window.
+- The desktop asks every 10 seconds (every 3 seconds while the details are open), only while the machine is connected and the window is visible. Nothing is asked for a local project.
+- If readings stop arriving for 30 seconds the load dims. After three failed requests in a row the desktop stops asking until the machine reconnects.
+- A host built before this feature has no load display; update it (see "Deploying a development host" for a local build).
+
 ## Manual connection (advanced / development)
 
 Use Node.js 24 or newer on the host. Install and sign in to the providers you want under the same OS account that runs the host. The host uses that account's default provider credentials and searches its PATH and common per-user and system installation directories.

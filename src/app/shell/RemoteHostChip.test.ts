@@ -15,10 +15,17 @@ const harness = vi.hoisted(() => ({
   renders: 0,
   describe: undefined as undefined | ((machineId: string) => Promise<unknown>),
   reconnect: undefined as undefined | ((machineId: string) => Promise<unknown>),
+  /** Answers `host.metrics`; by default the host predates it. */
+  metrics: undefined as undefined | ((machineId: string) => Promise<unknown>),
+  metricsCalls: 0,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(async (command: string, args?: { machineId?: string }) => {
+  invoke: vi.fn(async (command: string, args?: { machineId?: string; method?: string }) => {
+    if (command === "remote_request" && args?.method === "host.metrics") {
+      harness.metricsCalls++;
+      return harness.metrics!(args.machineId!);
+    }
     if (command === "remote_request") return harness.describe!(args!.machineId!);
     return undefined;
   }),
@@ -93,6 +100,10 @@ beforeEach(() => {
   harness.machines = [{ id: machineId, name: "devbox", endpoint: "", environmentId: "env-1" }];
   harness.enabledCalls = [];
   harness.renders = 0;
+  harness.metricsCalls = 0;
+  harness.metrics = async () => {
+    throw new Error("Unsupported host method");
+  };
   harness.reconnect = vi.fn(async () => ({ kind: "online" }));
   rtt = { ms: 42 };
   let clock = 5_000;
@@ -257,10 +268,11 @@ describe("RemoteHostChip actions", () => {
 });
 
 describe("RemoteHostChip cost", () => {
-  it("registers one watcher for its machine and releases it on unmount", async () => {
+  it("registers its watchers for its machine and releases them on unmount", async () => {
     expect(machineWatcherCount(machineId)).toBe(0);
     await online();
-    expect(machineWatcherCount(machineId)).toBe(1);
+    // The chip and its load readings; both share the machine's one poller.
+    expect(machineWatcherCount(machineId)).toBe(2);
     await act(async () => root!.unmount());
     root = undefined;
     expect(machineWatcherCount(machineId)).toBe(0);
@@ -305,6 +317,127 @@ describe("RemoteHostChip cost", () => {
     harness.renders = 0;
     await act(async () => root!.render(createElement(RemoteHostChip, { project: REMOTE })));
     expect(harness.renders).toBe(0);
+  });
+});
+
+const reading = (overrides: Record<string, unknown> = {}) => ({
+  sampledAt: 1,
+  cpu: { percent: 34, cores: 8 },
+  memory: { usedBytes: 10 * 1024 ** 3, totalBytes: 16 * 1024 ** 3 },
+  disk: { path: "/home/k", usedBytes: 100 * 1024 ** 3, totalBytes: 400 * 1024 ** 3 },
+  temperatureC: { cpu: 52, gpu: 64 },
+  gpus: [
+    {
+      name: "RTX 4090",
+      percent: 71,
+      memoryUsedBytes: 12 * 1024 ** 3,
+      memoryTotalBytes: 24 * 1024 ** 3,
+      temperatureC: 64,
+    },
+  ],
+  ...overrides,
+});
+const loadText = () =>
+  container.querySelector("[data-host-load]")?.textContent ?? "";
+
+describe("RemoteHostChip load", () => {
+  it("shows the summary of what the machine reports", async () => {
+    harness.metrics = async () => reading();
+    await online();
+    expect(loadText()).toBe("CPU 34%GPU 71%MEM 63%");
+    expect(chip()!.getAttribute("aria-label")).toContain("CPU 34%, GPU 71%, MEM 63%");
+  });
+
+  it("leaves out metrics the machine cannot report", async () => {
+    harness.metrics = async () => reading({ gpus: undefined, cpu: undefined });
+    await online();
+    expect(loadText()).toBe("MEM 63%");
+  });
+
+  it("shows no load and still opens Connections on an older host", async () => {
+    await online();
+    expect(container.querySelector("[data-host-load]")).toBeNull();
+    const opened = vi.fn();
+    window.addEventListener(OPEN_CONNECTIONS_EVENT, opened);
+    await act(async () => chip()!.click());
+    window.removeEventListener(OPEN_CONNECTIONS_EVENT, opened);
+    expect(opened).toHaveBeenCalledTimes(1);
+    // One refusal is enough; the older host is not asked again.
+    await act(async () => void (await vi.advanceTimersByTimeAsync(60_000)));
+    expect(harness.metricsCalls).toBe(1);
+  });
+
+  it("asks only while a remote project is open, and not while offline", async () => {
+    harness.remote = false;
+    await mount(harness.describe!, LOCAL);
+    expect(harness.metricsCalls).toBe(0);
+    await act(async () => root!.unmount());
+    root = undefined;
+    harness.metrics = async () => reading();
+    await mount(fail("[ssh:timeout] slow"));
+    expect(harness.metricsCalls).toBe(0);
+  });
+
+  it("polls every 10 s and stays quiet when the values are unchanged", async () => {
+    harness.metrics = async () => reading();
+    await online();
+    harness.renders = 0;
+    const before = harness.metricsCalls;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(30_000)));
+    expect(harness.metricsCalls - before).toBe(3);
+    expect(loadText()).toBe("CPU 34%GPU 71%MEM 63%");
+  });
+
+  it("opens a popover with every metric and refreshes faster while it is open", async () => {
+    harness.metrics = async () => reading();
+    await online();
+    await act(async () => chip()!.click());
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    const text = dialog!.textContent ?? "";
+    for (const part of [
+      "CPU",
+      "34% · 8 cores",
+      "CPU temp",
+      "52°C",
+      "Memory",
+      "10.0 GB / 16.0 GB",
+      "RTX 4090",
+      "71% · 12.0 GB / 24.0 GB · 64°C",
+      "Disk",
+      "300.0 GB free",
+      "Connection settings",
+    ])
+      expect(text).toContain(part);
+    const before = harness.metricsCalls;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(9_000)));
+    expect(harness.metricsCalls - before).toBeGreaterThanOrEqual(3);
+    await act(async () => chip()!.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("marks the reading out of date when readings stop arriving", async () => {
+    let fails = false;
+    harness.metrics = async () => {
+      if (fails) throw new Error("slow");
+      return reading();
+    };
+    await online();
+    fails = true;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(31_000)));
+    expect(container.querySelector("[data-host-load]")!.className).toContain("opacity-50");
+    // After three failures it stops asking.
+    const stopped = harness.metricsCalls;
+    await act(async () => void (await vi.advanceTimersByTimeAsync(120_000)));
+    expect(harness.metricsCalls).toBe(stopped);
+  });
+
+  it("releases every timer on unmount", async () => {
+    harness.metrics = async () => reading();
+    await online();
+    await act(async () => root!.unmount());
+    root = undefined;
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 

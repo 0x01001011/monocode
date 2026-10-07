@@ -25,6 +25,23 @@ export type HostDescriptor = {
   capabilities: string[];
   platform?: "win32" | "darwin" | "linux";
 };
+export type HostGpuMetrics = {
+  name: string;
+  percent?: number;
+  memoryUsedBytes?: number;
+  memoryTotalBytes?: number;
+  temperatureC?: number;
+};
+/** Load on a host machine. Every field is optional: a missing one means the
+ * machine cannot report it. */
+export type HostMetrics = {
+  sampledAt: number;
+  cpu?: { percent: number; cores: number };
+  memory?: { usedBytes: number; totalBytes: number };
+  disk?: { path: string; usedBytes: number; totalBytes: number };
+  temperatureC?: { cpu?: number; gpu?: number };
+  gpus?: HostGpuMetrics[];
+};
 export type HostProject = { id: string; cwd: string; name: string };
 export type HostDirectory = {
   path: string;

@@ -18,6 +18,7 @@ import type { LinkedWorkItem } from "../src/features/sessions/model/session";
 import { parseGithubWorkItemUrl } from "../src/features/sessions/model/sessionWorkItem";
 import { SyncTransfers } from "./sync-transfer";
 import { browseHostDirectories } from "./browse";
+import { MetricsSampler } from "./metrics";
 import {
   createHostBranch,
   hostBranches,
@@ -137,6 +138,7 @@ export function createHostServer(
     { binaries: string; probed: number; catalog: Promise<HostModelCatalog> }
   >();
   const transfers = new SyncTransfers();
+  const metrics = new MetricsSampler();
   const workspace = new WorkspaceCommands(
     engine.store,
     (projectId, action) => engine.withIdleProject(projectId, action),
@@ -289,6 +291,7 @@ export function createHostServer(
                 "sessions.draft",
                 "sessions.plan",
                 "skills.list",
+                "host.metrics",
               ],
             };
             break;
@@ -609,6 +612,9 @@ export function createHostServer(
               )) ?? null;
             break;
           }
+          case "host.metrics":
+            result = await metrics.read();
+            break;
           default:
             throw new Error("Unsupported host method");
         }
