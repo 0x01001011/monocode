@@ -1,11 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { copyText } from "../../../platform/tauri/clipboard";
 import { Internet, Loader, Plus, Trash2 } from "../../../shared/ui/icons";
 import {
   connectMachine,
   disconnectMachine,
+  reconnectRemoteMachine,
   refreshRemoteMachines,
   remoteRequest,
+  useRemoteMachineState,
   useRemoteMachines,
 } from "../model/connections";
 import {
@@ -14,11 +18,218 @@ import {
   type RemoteMachine,
   type SshSetup,
 } from "../model/protocol";
+import { describeRemoteError } from "../model/remoteErrors";
+import {
+  describeMachineProblem,
+  diagnosticsText,
+  isWebUrl,
+  machineStatusText,
+  needsAttention,
+  type HostCapabilities,
+} from "./machineStatus";
+import { checkSshForm, parseSshPort } from "./sshTargetValidation";
 
 const input =
   "w-full rounded-lg border border-content/15 bg-content/3 px-3 py-2 text-[13px] outline-none focus:border-content/35";
 const button =
   "rounded-lg bg-selection px-3 py-2 text-[13px] font-medium hover:bg-selection-hover disabled:opacity-40";
+
+/** A failure to show: SSH ones are explained, others are shown as they are. */
+type Problem = {
+  message: string;
+  ssh?: { errorKind?: string; machine?: RemoteMachine };
+};
+
+/** Asks the host once what it supports. It runs when a machine becomes
+ * reachable, not on a timer; the shared poller already watches reachability. */
+function useHostCapabilities(
+  machine: RemoteMachine,
+  online: boolean,
+  paused: boolean,
+): HostCapabilities {
+  const [host, setHost] = useState<HostCapabilities>({});
+  useEffect(() => {
+    if (!online || paused) return;
+    let disposed = false;
+    void remoteRequest<HostDescriptor>(machine.id, "environment.describe", {
+      supportedProviders: REMOTE_PROVIDERS,
+    })
+      .then((descriptor) => {
+        if (disposed) return;
+        setHost({
+          identityChanged: descriptor.environmentId !== machine.environmentId,
+          noProvider: !descriptor.providers.length,
+          needsUpdate:
+            !descriptor.capabilities?.includes("workspace.run") ||
+            !descriptor.capabilities?.includes("git.worktreeCreate") ||
+            // Listing the machine's skills for the chat's `/` menu.
+            !descriptor.capabilities?.includes("skills.list"),
+        });
+      })
+      .catch(() => {
+        // The shared poller reports unreachable machines.
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [machine.id, machine.environmentId, online, paused]);
+  return online ? host : {};
+}
+
+function MachineRow({
+  machine,
+  busy,
+  revoking,
+  onReconnect,
+  onUpdate,
+  onRemove,
+  children,
+}: {
+  machine: RemoteMachine;
+  busy: boolean;
+  revoking: boolean;
+  onReconnect: () => void;
+  onUpdate: () => void;
+  onRemove: () => void;
+  children?: ReactNode;
+}) {
+  const state = useRemoteMachineState(machine.id);
+  const host = useHostCapabilities(machine, state.kind === "online", busy);
+  const [copied, setCopied] = useState(false);
+  const problem = needsAttention(state) ? describeMachineProblem(state) : undefined;
+  const update = machine.ssh && state.kind === "online" && host.needsUpdate;
+  return (
+    <div>
+      <div className="flex items-center gap-3 px-4 py-4">
+        <Internet className="size-5 shrink-0 text-content/45" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium">{machine.name}</div>
+          <div className="mt-1 truncate text-[12px] text-content/45">
+            {machine.ssh
+              ? `SSH · ${machine.ssh.target}${machine.ssh.port ? ` · port ${machine.ssh.port}` : ""}`
+              : machine.endpoint}
+          </div>
+          <div className="mt-1 text-[12px] text-content/50">
+            {machineStatusText(state, host)}
+          </div>
+          {problem ? (
+            <div className="mt-1 text-[11px] leading-relaxed text-content/45">
+              {problem.hint}
+            </div>
+          ) : null}
+          {update ? (
+            <div className="mt-1 text-[11px] text-content/45">
+              Updating restarts the host and interrupts active agent turns.
+            </div>
+          ) : null}
+          <details className="mt-2 text-[11px] text-content/45">
+            <summary className="cursor-pointer">Details</summary>
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              <dt>State</dt>
+              <dd>{state.kind}</dd>
+              <dt>Last successful contact</dt>
+              <dd>
+                {state.lastOkAt === undefined
+                  ? "Never"
+                  : new Date(state.lastOkAt).toLocaleString()}
+              </dd>
+              <dt>Last error kind</dt>
+              <dd>{state.errorKind ?? "None"}</dd>
+              <dt>Message</dt>
+              <dd className="whitespace-pre-wrap break-words">
+                {state.reason ?? "None"}
+              </dd>
+            </dl>
+            <button
+              type="button"
+              className="mt-2 rounded px-2 py-1 text-content/60 hover:bg-selection hover:text-content"
+              onClick={() => {
+                void copyText(diagnosticsText(machine, state)).then(
+                  () => setCopied(true),
+                  () => setCopied(false),
+                );
+              }}
+            >
+              Copy diagnostics
+            </button>
+            {copied ? <span className="ml-2">Copied</span> : null}
+          </details>
+        </div>
+        {machine.ssh && (
+          <div className="flex shrink-0 items-center gap-2">
+            {update ? (
+              <button
+                className={button}
+                disabled={busy}
+                title="Downloads the matching host package and restarts the host; active agent turns will be interrupted"
+                onClick={onUpdate}
+              >
+                Update Host
+              </button>
+            ) : null}
+            <button className={button} disabled={busy} onClick={onReconnect}>
+              Reconnect
+            </button>
+          </div>
+        )}
+        <button
+          disabled={busy || revoking}
+          className="rounded p-2 text-content/40 hover:bg-selection hover:text-content disabled:opacity-40"
+          aria-label={`Remove ${machine.name}`}
+          title="Remove connection…"
+          onClick={onRemove}
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SignInNotice({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+  const web = isWebUrl(url);
+  return (
+    <div
+      role="group"
+      aria-label="Sign-in approval"
+      className="flex flex-col gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3"
+    >
+      <p className="text-[13px] font-medium text-content">
+        Waiting for sign-in approval
+      </p>
+      <p className="text-[12px] leading-relaxed text-content/65">
+        {web
+          ? "This machine needs you to approve the sign-in in your browser. This screen continues by itself once you approve."
+          : "This machine asked for a sign-in, but its link is not a web address, so MonoCode will not open it."}
+      </p>
+      {web ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={button}
+            onClick={() => void openUrl(url.trim()).catch(() => undefined)}
+          >
+            Open in browser
+          </button>
+          <button
+            type="button"
+            className={button}
+            onClick={() => {
+              void copyText(url.trim()).then(
+                () => setCopied(true),
+                () => setCopied(false),
+              );
+            }}
+          >
+            {copied ? "Link copied" : "Copy link"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function ConnectionsSettings() {
   const { machines, loaded } = useRemoteMachines();
@@ -29,12 +240,10 @@ export function ConnectionsSettings() {
   const [jobId, setJobId] = useState<string>();
   const [job, setJob] = useState<SshSetup>();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [problem, setProblem] = useState<Problem>();
   const [notice, setNotice] = useState("");
   const [answer, setAnswer] = useState("");
   const [answering, setAnswering] = useState(false);
-  const [status, setStatus] = useState<Record<string, string>>({});
-  const [needsUpdate, setNeedsUpdate] = useState<Record<string, boolean>>({});
   const [updatingMachine, setUpdatingMachine] = useState<string>();
   const [removing, setRemoving] = useState<string>();
   const [revoking, setRevoking] = useState(false);
@@ -44,6 +253,11 @@ export function ConnectionsSettings() {
   const currentJob = useRef<string | undefined>(undefined);
   const submitting = useRef(false);
   const progress = useRef<HTMLDivElement>(null);
+  /** The machine the running job reconnects; undefined when adding one. */
+  const attempt = useRef<RemoteMachine | undefined>(undefined);
+  const setError = (message: string, ssh?: Problem["ssh"]) =>
+    setProblem(message ? { message, ssh } : undefined);
+  const form = checkSshForm(target, port, machines);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -69,7 +283,11 @@ export function ConnectionsSettings() {
           setBusy(false);
           setJobId(undefined);
           setAnswer("");
-          if (next.error) setError(next.error);
+          if (next.error)
+            setError(next.error, {
+              errorKind: next.errorKind,
+              machine: attempt.current,
+            });
           else if (next.machine) {
             setAdding(false);
             setTarget("");
@@ -81,11 +299,9 @@ export function ConnectionsSettings() {
                 : `${next.machine.name} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.`,
             );
             setUpdatingMachine(undefined);
-            setStatus((current) => ({
-              ...current,
-              [next.machine!.id]: "Connected",
-            }));
             refreshRemoteMachines();
+            // Show the new state now instead of waiting for the next poll.
+            void reconnectRemoteMachine(next.machine.id);
           }
           return;
         }
@@ -116,53 +332,11 @@ export function ConnectionsSettings() {
         behavior: "smooth",
       });
   }, [job?.prompt?.id]);
-  useEffect(() => {
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const check = async () => {
-      if (!busy)
-        await Promise.all(
-          machines.map(async (machine) => {
-            let label = "Connected";
-            try {
-              const host = await remoteRequest<HostDescriptor>(
-                machine.id,
-                "environment.describe",
-                { supportedProviders: REMOTE_PROVIDERS },
-              );
-              if (host.environmentId !== machine.environmentId)
-                throw new Error("Host identity changed");
-              if (!host.providers.length)
-                label = "Connected · install a supported provider on the host";
-              const update =
-                !host.capabilities?.includes("workspace.run") ||
-                !host.capabilities?.includes("git.worktreeCreate");
-              if (update)
-                label =
-                  "Connected · host update needed for Explorer and Changes";
-              if (!disposed)
-                setNeedsUpdate((current) => ({
-                  ...current,
-                  [machine.id]: update,
-                }));
-            } catch {
-              label = "Offline · reconnect to check access";
-            }
-            if (!disposed)
-              setStatus((current) => ({ ...current, [machine.id]: label }));
-          }),
-        );
-      if (!disposed) timer = setTimeout(() => void check(), 10_000);
-    };
-    void check();
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-    };
-  }, [machines, busy]);
   const begin = async (machine?: RemoteMachine, upgrade = false) => {
     if (submitting.current) return;
+    if (!machine && !form.valid) return;
     submitting.current = true;
+    attempt.current = machine;
     setBusy(true);
     setError("");
     setNotice("");
@@ -175,9 +349,9 @@ export function ConnectionsSettings() {
             ...(upgrade ? { upgrade: true } : {}),
           })
         : await invoke<string>("remote_ssh_begin", {
-            target: target.trim(),
+            target: form.target,
             name: name.trim(),
-            port: port ? Number(port) : null,
+            port: parseSshPort(port) ?? null,
           });
       if (!alive.current) {
         await invoke("remote_ssh_cancel", { jobId: id });
@@ -188,7 +362,7 @@ export function ConnectionsSettings() {
     } catch (reason) {
       submitting.current = false;
       if (alive.current) {
-        setError(String(reason));
+        setError(String(reason), { machine });
         setBusy(false);
       }
     }
@@ -236,6 +410,16 @@ export function ConnectionsSettings() {
       if (alive.current) setRevoking(false);
     }
   };
+  const explainedError = problem?.ssh
+    ? describeRemoteError(
+        problem.ssh.errorKind
+          ? `[ssh:${problem.ssh.errorKind}] ${problem.message}`
+          : problem.message,
+      )
+    : undefined;
+  // An unclassified failure keeps its own text; "keeps retrying" would mislead.
+  const explained = explainedError?.kind === "unknown" ? undefined : explainedError;
+  const rawMessage = problem?.message.replace(/^\[ssh:[a-z-]+\]\s*/, "");
   return (
     <div data-setting-id="remote-machines" className="flex flex-col gap-5">
       <div className="flex items-end justify-between gap-4">
@@ -265,62 +449,18 @@ export function ConnectionsSettings() {
       {machines.length > 0 ? (
         <div className="divide-y divide-stroke overflow-hidden rounded-xl border border-stroke">
           {machines.map((machine) => (
-            <div key={machine.id}>
-              <div className="flex items-center gap-3 px-4 py-4">
-                <Internet className="size-5 shrink-0 text-content/45" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium">
-                    {machine.name}
-                  </div>
-                  <div className="mt-1 truncate text-[12px] text-content/45">
-                    {machine.ssh
-                      ? `SSH · ${machine.ssh.target}${machine.ssh.port ? ` · port ${machine.ssh.port}` : ""}`
-                      : machine.endpoint}
-                  </div>
-                  <div className="mt-1 text-[12px] text-content/50">
-                    {status[machine.id] ?? "Checking connection…"}
-                  </div>
-                  {machine.ssh && needsUpdate[machine.id] ? (
-                    <div className="mt-1 text-[11px] text-content/45">
-                      Updating restarts the host and interrupts active agent
-                      turns.
-                    </div>
-                  ) : null}
-                </div>
-                {machine.ssh && (
-                  <div className="flex shrink-0 items-center gap-2">
-                    {needsUpdate[machine.id] ? (
-                      <button
-                        className={button}
-                        disabled={busy}
-                        title="Downloads the matching host package and restarts the host; active agent turns will be interrupted"
-                        onClick={() => void begin(machine, true)}
-                      >
-                        Update Host
-                      </button>
-                    ) : null}
-                    <button
-                      className={button}
-                      disabled={busy}
-                      onClick={() => void begin(machine)}
-                    >
-                      Reconnect
-                    </button>
-                  </div>
-                )}
-                <button
-                  disabled={busy || revoking}
-                  className="rounded p-2 text-content/40 hover:bg-selection hover:text-content disabled:opacity-40"
-                  aria-label={`Remove ${machine.name}`}
-                  title="Remove connection…"
-                  onClick={() => {
-                    setError("");
-                    setRemoving(machine.id);
-                  }}
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
+            <MachineRow
+              key={machine.id}
+              machine={machine}
+              busy={busy}
+              revoking={revoking}
+              onReconnect={() => void begin(machine)}
+              onUpdate={() => void begin(machine, true)}
+              onRemove={() => {
+                setError("");
+                setRemoving(machine.id);
+              }}
+            >
               {removing === machine.id && (
                 <div
                   role="group"
@@ -377,7 +517,7 @@ export function ConnectionsSettings() {
                   </div>
                 </div>
               )}
-            </div>
+            </MachineRow>
           ))}
         </div>
       ) : loaded && !adding ? (
@@ -411,7 +551,17 @@ export function ConnectionsSettings() {
               placeholder="user@my-mac-mini or an SSH alias"
               autoComplete="off"
               spellCheck={false}
+              aria-invalid={form.targetError ? true : undefined}
             />
+            {form.targetError ? (
+              <span role="alert" className="text-[12px] text-red-400">
+                {form.targetError}
+              </span>
+            ) : form.warning ? (
+              <span role="status" className="text-[12px] text-amber-400">
+                {form.warning}
+              </span>
+            ) : null}
           </label>
           <label className="flex flex-col gap-1.5 text-[12px] text-content/65">
             Name <span className="sr-only">(optional)</span>
@@ -427,20 +577,29 @@ export function ConnectionsSettings() {
               spellCheck={false}
             />
           </label>
-          <details className="text-[12px] text-content/50">
+          <details
+            className="text-[12px] text-content/50"
+            open={form.portError ? true : undefined}
+          >
             <summary className="cursor-pointer">Advanced</summary>
-            <label className="mt-3 flex max-w-40 flex-col gap-1.5">
+            <label className="mt-3 flex max-w-72 flex-col gap-1.5">
               SSH port
               <input
                 disabled={busy}
                 type="number"
                 min={1}
                 max={65535}
-                className={input}
+                className={`${input} max-w-40`}
                 value={port}
                 onChange={(event) => setPort(event.target.value)}
                 placeholder="From SSH config"
+                aria-invalid={form.portError ? true : undefined}
               />
+              {form.portError ? (
+                <span role="alert" className="text-red-400">
+                  {form.portError}
+                </span>
+              ) : null}
             </label>
           </details>
           <p className="text-[12px] leading-relaxed text-content/45">
@@ -469,7 +628,7 @@ export function ConnectionsSettings() {
             >
               Cancel
             </button>
-            <button className={button} disabled={busy || !target.trim()}>
+            <button className={button} disabled={busy || !form.valid}>
               {busy ? "Connecting…" : "Connect"}
             </button>
           </div>
@@ -485,6 +644,7 @@ export function ConnectionsSettings() {
             <Loader className="size-4 animate-spin" />
             {job?.message ?? "Starting connection…"}
           </div>
+          {job?.authUrl ? <SignInNotice url={job.authUrl} /> : null}
           {job?.prompt && (
             <form
               className="flex flex-col gap-3"
@@ -540,13 +700,32 @@ export function ConnectionsSettings() {
           </button>
         </div>
       )}
-      {error && (
-        <p
+      {problem && (
+        <div
           role="alert"
-          className="whitespace-pre-wrap break-words rounded-lg bg-red-500/5 p-3 text-[12px] leading-relaxed text-red-400"
+          className="flex flex-col gap-2 whitespace-pre-wrap break-words rounded-lg bg-red-500/5 p-3 text-[12px] leading-relaxed text-red-400"
         >
-          {error}
-        </p>
+          {explained ? (
+            <>
+              <p className="text-[13px] font-medium">{explained.title}</p>
+              <p>{explained.hint}</p>
+              <p className="text-red-400/70">{rawMessage}</p>
+              {explained.kind === "needs-interactive-auth" &&
+              (problem.ssh?.machine || (adding && form.valid)) ? (
+                <button
+                  type="button"
+                  className={`${button} self-start`}
+                  disabled={busy}
+                  onClick={() => void begin(problem.ssh?.machine)}
+                >
+                  Reconnect
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <p>{rawMessage}</p>
+          )}
+        </div>
       )}
       {notice && (
         <p role="status" className="text-[13px] text-emerald-500">

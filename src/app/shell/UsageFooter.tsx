@@ -30,6 +30,7 @@ import {
 import { MOD } from "../../platform/tauri/platform";
 import { UsageProviderChip } from "./UsageProviderChip";
 import { PiUsage } from "./PiUsage";
+import { RemoteHostChip } from "./RemoteHostChip";
 import {
   ProviderSignInPanel,
   type ProviderSignInState,
@@ -369,8 +370,10 @@ export function UsageFooter({
       ) : session ? (
         <SessionChip key={session.id ?? session.harness} session={session} />
       ) : null}
-      {showTerminals || showTerminalButton ? (
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+      {project || showTerminals || showTerminalButton ? (
+        // Empty for a local project with no terminal control, so it hides then.
+        <div className="ml-auto flex shrink-0 items-center gap-2 empty:hidden">
+          {project ? <RemoteHostChip project={project} /> : null}
           {showTerminals ? (
             <RunningTerminalChip
               terminals={terminals}

@@ -216,6 +216,19 @@ export type RemoteMachine = {
   ssh?: { target: string; port?: number | null; remotePort: number } | null;
 };
 
+/** Why an SSH-backed machine could not be reached, as classified by the host
+ * app. `remote_request` errors on SSH machines start with `[ssh:<kind>] `. */
+export type RemoteErrorKind =
+  | "host-key-changed"
+  | "permission-denied"
+  | "timeout"
+  | "dns"
+  | "refused"
+  | "needs-interactive-auth"
+  | "ssh-missing"
+  | "unknown";
+
+/** Progress of an SSH machine setup job, as polled from the host app. */
 export type SshSetup = {
   id: string;
   message: string;
@@ -223,6 +236,11 @@ export type SshSetup = {
   done: boolean;
   error?: string | null;
   machine?: RemoteMachine | null;
+  /** Browser page that approves a Tailscale SSH or NetBird SSO login. */
+  authUrl?: string;
+  /** A `RemoteErrorKind` slug when the setup failed; kept a string so a newer
+   * host app never breaks an older UI. */
+  errorKind?: string;
 };
 
 export function isRemoteProvider(value: unknown): value is RemoteProvider {

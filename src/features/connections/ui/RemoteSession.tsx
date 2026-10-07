@@ -30,13 +30,16 @@ import {
   rememberRemotePendingWorktree,
   rememberRemoteSession,
   REMOTE_HISTORY_CHANGE,
+  reconnectRemoteMachine,
   remoteRequest,
   reportRemoteMachineStatus,
+  useRemoteMachineState,
   remotePendingWorktree,
   remoteSessionFor,
   savePendingRemoteCommand,
   useRemoteMachines,
 } from "../model/connections";
+import { describeMachineProblem, needsAttention } from "./machineStatus";
 import { recordSkillsUsedInTurn } from "../../skills/model/skills";
 import { parseRemotePath, remotePath, remoteProjectFor, type RemoteProject } from "../model/remoteProjects";
 import {
@@ -202,6 +205,8 @@ function ConnectedRemoteSession({
     cachedDescriptors.get(machine.id),
   );
   const [online, setOnline] = useState(false);
+  const machineState = useRemoteMachineState(machine.id);
+  const [reconnecting, setReconnecting] = useState(false);
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState(() => remoteSessionFor(shell.id));
   const boundSession = useRef(sessionId);
@@ -1277,6 +1282,7 @@ function ConnectedRemoteSession({
     reviewUndoLocked: true,
   };
 
+  const problem = describeMachineProblem(machineState);
   return (
     <ModelSourceContext.Provider value={modelSource}>
       <div className="relative flex h-full min-h-0 flex-col">
@@ -1301,6 +1307,42 @@ function ConnectedRemoteSession({
                 {notice.action.label}
               </button>
             ) : null}
+          </div>
+        ) : null}
+        {needsAttention(machineState) ? (
+          <div
+            role="status"
+            aria-label="Connection problem"
+            className="flex shrink-0 flex-wrap items-center gap-3 border-b border-amber-400/30 bg-amber-400/5 px-4 py-2 text-[12px] text-content/70"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="font-medium text-content">
+                {problem.title}
+              </span>{" "}
+              <span>{problem.hint}</span>
+            </span>
+            <button
+              type="button"
+              disabled={reconnecting}
+              className="shrink-0 rounded-md px-2 py-1 text-content/80 hover:bg-content/8 hover:text-content disabled:opacity-40"
+              onClick={() => {
+                setReconnecting(true);
+                void reconnectRemoteMachine(machine.id).finally(() => {
+                  if (alive.current) setReconnecting(false);
+                });
+              }}
+            >
+              Reconnect
+            </button>
+            <button
+              type="button"
+              className="shrink-0 rounded-md px-2 py-1 text-content/60 hover:bg-content/8 hover:text-content"
+              onClick={() =>
+                window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT))
+              }
+            >
+              Settings → Connections
+            </button>
           </div>
         ) : null}
         <div className="min-h-0 flex-1">{render(overrides)}</div>

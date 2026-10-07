@@ -82,11 +82,17 @@ import { useProjectNotificationPreferences } from "../../features/notifications/
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import { Popover } from "../../shared/ui/Popover";
-import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import {
-  useRemoteMachineOnline,
+  OPEN_CONNECTIONS_EVENT,
+  OPEN_REMOTE_PROJECT_EVENT,
+  useRemoteMachineState,
   useRemoteMachines,
+  type MachineState,
 } from "../../features/connections/model/connections";
+import {
+  machineDotClass,
+  machineStateLabel,
+} from "../../features/connections/model/machineDisplay";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
 import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
@@ -897,16 +903,12 @@ function ProjectCard({
   const machine = remote
     ? machines.find((entry) => entry.environmentId === remote.environmentId)
     : undefined;
-  const online = useRemoteMachineOnline(machine?.id);
-  const connection = !remote
-    ? ""
-    : !machine
-      ? "Machine not connected on this computer"
-      : online === undefined
-        ? "Connecting"
-        : online
-          ? "Connected"
-          : "Reconnecting";
+  const machineState = useRemoteMachineState(machine?.id);
+  const needsAttention =
+    machineState.kind === "offline" ||
+    machineState.kind === "needsAuth" ||
+    machineState.kind === "error";
+  const connection = !remote ? "" : remoteConnectionLabel(machineState, !!machine);
   const cardTitle = projectCardTitle(
     remote
       ? `${remote.cwd} on ${machine?.name ?? "another machine"} (${connection})`
@@ -964,7 +966,11 @@ function ProjectCard({
         title={muteStatus ? `${cardTitle}\n${muteStatus}` : cardTitle}
         aria-label={muteStatus ? `${cardAriaLabel}, ${muteStatus}` : cardAriaLabel}
         aria-current={selected ? "true" : undefined}
-        className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[:focus-visible]:pr-6"
+        className={`flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none ${
+          machine && needsAttention
+            ? "group-hover:pr-12 group-has-[:focus-visible]:pr-12"
+            : "group-hover:pr-6 group-has-[:focus-visible]:pr-6"
+        }`}
       >
         <div className="project-card-logo grid size-4 shrink-0 place-items-center transition-opacity group-hover:opacity-0">
           {logoPath && !busy ? (
@@ -1010,7 +1016,7 @@ function ProjectCard({
             <span
               aria-hidden="true"
               className={`absolute right-0 bottom-0 size-1.5 rounded-full ring-1 ring-background-base ${
-                online ? "bg-emerald-400" : "bg-content/35"
+                machineDotClass(machineState.kind)
               }`}
             />
           </span>
@@ -1026,6 +1032,24 @@ function ProjectCard({
           </span>
         ) : null}
       </button>
+      {machine && needsAttention ? (
+        // The project menu has no machine entry, so this opens Settings, where
+        // the machine's Reconnect button lives.
+        <button
+          type="button"
+          data-no-drag
+          title={`${connection}. Open Connections settings to reconnect`}
+          aria-label={`${connection}: reconnect ${machine.name}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
+          }}
+          className="absolute right-7 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-amber-400 hover:bg-content/8 group-hover:grid group-has-[:focus-visible]:grid"
+        >
+          <Internet className="size-3.5" strokeWidth={1.75} />
+        </button>
+      ) : null}
       <button
         type="button"
         data-no-drag
@@ -1104,6 +1128,15 @@ function ProjectDiffStat({
       ) : null}
     </span>
   );
+}
+
+/** What a remote project's rail card says about its machine. */
+export function remoteConnectionLabel(
+  state: Pick<MachineState, "kind">,
+  machineConnected = true,
+): string {
+  if (!machineConnected) return "Machine not connected on this computer";
+  return machineStateLabel(state.kind);
 }
 
 function projectCardTitle(

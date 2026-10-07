@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { applySessionSync, type HostSession } from "./protocol";
+import {
+  applySessionSync,
+  type HostSession,
+  type RemoteErrorKind,
+  type SshSetup,
+} from "./protocol";
 
 const known: HostSession = {
   projectId: "project",
@@ -65,4 +70,18 @@ it("rejects deltas that do not apply, so the caller loads a snapshot", () => {
   expect(() =>
     applySessionSync(undefined, { kind: "unchanged", revision: 4 }),
   ).toThrow();
+});
+
+// Type-level contract with the host app: both fields are optional on SshSetup.
+it("accepts the optional SSH setup auth fields", () => {
+  const setup: SshSetup = {
+    id: "setup",
+    message: "Waiting for approval",
+    done: false,
+    authUrl: "https://login.tailscale.com/a/abc",
+    errorKind: "needs-interactive-auth",
+  };
+  const kind: RemoteErrorKind = "host-key-changed";
+  expect(setup.authUrl).toContain("tailscale");
+  expect([setup.errorKind, kind]).toEqual(["needs-interactive-auth", "host-key-changed"]);
 });

@@ -13,7 +13,11 @@ import { invalidateSkills } from "../../skills/model/skills";
 import { resetSkillUsageForTests } from "../../skills/model/skillUsage";
 import { rememberRemoteProject } from "../model/remoteProjects";
 import { preloadRemoteSession } from "./RemoteSession";
-import { rememberRemoteSession, remoteSessionFor } from "../model/connections";
+import {
+  OPEN_CONNECTIONS_EVENT,
+  rememberRemoteSession,
+  remoteSessionFor,
+} from "../model/connections";
 import { remoteSessionActions } from "../model/remoteSessionActions";
 import "../model/remoteCommands";
 import type {
@@ -129,6 +133,8 @@ let hostSkills: string[];
 let skillRevision = 0;
 let sendFailure: string | undefined;
 let planReply: string | undefined;
+/** When set, every `environment.describe` request fails with this error. */
+let describeFailure: string | undefined;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -147,6 +153,7 @@ beforeEach(() => {
   hostSkills = [];
   sendFailure = undefined;
   planReply = undefined;
+  describeFailure = undefined;
   skillRevision += 1;
   invalidateSkills();
   resetSkillUsageForTests();
@@ -181,7 +188,8 @@ beforeEach(() => {
           source: "claude",
         })),
       };
-    if (method === "environment.describe")
+    if (method === "environment.describe") {
+      if (describeFailure) throw describeFailure;
       return {
         protocolVersion: 1,
         environmentId: "env",
@@ -189,6 +197,7 @@ beforeEach(() => {
         providers,
         capabilities: ["attachments.upload", "sessions.plan", "sessions.draft"],
       };
+    }
     if (method === "models.list") {
       if (catalog instanceof Error) throw catalog.message;
       return catalog;
@@ -1182,4 +1191,57 @@ it("records nothing for a typed skill that is not in the remote catalog", async 
   await send("/nope the release");
   expect(commands.at(-1)).toMatchObject({ type: "send" });
   expect(usageRecords()).toEqual([]);
+});
+
+const banner = () =>
+  container.querySelector<HTMLElement>('[aria-label="Connection problem"]');
+const bannerButton = (name: string) =>
+  [...(banner()?.querySelectorAll("button") ?? [])].find(
+    (button) => button.textContent === name,
+  );
+
+it("shows no connection banner while the machine answers", async () => {
+  await render();
+  expect(banner()).toBeNull();
+});
+
+it.each([
+  ["needs-interactive-auth", "Approval needed", "Approve the request there"],
+  ["timeout", "Machine is unreachable", "VPN (Tailscale or NetBird)"],
+  ["host-key-changed", "Host key changed", "ssh-keygen -R"],
+  ["permission-denied", "Permission denied", "authorized on it"],
+])(
+  "explains a %s failure in a banner with Reconnect and a Settings link",
+  async (kind, title, hint) => {
+    describeFailure = `[ssh:${kind}] ssh failed`;
+    await render();
+    await vi.waitFor(() => expect(banner()).not.toBeNull(), { timeout: 4_000 });
+    expect(banner()!.textContent).toContain(title);
+    expect(banner()!.textContent).toContain(hint);
+    expect(bannerButton("Reconnect")).toBeTruthy();
+    expect(bannerButton("Settings → Connections")).toBeTruthy();
+    // The composer stays, with sending held back while offline.
+    expect(container.querySelector("textarea")).not.toBeNull();
+  },
+);
+
+it("opens Settings, Connections from the banner", async () => {
+  describeFailure = "[ssh:timeout] ssh failed";
+  const opened = vi.fn();
+  window.addEventListener(OPEN_CONNECTIONS_EVENT, opened);
+  await render();
+  await vi.waitFor(() => expect(banner()).not.toBeNull(), { timeout: 4_000 });
+  await act(async () => bannerButton("Settings → Connections")!.click());
+  window.removeEventListener(OPEN_CONNECTIONS_EVENT, opened);
+  expect(opened).toHaveBeenCalledTimes(1);
+});
+
+it("retries from the banner and hides it once the machine answers", async () => {
+  describeFailure = "[ssh:needs-interactive-auth] approve in the browser";
+  await render();
+  await vi.waitFor(() => expect(banner()).not.toBeNull(), { timeout: 4_000 });
+  describeFailure = undefined;
+  await act(async () => bannerButton("Reconnect")!.click());
+  await vi.waitFor(() => expect(banner()).toBeNull(), { timeout: 4_000 });
+  expect(vi.mocked(invoke)).toHaveBeenCalledWith("remote_network_changed");
 });
