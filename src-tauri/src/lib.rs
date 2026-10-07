@@ -564,6 +564,8 @@ pub fn run() {
             mono_chat::mono_chat_keep_alive,
             #[cfg(target_os = "macos")]
             mono_chat::mono_chat_switch,
+            #[cfg(target_os = "macos")]
+            mono_chat::mono_menu_bar_set_visible,
             window_transfer::stage_window_transfer,
             window_transfer::take_window_transfer,
             chat_background::save_chat_background,
