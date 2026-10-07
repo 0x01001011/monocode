@@ -40,6 +40,8 @@ fn user_roots(home: &Path) -> Vec<PathBuf> {
     // Plugin skill roots come from installed_plugins.json, so its directory is
     // watched non-recursively instead of the whole plugin cache.
     roots.push(home.join(".claude/plugins"));
+    // Plugin enablement lives in settings.json here.
+    roots.push(home.join(SETTINGS_DIR));
     roots
 }
 
@@ -47,7 +49,19 @@ fn user_roots(home: &Path) -> Vec<PathBuf> {
 fn project_roots(project: &Path) -> Vec<PathBuf> {
     let mut roots = vec![project.join(".agents/skills")];
     roots.extend(PROVIDER_SKILL_DIRS.iter().map(|(dir, _)| project.join(dir)));
+    // Project settings can enable or disable plugins too.
+    roots.push(project.join(SETTINGS_DIR));
     roots
+}
+
+/// Holds the settings files that enable or disable Claude plugins. Watched
+/// non-recursively, and only its settings files count as changes: Claude Code
+/// writes plenty of unrelated files here.
+const SETTINGS_DIR: &str = ".claude";
+const SETTINGS_FILES: [&str; 2] = ["settings.json", "settings.local.json"];
+
+fn is_settings_dir(root: &Path) -> bool {
+    root.file_name().is_some_and(|name| name == SETTINGS_DIR)
 }
 
 /// Canonicalizes the nearest existing ancestor and re-appends the rest, so a
@@ -83,6 +97,9 @@ struct Shared {
 struct WatchState {
     /// Every root asked for, in raw and canonical spelling, for event filtering.
     roots: HashSet<PathBuf>,
+    /// Settings directories, in raw and canonical spelling. Only their
+    /// settings files are relevant.
+    settings_dirs: HashSet<PathBuf>,
     /// Raw roots in request order, so they can be re-checked on change.
     requested: Vec<PathBuf>,
     /// Paths with an active OS watch, and whether it is recursive.
@@ -91,9 +108,18 @@ struct WatchState {
 
 impl WatchState {
     fn is_relevant(&self, path: &Path) -> bool {
-        self.roots
-            .iter()
-            .any(|root| path.starts_with(root) || root.starts_with(path))
+        let settings_file = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| SETTINGS_FILES.contains(&name))
+            && path
+                .parent()
+                .is_some_and(|dir| self.settings_dirs.contains(dir));
+        settings_file
+            || self
+                .roots
+                .iter()
+                .any(|root| path.starts_with(root) || root.starts_with(path))
     }
 }
 
@@ -119,8 +145,13 @@ impl Shared {
                 if !state.requested.contains(root) {
                     state.requested.push(root.clone());
                 }
-                state.roots.insert(root.clone());
-                state.roots.insert(canonical_form(root));
+                let filter = if is_settings_dir(root) {
+                    &mut state.settings_dirs
+                } else {
+                    &mut state.roots
+                };
+                filter.insert(root.clone());
+                filter.insert(canonical_form(root));
             }
             let targets = state
                 .requested
@@ -172,8 +203,9 @@ impl Shared {
 fn watch_target(root: &Path) -> Option<(PathBuf, bool)> {
     if root.is_dir() {
         // The plugins directory holds whole plugin caches; only its registry
-        // file matters.
-        Some((root.to_path_buf(), !root.ends_with(".claude/plugins")))
+        // file matters. Settings directories only matter for their own files.
+        let recursive = !root.ends_with(".claude/plugins") && !is_settings_dir(root);
+        Some((root.to_path_buf(), recursive))
     } else {
         nearest_existing_dir(root).map(|ancestor| (ancestor, false))
     }
@@ -441,6 +473,63 @@ mod tests {
         assert!(watcher.watch_roots(&[]));
         assert!(watched(&watcher), "recreated root must be watched again");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_settings_edits_bump_the_revision() {
+        let project = temp_root("settings");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let (watcher, fired) = counting_watcher();
+        assert!(watcher.watch_roots(&project_roots(&project)));
+
+        std::fs::write(
+            project.join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"demo@market":false}}"#,
+        )
+        .unwrap();
+        assert!(wait_for(|| fired.load(Ordering::SeqCst) > 0));
+        std::thread::sleep(Duration::from_millis(300));
+        let after_settings = fired.load(Ordering::SeqCst);
+
+        std::fs::write(project.join(".claude/settings.local.json"), "{}").unwrap();
+        assert!(wait_for(|| fired.load(Ordering::SeqCst) > after_settings));
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn only_settings_files_in_a_settings_dir_are_relevant() {
+        let project = temp_root("settings-filter");
+        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        let (watcher, _fired) = counting_watcher();
+        watcher.watch_roots(&project_roots(&project));
+        let state = watcher.shared.state.lock().unwrap();
+        let dir = canonical_form(&project.join(".claude"));
+        assert!(state.is_relevant(&dir.join("settings.json")));
+        assert!(state.is_relevant(&dir.join("settings.local.json")));
+        assert!(state.is_relevant(&project.join(".claude/settings.json")));
+        // Claude Code writes plenty of other files here; they never matter.
+        assert!(!state.is_relevant(&dir.join("history.jsonl")));
+        assert!(!state.is_relevant(&dir.join("projects/x/settings.json")));
+        assert!(!state.is_relevant(&dir.join("settings.json.tmp")));
+        // The skill roots under it are still watched as before.
+        assert!(state.is_relevant(&dir.join("skills/foo/SKILL.md")));
+        drop(state);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn settings_dirs_are_watched_non_recursively() {
+        let home = temp_root("settings-home");
+        std::fs::create_dir_all(home.join(".claude")).unwrap();
+        assert!(user_roots(&home).contains(&home.join(".claude")));
+        assert_eq!(
+            watch_target(&home.join(".claude")),
+            Some((home.join(".claude"), false))
+        );
+        let project = temp_root("settings-project");
+        assert!(project_roots(&project).contains(&project.join(".claude")));
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&project);
     }
 
     #[test]

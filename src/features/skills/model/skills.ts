@@ -125,6 +125,8 @@ const NATIVE_SKILL_TTL_MS = 30_000;
 const NATIVE_SKILL_RETRY_MS = 5_000;
 /** File catalogs of projects the backend is not watching go stale on their own. */
 const UNWATCHED_SKILL_TTL_MS = 30_000;
+/** Backstop for watched projects, whose catalogs normally change on events. */
+const WATCHED_SKILL_TTL_MS = 5 * 60_000;
 
 export type SkillCatalogContext = {
   harness: HarnessId;
@@ -417,9 +419,13 @@ function watchProject(cwd: string): Promise<boolean> {
   return request;
 }
 
-/** Cached file catalogs stay valid for as long as the backend watches them. */
+/** Watched catalogs rely on watcher events, with a long backstop for edits the
+ * watcher cannot see (a symlinked skill folder outside the watched roots). */
 function isFileCatalogStale(cwd: string, loadedAt: number, now: number): boolean {
-  return !watchedProjects.has(cwd) && now - loadedAt >= UNWATCHED_SKILL_TTL_MS;
+  const ttl = watchedProjects.has(cwd)
+    ? WATCHED_SKILL_TTL_MS
+    : UNWATCHED_SKILL_TTL_MS;
+  return now - loadedAt >= ttl;
 }
 
 /**

@@ -426,14 +426,32 @@ describe("unwatched project fallback", () => {
     expect(calls("list_skills")).toBe(2);
   });
 
-  it("keeps a watched project's catalog cached past the TTL", async () => {
+  it("keeps a watched project's catalog cached past the unwatched TTL", async () => {
     vi.useFakeTimers();
     mockBackend(() => true);
     const context = { harness: "claude", cwd: "/work/watched-ttl" } as const;
     await loadSkills(context);
-    vi.advanceTimersByTime(TTL_MS * 10);
+    vi.advanceTimersByTime(TTL_MS * 2);
     await loadSkills(context);
     expect(calls("list_skills")).toBe(1);
+    expect(calls("skills_watch_project")).toBe(1);
+  });
+
+  it("refetches a watched project's catalog after the 5 minute backstop", async () => {
+    // Edits the watcher cannot see (a symlinked skill outside the watched
+    // roots) still show up eventually.
+    const WATCHED_TTL_MS = 5 * 60_000;
+    vi.useFakeTimers();
+    mockBackend(() => true);
+    const context = { harness: "claude", cwd: "/work/watched-backstop" } as const;
+    await loadSkills(context);
+    vi.advanceTimersByTime(WATCHED_TTL_MS - 1);
+    await loadSkills(context);
+    expect(calls("list_skills")).toBe(1);
+
+    vi.advanceTimersByTime(2);
+    await loadSkills(context);
+    expect(calls("list_skills")).toBe(2);
     expect(calls("skills_watch_project")).toBe(1);
   });
 
