@@ -987,6 +987,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                         linked_work_item_json, worktree_cwd, worktree_removed,
                         is_draft, automation_id, sidebar_hidden);",
     )?;
+    // Skill usage tables are unversioned on purpose: other builds sharing this
+    // database own the schema_migrations numbers, so claiming one here could
+    // make them skip their own migration.
     ensure_skill_usage_tables(conn)?;
     crate::notes::ensure_notes_table(conn)?;
     crate::reminders::ensure_table(conn)?;
@@ -2780,7 +2783,7 @@ mod tests {
                        ON sessions (cwd, has_user_message, updated_at DESC, id, harness,
                                     model, runtime_mode, title, provider_session_id,
                                     created_at, branch, archived, pinned, linked_work_item_json);
-                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18, 19);",
+                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18);",
                 )
                 .unwrap();
                 migrate(&conn).unwrap();
@@ -4349,10 +4352,18 @@ mod tests {
             .unwrap()
         };
         let before = schema(&conn);
+        let max_version = |conn: &Connection| -> i64 {
+            conn.query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        let version_before = max_version(&conn);
         // Roll the database back to the schema an older build left behind.
         conn.execute_batch(
-            "DROP TABLE skill_usage; DROP TABLE skill_pair; DROP TABLE skill_usage_meta;
-             DELETE FROM schema_migrations WHERE version >= 19;",
+            "DROP TABLE skill_usage; DROP TABLE skill_pair; DROP TABLE skill_usage_meta;",
         )
         .unwrap();
         migrate(&conn).unwrap();
@@ -4363,15 +4374,47 @@ mod tests {
             })
             .unwrap();
         assert_eq!(title, "Keep me");
-        let recorded: i64 = conn
+        let skill_tables: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM schema_migrations WHERE version = 19",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+                 AND name IN ('skill_usage', 'skill_pair', 'skill_usage_meta')",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(recorded, 1);
+        assert_eq!(skill_tables, 3);
+        // The skill tables never claim a schema version: the numbers belong to
+        // whichever build shares this database.
+        assert_eq!(max_version(&conn), version_before);
         record_usage(&conn, "/p", &names(&["a"]), 1).unwrap();
+    }
+
+    #[test]
+    fn migrating_a_version_18_database_adds_no_version_row() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        // A database another build left at version 18, before skill usage.
+        conn.execute_batch(
+            "DROP TABLE skill_usage; DROP TABLE skill_pair; DROP TABLE skill_usage_meta;
+             DELETE FROM schema_migrations WHERE version > 18;",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let max: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(max, 18);
+        let skill_tables: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+                 AND name IN ('skill_usage', 'skill_pair', 'skill_usage_meta')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(skill_tables, 3);
     }
 
     #[test]
@@ -4416,6 +4459,13 @@ mod tests {
         }
         assert_eq!(backfill_usage(&store, 10).unwrap(), 1);
         let conn = store.lock_conn().unwrap();
-        assert!(usage_snapshot(&conn, "/").unwrap().usage.is_empty());
+        let count = |table: &str| -> i64 {
+            conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+        };
+        assert_eq!(count("skill_usage"), 0);
+        assert_eq!(count("skill_pair"), 0);
     }
 }
