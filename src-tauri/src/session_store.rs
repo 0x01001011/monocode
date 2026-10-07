@@ -2783,7 +2783,7 @@ mod tests {
                        ON sessions (cwd, has_user_message, updated_at DESC, id, harness,
                                     model, runtime_mode, title, provider_session_id,
                                     created_at, branch, archived, pinned, linked_work_item_json);
-                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18);",
+                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18, 19);",
                 )
                 .unwrap();
                 migrate(&conn).unwrap();
@@ -4390,22 +4390,29 @@ mod tests {
     }
 
     #[test]
-    fn migrating_a_version_18_database_adds_no_version_row() {
+    fn skill_usage_tables_never_add_schema_versions() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
-        // A database another build left at version 18, before skill usage.
+        // `open_in_memory` already ran every upstream migration.
+        let versions = |conn: &Connection| -> Vec<i64> {
+            conn.prepare("SELECT version FROM schema_migrations ORDER BY version")
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap()
+        };
+        let before = versions(&conn);
+        assert!(!before.is_empty());
+        // A database whose schema predates skill usage.
         conn.execute_batch(
-            "DROP TABLE skill_usage; DROP TABLE skill_pair; DROP TABLE skill_usage_meta;
-             DELETE FROM schema_migrations WHERE version > 18;",
+            "DROP TABLE skill_usage; DROP TABLE skill_pair; DROP TABLE skill_usage_meta;",
         )
         .unwrap();
         migrate(&conn).unwrap();
-        let max: i64 = conn
-            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(max, 18);
+        // The version numbers belong to upstream: recreating the skill tables
+        // adds no row, so nothing past upstream's current max is claimed.
+        assert_eq!(versions(&conn), before);
         let skill_tables: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
