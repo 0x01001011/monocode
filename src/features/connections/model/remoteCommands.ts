@@ -105,7 +105,7 @@ export async function runRemoteCommand(
       args: hostArgs,
     });
   } catch (reason) {
-    if (/Unsupported (host method|remote operation)/i.test(String(reason)))
+    if (/Unsupported (host method|remote operation|workspace command)/i.test(String(reason)))
       throw new Error(OUTDATED);
     throw reason;
   }

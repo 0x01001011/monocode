@@ -6,6 +6,7 @@ import {
   subscribeSkills,
   mergeCatalog,
   peekSkills,
+  skillCatalogIssue,
   skillCatalogKey,
   type Skill,
   type SkillCatalogContext,
@@ -120,6 +121,7 @@ export function useComposerSkills(input: {
     contextToken,
     isCurrent,
     refresh,
+    issue: skillCatalogIssue(context),
     skills: visibleComposerSkills(
       state,
       contextKey,

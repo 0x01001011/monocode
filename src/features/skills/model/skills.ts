@@ -151,6 +151,8 @@ type CatalogEntry = {
   retryAt: number;
   generation: number;
   inFlight: CatalogRequest | null;
+  /** Why a remote machine's skills could not be listed, shown by the picker. */
+  issue: string | null;
 };
 
 const catalogEntries = new Map<string, CatalogEntry>();
@@ -208,6 +210,7 @@ export function subscribeSkills(
         retryAt: 0,
         generation: (previous?.generation ?? 0) + 1,
         inFlight: null,
+        issue: null,
       });
       onSkills(skills);
     }) ?? (() => undefined)
@@ -216,6 +219,19 @@ export function subscribeSkills(
 
 export function peekSkills(context: SkillCatalogContext): Skill[] | null {
   return catalogEntries.get(skillCatalogKey(context))?.skills ?? null;
+}
+
+/** Set while a remote machine's skills could not be listed, so the `/` menu
+ * can say why only the built-in commands are offered. */
+export function skillCatalogIssue(context: SkillCatalogContext): string | null {
+  return catalogEntries.get(skillCatalogKey(context))?.issue ?? null;
+}
+
+function describeCatalogIssue(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/Update MonoCode Host/i.test(message))
+    return "Update MonoCode Host in Connections settings to use this machine’s skills.";
+  return `Couldn’t load this machine’s skills. ${message}`.trim();
 }
 
 export function invalidateSkills(context?: { cwd: string }) {
@@ -255,6 +271,7 @@ export function loadSkills(
       retryAt: 0,
       generation: 0,
       inFlight: null,
+      issue: null,
     };
     catalogEntries.set(key, entry);
   }
@@ -309,9 +326,10 @@ function startCatalogLoad(
       entry.skills = skills;
       entry.loadedAt = Date.now();
       entry.retryAt = 0;
+      entry.issue = null;
       return skills;
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       if (
         catalogEntries.get(key) !== entry ||
         entry.generation !== generation
@@ -324,7 +342,11 @@ function startCatalogLoad(
       }
       const fallback = mergeCatalog([]);
       entry.skills = fallback;
-      entry.loadedAt = Date.now();
+      const remote = isRemoteProjectPath(context.cwd);
+      // A machine that failed is asked again the next time the menu opens, so
+      // updating its host takes effect without waiting out the cache.
+      entry.loadedAt = remote ? 0 : Date.now();
+      entry.issue = remote ? describeCatalogIssue(error) : null;
       return fallback;
     })
     .finally(() => {

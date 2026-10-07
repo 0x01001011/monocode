@@ -23,6 +23,8 @@ type Props = {
   cwd: string;
   compact?: boolean;
   showCreate?: boolean;
+  /** Why the menu is missing skills it would normally show. */
+  notice?: string | null;
   error?: string | null;
   busy?: boolean;
   onActive: (index: number) => void;
@@ -40,6 +42,7 @@ export function SkillPicker({
   cwd,
   compact = false,
   showCreate = true,
+  notice,
   error,
   busy,
   onActive,
@@ -76,6 +79,14 @@ export function SkillPicker({
             onActive={onActive}
             onPick={onPick}
           />
+          {notice ? (
+            <p
+              role="status"
+              className="border-t border-stroke px-2.5 py-2 text-[12px] leading-snug text-amber-300/90"
+            >
+              {notice}
+            </p>
+          ) : null}
           {showCreate ? (
             <button
               type="button"

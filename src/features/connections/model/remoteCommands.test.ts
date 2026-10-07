@@ -147,6 +147,11 @@ it("refuses what the host cannot do and explains outdated hosts", async () => {
     runRemoteCommand("list_dir", { path: "remote://env/home/me" }),
   ).rejects.toThrow("Update MonoCode Host");
   expect(remoteRequest).toHaveBeenCalledTimes(1);
+  // A host built before `list_skills` rejects the command by name.
+  remoteRequest.mockRejectedValueOnce("Unsupported workspace command");
+  await expect(
+    runRemoteCommand("list_skills", { cwd: "remote://env/home/me/repo" }),
+  ).rejects.toThrow("Update MonoCode Host");
 });
 
 it("lists skills on the host and maps their paths to remote paths", async () => {

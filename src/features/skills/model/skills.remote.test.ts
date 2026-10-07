@@ -16,6 +16,7 @@ import {
   loadSkills,
   recordSkillsUsedInTurn,
   saveDisabledSkillPaths,
+  skillCatalogIssue,
   type FileSkill,
   type Skill,
 } from "./skills";
@@ -122,6 +123,42 @@ describe("remote skill catalogs", () => {
       sinceRevision: 5,
     });
     expect(fileNames(changed)).toEqual(["deploy"]);
+  });
+
+  it("says why a machine's skills are missing and asks again on the next open", async () => {
+    const context = {
+      harness: "claude",
+      cwd: "remote://env-old/home/me/app",
+    } as const;
+    answer(
+      new Error(
+        "Update MonoCode Host in Connections settings to use this project’s files.",
+      ),
+    );
+    const fallback = await loadSkills(context);
+    expect(fileNames(fallback)).toEqual([]);
+    expect(skillCatalogIssue(context)).toBe(
+      "Update MonoCode Host in Connections settings to use this machine’s skills.",
+    );
+
+    // The host was updated: the very next load asks again, no TTL wait.
+    answer({ revision: 3, skills: [remoteSkill("env-old", "ship")] });
+    const fixed = await loadSkills(context);
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(fileNames(fixed)).toEqual(["ship"]);
+    expect(skillCatalogIssue(context)).toBeNull();
+  });
+
+  it("reports an unreachable machine's error and never flags a local project", async () => {
+    const remote = { harness: "claude", cwd: "remote://env-b/home/me/x" } as const;
+    answer(new Error("[ssh:timeout] Machine is unreachable."));
+    await loadSkills(remote);
+    expect(skillCatalogIssue(remote)).toContain("[ssh:timeout]");
+
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("boom"));
+    const local = { harness: "claude", cwd: "/Users/me/local-app" } as const;
+    await loadSkills(local);
+    expect(skillCatalogIssue(local)).toBeNull();
   });
 
   it("keeps the last good catalog when the machine is unreachable", async () => {

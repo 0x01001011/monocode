@@ -288,6 +288,7 @@ export function createHostServer(
                 "attachments.read",
                 "sessions.draft",
                 "sessions.plan",
+                "skills.list",
               ],
             };
             break;

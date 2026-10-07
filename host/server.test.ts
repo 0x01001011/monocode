@@ -305,6 +305,12 @@ describe("remote host API", () => {
       supportedProviders: ["codex", "cursor"],
     })).value.result.providers).toEqual(["codex", "cursor"]);
   });
+  it("advertises skill listing so desktops can tell older hosts apart", async () => {
+    const s = await setup();
+    const { capabilities } = (await s.call("environment.describe")).value.result;
+    expect(capabilities).toContain("workspace.run");
+    expect(capabilities).toContain("skills.list");
+  });
   it("re-probes models after the provider CLI is updated", async () => {
     const s = await setup();
     cleanups.push(async () => {

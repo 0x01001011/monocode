@@ -62,3 +62,35 @@ describe("native command picker", () => {
     expect(html).toContain("list --all");
   });
 });
+
+describe("picker notice", () => {
+  const render = (notice?: string | null) =>
+    renderToStaticMarkup(
+      createElement(SkillPicker, {
+        skills: [PLAN_COMMAND, COMPACT_COMMAND],
+        query: "",
+        active: 0,
+        creating: false,
+        cwd: "remote://env/home/me/app",
+        notice,
+        onActive: vi.fn(),
+        onPick: vi.fn(),
+        onStartCreate: vi.fn(),
+        onCancelCreate: vi.fn(),
+        onCreate: vi.fn(),
+      }),
+    );
+
+  it("explains why a machine's skills are missing", () => {
+    const html = render(
+      "Update MonoCode Host in Connections settings to use this machine’s skills.",
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Update MonoCode Host");
+  });
+
+  it("shows nothing extra without a notice", () => {
+    expect(render(null)).not.toContain('role="status"');
+    expect(render()).not.toContain('role="status"');
+  });
+});

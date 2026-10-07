@@ -1864,6 +1864,7 @@ export function Composer({
               active={skillActive}
               creating={creatingSkill}
               cwd={executionCwd}
+              notice={skillCatalog.issue}
               error={createError}
               busy={createBusy}
               onActive={setSkillActive}
