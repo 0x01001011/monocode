@@ -4432,7 +4432,7 @@ function Workspace({
       const session = await ensureMonoSession(monoId, {
         home: homeDir,
         load: ensureOpenSession,
-        create: (path) => newDefaultSession(path, sessionDefaults?.runtimeMode),
+        create: (path) => newDefaultSession(path),
         add: (created) => {
           sessionsRef.current = [...sessionsRef.current, created];
           setSessions(sessionsRef.current);
@@ -4445,11 +4445,7 @@ function Workspace({
       setComposerFocused(true);
       setComposerFocusToken((token) => token + 1);
     },
-    [
-      ensureOpenSession,
-      sessionDefaults?.runtimeMode,
-      workspaceNavigation.cancel,
-    ],
+    [ensureOpenSession, workspaceNavigation.cancel],
   );
 
   /** The shortcut opens the last Mono, or the first on the rail. */
@@ -11879,11 +11875,16 @@ function Workspace({
         harness={monoViewSession.harness}
         model={monoViewSession.model}
         modelSettings={monoViewSession.modelSettings}
+        runtimeMode={monoViewSession.runtimeMode}
+        busy={!!monoViewSession.busy}
         onModelChange={(harness, model) =>
           onModelChange(monoViewSession.id, harness, model)
         }
         onModelSettingsChange={(settings) =>
           onModelSettingsChange(monoViewSession.id, settings)
+        }
+        onRuntimeModeChange={(mode) =>
+          onRuntimeModeChange(monoViewSession.id, mode)
         }
         onClose={() => setMonoDetailsOpen(false)}
         onReset={() => onResetMono(monoViewSession.id)}
