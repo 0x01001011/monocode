@@ -12,6 +12,7 @@ import { ExplorerMenu } from "./ExplorerMenu";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { formatFileSize, sniffImageMime } from "../model/filePreview";
+import { describeFileError } from "../model/fileErrors";
 import { watchFile } from "../model/fileWatch";
 import {
   basename,
@@ -102,12 +103,14 @@ export function BinaryFileView({ path, cwd }: Props) {
   }
 
   if (state.status === "error") {
+    const info = describeFileError(state.message);
     return (
       <FileCard
         path={path}
         cwd={cwd}
         title={`Couldn’t open ${basename(path)}`}
-        detail={state.message}
+        detail={info.hint || info.detail}
+        extra={info.hint ? info.detail : undefined}
         icon={<AlertCircle className="mx-auto mb-3 size-5 text-danger" />}
         onRetry={reload}
       />
@@ -318,6 +321,7 @@ function FileCard({
   cwd,
   title,
   detail,
+  extra,
   icon,
   onRetry,
 }: {
@@ -325,6 +329,8 @@ function FileCard({
   cwd: string;
   title: string;
   detail: string;
+  /** Raw underlying message, shown small beneath an explanatory `detail`. */
+  extra?: string;
   icon: React.ReactNode;
   onRetry?: () => void;
 }) {
@@ -334,6 +340,11 @@ function FileCard({
         {icon}
         <p className="text-[13px] text-content">{title}</p>
         <p className="mt-1 text-[12px] leading-5 text-muted">{detail}</p>
+        {extra ? (
+          <p className="mt-1 break-words font-mono text-[11px] text-faint">
+            {extra}
+          </p>
+        ) : null}
         <p className="mt-1 truncate font-mono text-[11px] text-muted">
           {displayPath(path, cwd)}
         </p>

@@ -56,6 +56,7 @@ import {
   isSaveConflict,
   type GitFileDiffKind,
 } from "../../../platform/tauri/fs";
+import { describeFileError } from "../model/fileErrors";
 import { syncWatchedMtime, watchedMtime, watchFile } from "../model/fileWatch";
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation } from "../../search/model/search";
@@ -447,9 +448,23 @@ export function FileEditor({
           <p className="text-[13px] text-content">
             Couldn’t open {basename(path)}
           </p>
-          <p className="mt-1 text-[12px] leading-5 text-muted">
-            {loadState.message}
-          </p>
+          {(() => {
+            const info = describeFileError(loadState.message);
+            return info.hint ? (
+              <>
+                <p className="mt-1 text-[12px] leading-5 text-muted">
+                  {info.hint}
+                </p>
+                <p className="mt-1 break-words font-mono text-[11px] text-faint">
+                  {info.detail}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-[12px] leading-5 text-muted">
+                {info.detail}
+              </p>
+            );
+          })()}
           <button
             type="button"
             onClick={() => setReloadKey((value) => value + 1)}

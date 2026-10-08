@@ -226,6 +226,32 @@ describe("file editor line endings", () => {
     expect(written.content).toBe("changed alpha\n");
   });
 
+  it("explains a missing file and keeps the raw error and Retry", async () => {
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "read_text_file") {
+        throw new Error("/repo/notes.txt: No such file or directory (os error 2)");
+      }
+      return defaultInvoke(command, args);
+    });
+    await act(async () =>
+      root.render(
+        createElement(FileEditor, {
+          path: "/repo/notes.txt",
+          cwd: "/repo",
+          active: true,
+          onDirtyChange: () => {},
+        }),
+      ),
+    );
+    await act(async () => {
+      await vi.waitFor(() =>
+        expect(container.textContent).toContain("isn’t here any more"),
+      );
+    });
+    expect(container.textContent).toContain("No such file or directory");
+    expect(container.textContent).toContain("Retry");
+  });
+
   it("warns when the file changed on disk, then overwrites on an explicit save", async () => {
     disk.content = "alpha\n";
     const writes: Record<string, unknown>[] = [];
