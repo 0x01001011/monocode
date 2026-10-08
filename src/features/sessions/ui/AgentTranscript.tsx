@@ -327,7 +327,7 @@ function AgentTranscriptComponent({
   );
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const scroller = useRef<HTMLDivElement>(null);
-  const stickToBottom = useDebugStickRef(scroller); // TEMP scroll debug
+  const stickToBottom = useRef(true);
   const refreshChatMotion = useRef<(() => void) | null>(null);
   const showJumpRef = useRef(false);
   const distanceFromBottom = useRef(0);
@@ -510,7 +510,6 @@ function AgentTranscriptComponent({
   useEffect(() => {
     if (!visible || !scrollerEl) return;
     const onScroll = () => {
-      scrollLog("scroll", scrollerEl, { last: lastScrollTop.current }); // TEMP
       if (scrollerEl.isConnected && scrollerEl.clientHeight > 0)
         syncPinned(scrollerEl);
     };
@@ -4946,44 +4945,7 @@ function scrollClampedToBottom(el: HTMLElement, previousTop: number): boolean {
   return previousTop > bottom && Math.abs(el.scrollTop - bottom) < 1;
 }
 
-// TEMP scroll debug: remove once the mid-chat open is found.
-type ScrollLogEntry = Record<string, unknown>;
-function scrollLog(event: string, el: HTMLElement | null, extra = {}) {
-  const log = ((window as unknown as { __scrollLog?: ScrollLogEntry[] })
-    .__scrollLog ??= []);
-  const entry = {
-    t: Math.round(performance.now()),
-    event,
-    top: el ? Math.round(el.scrollTop) : null,
-    height: el?.scrollHeight ?? null,
-    client: el?.clientHeight ?? null,
-    connected: el?.isConnected ?? null,
-    turns: el?.querySelectorAll(".transcript-turn").length ?? null,
-    ...extra,
-    stack: new Error().stack?.split("\n").slice(2, 9).join(" | "),
-  };
-  log.push(entry);
-  if (log.length > 400) log.shift();
-  console.debug("[transcript-scroll]", entry);
-}
-function useDebugStickRef(scroller: RefObject<HTMLDivElement | null>) {
-  const [ref] = useState(() => {
-    let value = true;
-    return {
-      get current() {
-        return value;
-      },
-      set current(next: boolean) {
-        if (next !== value) scrollLog(`stick=${next}`, scroller.current);
-        value = next;
-      },
-    };
-  });
-  return ref;
-}
-
 function pinToBottom(el: HTMLElement | null) {
-  if (el) scrollLog("pin", el);
   if (!el) return;
   el.scrollTop = el.scrollHeight;
 }
