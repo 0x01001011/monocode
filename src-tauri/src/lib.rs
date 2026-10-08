@@ -40,6 +40,7 @@ mod rate_limits;
 mod reminders;
 mod remote;
 mod remote_ssh;
+mod tunnel_registry;
 mod search;
 mod session_store;
 mod skills;
@@ -608,6 +609,10 @@ pub fn run() {
                 macos::prefer_bundle_dock_icon();
             }
             window::ensure_launch_window_visible(handle);
+            // A crash or force quit leaves its ssh tunnels running; stop them.
+            std::thread::spawn(|| {
+                tunnel_registry::reap_orphans();
+            });
         }
         tauri::RunEvent::WindowEvent {
             label,
