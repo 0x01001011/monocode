@@ -3057,21 +3057,37 @@ function MonoTurnHeader({
     >
       {active ? (
         <>
-          {mark}
-          {name ? (
+          {agentMascot ? (
+            // The pill holds the Mono's signature from the first token on;
+            // the ticker runs beside it.
             <>
-              <span
-                className={`max-w-[45%] truncate${
-                  agentMascot ? " font-semibold" : ""
-                }`}
-              >
-                {name}
+              <span className="max-w-[45%] shrink-0">
+                <MonoSignaturePill>
+                  {mark}
+                  {name ? (
+                    <span className="min-w-0 truncate font-semibold">
+                      {name}
+                    </span>
+                  ) : null}
+                </MonoSignaturePill>
               </span>
               <span aria-hidden className="shrink-0 text-content/25">
                 ·
               </span>
             </>
-          ) : null}
+          ) : (
+            <>
+              {mark}
+              {name ? (
+                <>
+                  <span className="max-w-[45%] truncate">{name}</span>
+                  <span aria-hidden className="shrink-0 text-content/25">
+                    ·
+                  </span>
+                </>
+              ) : null}
+            </>
+          )}
           <div className="min-w-0 flex-1">
             <MonoWorkTicker
               status={{ ...status, active: live }}
