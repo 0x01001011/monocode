@@ -4,6 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
 
+// Every reference carries the checkout that rendered it.
+const CWD = { cwd: "/repo" };
+
 describe("markdown file navigation", () => {
   let root: Root;
   let container: HTMLDivElement;
@@ -57,6 +60,19 @@ describe("markdown file navigation", () => {
     },
   );
 
+  it("opens a clicked link in the checkout that rendered it", async () => {
+    await render("`Dockerfile` and [log](/repo/src/a.ts:3) and `src/b.ts`");
+    const targets = [
+      ...container.querySelectorAll<HTMLElement>('code[role="link"]'),
+      ...container.querySelectorAll<HTMLElement>("a"),
+    ];
+    expect(targets.length).toBeGreaterThanOrEqual(3);
+    for (const target of targets) await act(async () => target.click());
+    expect(onOpenFile.mock.calls.length).toBe(targets.length);
+    for (const call of onOpenFile.mock.calls)
+      expect(call[2]).toEqual({ cwd: "/repo" });
+  });
+
   it("opens inline file references at their line and column with the keyboard", async () => {
     await render("`src/main.ts:12:3`");
     const link = container.querySelector<HTMLElement>('code[role="link"]')!;
@@ -65,10 +81,14 @@ describe("markdown file navigation", () => {
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
       ),
     );
-    expect(onOpenFile).toHaveBeenCalledWith("/repo/src/main.ts", {
-      line: 12,
-      column: 3,
-    });
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/repo/src/main.ts",
+      {
+        line: 12,
+        column: 3,
+      },
+      CWD,
+    );
   });
 
   it.each([
@@ -86,7 +106,7 @@ describe("markdown file navigation", () => {
       const link = container.querySelector<HTMLElement>('code[role="link"]');
       expect(link).not.toBeNull();
       await act(async () => link!.click());
-      expect(onOpenFile).toHaveBeenCalledWith(path, navigation);
+      expect(onOpenFile).toHaveBeenCalledWith(path, navigation, CWD);
     },
   );
 
@@ -96,9 +116,13 @@ describe("markdown file navigation", () => {
     await act(async () =>
       container.querySelector<HTMLAnchorElement>("a")!.click(),
     );
-    expect(onOpenFile).toHaveBeenCalledWith("/repo/docs/My Guide.md", {
-      line: 7,
-    });
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/repo/docs/My Guide.md",
+      {
+        line: 7,
+      },
+      CWD,
+    );
   });
 
   it.each(["`main.ts:12`", "[Source](main.ts:12)"])(
@@ -108,7 +132,11 @@ describe("markdown file navigation", () => {
       const link = container.querySelector<HTMLElement>('code[role="link"], a');
       expect(link).not.toBeNull();
       await act(async () => link!.click());
-      expect(onOpenFile).toHaveBeenCalledWith("/repo/main.ts", { line: 12 });
+      expect(onOpenFile).toHaveBeenCalledWith(
+        "/repo/main.ts",
+        { line: 12 },
+        CWD,
+      );
     },
   );
 
@@ -137,7 +165,7 @@ describe("markdown file navigation", () => {
       await act(async () =>
         container.querySelector<HTMLAnchorElement>("a")!.click(),
       );
-      expect(onOpenFile).toHaveBeenCalledWith(path, undefined);
+      expect(onOpenFile).toHaveBeenCalledWith(path, undefined, CWD);
     },
   );
 
@@ -147,9 +175,13 @@ describe("markdown file navigation", () => {
     await act(async () =>
       container.querySelector<HTMLAnchorElement>("a")!.click(),
     );
-    expect(onOpenFile).toHaveBeenCalledWith("/Users/me/My Project/main.ts", {
-      line: 4,
-    });
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/Users/me/My Project/main.ts",
+      {
+        line: 4,
+      },
+      CWD,
+    );
   });
 
   it.each([
@@ -179,7 +211,11 @@ describe("markdown file navigation", () => {
     );
     expect(link).not.toBeNull();
     await act(async () => link!.click());
-    expect(onOpenFile).toHaveBeenCalledWith("/repo/src/main.ts", { line: 12 });
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/repo/src/main.ts",
+      { line: 12 },
+      CWD,
+    );
   });
 
   it("preserves external web links and keeps executable URL schemes blocked", async () => {

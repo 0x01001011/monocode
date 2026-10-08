@@ -1,5 +1,10 @@
-import { listProjectFiles, type ProjectFile } from "../../../platform/tauri/fs";
+import {
+  listProjectFiles,
+  statFiles,
+  type ProjectFile,
+} from "../../../platform/tauri/fs";
 import { subscribeDirsChanged } from "./fileTree";
+import { mentionedFilePaths } from "./mentionedPaths";
 import { scorePath, type FuzzyHit } from "../../../shared/lib/fuzzy";
 import { resolveWorkspacePath, slash } from "../../../shared/lib/paths";
 import { looksLikeProject } from "../../projects/model/recents";
@@ -238,14 +243,49 @@ export async function resolveOpenablePath(
   return pickOpenableFile(byName, cwd, relHint).path;
 }
 
-/** Resolve shortened references while preserving paths selected from file UI. */
+/**
+ * Resolve shortened references while preserving paths selected from file UI.
+ *
+ * `mentions` supplies transcript text lazily. It rescues a reference to a file
+ * the project index cannot list (gitignored output) by trying the longer paths
+ * the session itself used for it.
+ */
 export async function resolveFileOpenRequest(
   cwd: string,
   path: string,
   options?: FileOpenOptions,
+  mentions?: () => readonly string[],
 ): Promise<string> {
   if (options?.exact) return path;
-  return (await resolveOpenablePath(cwd, path)) ?? path;
+  const resolved = (await resolveOpenablePath(cwd, path)) ?? path;
+  if (!mentions) return resolved;
+  return (await resolveMentionedPath(cwd, resolved, mentions)) ?? resolved;
+}
+
+async function resolveMentionedPath(
+  cwd: string,
+  resolved: string,
+  mentions: () => readonly string[],
+): Promise<string | undefined> {
+  const base = normCwd(cwd);
+  const target = slash(resolved);
+  if (!target.startsWith(`${base}/`)) return undefined;
+  try {
+    const [self] = await statFiles([resolved]);
+    if (self?.mtimeMs != null) return undefined;
+    const candidates = mentionedFilePaths(
+      mentions(),
+      target.slice(base.length + 1),
+      cwd,
+    ).filter((candidate) => candidate !== resolved);
+    if (candidates.length === 0) return undefined;
+    const stats = await statFiles(candidates);
+    return candidates.find((_, index) => stats[index]?.mtimeMs != null);
+  } catch {
+    // An unreachable host must not turn into a different error than the
+    // editor's own failure to read the direct path.
+    return undefined;
+  }
 }
 
 function relativePathHint(href: string, cwd: string, direct: string): string {
