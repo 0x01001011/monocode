@@ -1289,6 +1289,13 @@ fn exec_args_allowed(binary_provider: Option<&str>, args: &[String]) -> bool {
     let matches = |a: &&[&str]| a.len() == args.len() && a.iter().zip(args).all(|(x, y)| x == y);
     EXEC_ALLOWED_ARGS.iter().any(matches)
         || (binary_provider == Some("opencode") && OPENCODE_EXEC_ALLOWED_ARGS.iter().any(matches))
+        || (binary_provider == Some("grok")
+            && args.len() == 4
+            && args[0] == "--no-auto-update"
+            && args[1] == "sessions"
+            && args[2] == "delete"
+            && args[3].len() == 36
+            && uuid::Uuid::parse_str(&args[3]).is_ok())
 }
 
 /// Must be a path a resolver would hand back, not an arbitrary binary
@@ -1309,7 +1316,7 @@ pub(crate) fn is_resolved_harness_binary(
     resolved.is_ok_and(|path| path == Path::new(command))
 }
 
-/// One-shot capture of stdout (used for `cursor-agent --list-models`).
+/// One-shot provider commands: catalog probes and temporary-session cleanup.
 #[tauri::command]
 pub async fn harness_exec(
     command: String,
@@ -3792,6 +3799,28 @@ mod exec_allowlist_tests {
             assert!(!exec_args_allowed(None, &args(service)));
             assert!(!exec_args_allowed(Some("cursor"), &args(service)));
         }
+    }
+
+    #[test]
+    fn allows_grok_cleanup_only_for_one_valid_session_id() {
+        let cleanup = args(&[
+            "--no-auto-update",
+            "sessions",
+            "delete",
+            "550e8400-e29b-41d4-a716-446655440000",
+        ]);
+        assert!(exec_args_allowed(Some("grok"), &cleanup));
+        for provider in [None, Some("cursor"), Some("opencode")] {
+            assert!(!exec_args_allowed(provider, &cleanup));
+        }
+        for id in ["", "--all", "../sessions", "invalid"] {
+            let mut rejected = cleanup.clone();
+            rejected[3] = id.to_string();
+            assert!(!exec_args_allowed(Some("grok"), &rejected));
+        }
+        let mut extra = cleanup;
+        extra.push("--all".to_string());
+        assert!(!exec_args_allowed(Some("grok"), &extra));
     }
 
     #[test]

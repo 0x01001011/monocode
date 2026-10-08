@@ -54,7 +54,7 @@ describe("OpenCodeClient v2", () => {
     mocks.watchSse.mockReset();
   });
 
-  it("deletes throwaway v2 sessions and leaves v1 sessions alone", async () => {
+  it("deletes throwaway sessions in both server generations", async () => {
     const v2 = new OpenCodeClient("http://127.0.0.1:4096", "/repo", "v2");
     await v2.deleteSession("ses_1");
     expect(mocks.harnessHttp).toHaveBeenCalledWith(
@@ -67,7 +67,12 @@ describe("OpenCodeClient v2", () => {
     mocks.harnessHttp.mockClear();
     const v1 = new OpenCodeClient("http://127.0.0.1:4096", "/repo", "v1");
     await v1.deleteSession("ses_1");
-    expect(mocks.harnessHttp).not.toHaveBeenCalled();
+    expect(mocks.harnessHttp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "DELETE",
+        url: "http://127.0.0.1:4096/session/ses_1?directory=%2Frepo",
+      }),
+    );
   });
 
   it("creates sessions with a location and v2 permission rules", async () => {

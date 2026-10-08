@@ -40,7 +40,13 @@ function execArgsAllowed(provider: RemoteProvider, args: string[]): boolean {
     allowed.every((arg, index) => arg === args[index]);
   return (
     ALLOWED_EXEC_ARGS.some(matches) ||
-    (provider === "opencode" && OPENCODE_EXEC_ARGS.some(matches))
+    (provider === "opencode" && OPENCODE_EXEC_ARGS.some(matches)) ||
+    (provider === "grok" &&
+      args.length === 4 &&
+      args[0] === "--no-auto-update" &&
+      args[1] === "sessions" &&
+      args[2] === "delete" &&
+      /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(args[3]))
   );
 }
 
