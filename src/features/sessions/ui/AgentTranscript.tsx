@@ -1095,7 +1095,7 @@ function AgentTranscriptComponent({
               />
             ) : agentMascot && agentName ? (
               // A Mono signs its settled turns with just its mascot and name.
-              <span className="font-semibold">{agentName}</span>
+              <span className="font-medium text-content/80">{agentName}</span>
             ) : durationMs != null ? (
               formatWorkingDuration(durationMs, turnModelName, true)
             ) : inlineWork && turnModelName ? (
@@ -3065,7 +3065,7 @@ function MonoTurnHeader({
                 <MonoSignaturePill>
                   {mark}
                   {name ? (
-                    <span className="min-w-0 truncate font-semibold">
+                    <span className="min-w-0 truncate font-medium text-content/80">
                       {name}
                     </span>
                   ) : null}
