@@ -14,13 +14,18 @@ import {
 import {
   basename,
   listExternalEditors,
-  openInExternalEditor,
   revealPath,
   type ExternalEditor,
 } from "../../platform/tauri/fs";
+import {
+  editorsFor,
+  openInEditor,
+  rememberEditor,
+} from "../../features/files/model/openInEditor";
 import { IS_MAC, IS_WIN } from "../../platform/tauri/platform";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import {
+  isRemoteProjectPath,
   loadPinnedProjects,
   sameProjectPath,
   subscribeProjectPathsChanged,
@@ -89,6 +94,7 @@ function projectMenuExtraItems(
   canConfigureNotifications: boolean,
   notificationReady: boolean,
   externalEditors: ExternalEditor[] | null,
+  remoteProject: boolean,
   projectGroups: ProjectGroup[],
   currentProjectGroupId?: string,
 ): TabGroupMenuExtraItem[] {
@@ -150,7 +156,9 @@ function projectMenuExtraItems(
                 {
                   kind: "item",
                   id: "external-editor:none",
-                  label: "No supported editors found",
+                  label: remoteProject
+                    ? "No editor that can open remote projects found"
+                    : "No supported editors found",
                   disabled: true,
                 },
               ],
@@ -359,8 +367,9 @@ export function useProjectMenu({
       const editorId = action.slice("external-editor:".length);
       if (!externalEditors?.some((editor) => editor.id === editorId))
         return false;
-      void openInExternalEditor(editorId, path)
+      void openInEditor(editorId, path)
         .then(() => {
+          rememberEditor(editorId);
           setProjectMenu(null);
           restoreFocus();
         })
@@ -443,7 +452,8 @@ export function useProjectMenu({
           Boolean(onRemoveProject),
           Boolean(onOpenNotificationSettings),
           Boolean(readyNotificationProject),
-          externalEditors,
+          externalEditors && editorsFor(externalEditors, projectMenu.path),
+          isRemoteProjectPath(projectMenu.path),
           loadProjectGroups(),
           projectGroupIdForPath(
             projectMenu.path,

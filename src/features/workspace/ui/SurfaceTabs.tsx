@@ -11,6 +11,7 @@ import {
   basename,
   openPathWithDefaultApp,
   revealPath,
+  type ExternalEditor,
 } from "../../../platform/tauri/fs";
 import {
   isAgentTab,
@@ -37,6 +38,12 @@ import {
   type ExplorerMenuItem,
 } from "../../files/ui/ExplorerMenu";
 import { FileActionError } from "../../files/ui/FileActionError";
+import {
+  editorIdFromMenu,
+  editorMenuItems,
+  useExternalEditors,
+} from "../../files/ui/editorMenu";
+import { openInEditor, rememberEditor } from "../../files/model/openInEditor";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { TabLabel } from "../../../shared/ui/TabLabel";
@@ -79,6 +86,7 @@ const REVEAL_LABEL = IS_MAC
 export function surfaceTabMenuItems(
   file: FilePaneTab,
   canCloseOthers = true,
+  editors: readonly ExternalEditor[] = [],
 ): ExplorerMenuItem[] {
   const close: ExplorerMenuItem = {
     kind: "item",
@@ -97,6 +105,7 @@ export function surfaceTabMenuItems(
 
   return [
     { kind: "item", id: "open-default", label: "Open in Default App" },
+    ...editorMenuItems(editors, file.path),
     { kind: "item", id: "reveal", label: REVEAL_LABEL },
     { kind: "sep" },
     { kind: "item", id: "copy-path", label: "Copy Path" },
@@ -209,6 +218,7 @@ export function SurfaceTabs({
   const activeTabRef = useRef<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState<SurfaceTabMenu | null>(null);
   const [fileActionError, setFileActionError] = useState<string | null>(null);
+  const editors = useExternalEditors(menu !== null);
   const fileIds = files.map((file) => file.id);
   const sortable = useAnimatedReorder(fileIds, onReorder);
   const { displayed, setTabNode, finishMotion } = useTabCloseMotion(files);
@@ -230,8 +240,15 @@ export function SurfaceTabs({
     }
     if (!isFilesystemTab(menuFile) || isChangesTab(menuFile)) return;
 
+    const editorId = editorIdFromMenu(id);
     let action: Promise<void>;
-    switch (id) {
+    switch (editorId ? "editor" : id) {
+      case "editor":
+        action = openInEditor(editorId!, menuFile.path, {
+          isFile: true,
+          projectCwd: menuFile.cwd,
+        }).then(() => rememberEditor(editorId!));
+        break;
       case "open-default":
         action = openPathWithDefaultApp(menuFile.path);
         break;
@@ -253,7 +270,7 @@ export function SurfaceTabs({
     void action.catch((error) => {
       console.error(`Failed to run file-tab action ${id}:`, error);
       setFileActionError(
-        `Could not ${id === "open-default" ? "open the file in its default app" : "complete the file action"}: ${String(error)}`,
+        `Could not ${id === "open-default" ? "open the file in its default app" : editorId ? "open the file in the editor" : "complete the file action"}: ${error instanceof Error ? error.message : String(error)}`,
       );
     });
   };
@@ -452,7 +469,7 @@ export function SurfaceTabs({
         <ExplorerMenu
           x={menu.x}
           y={menu.y}
-          items={surfaceTabMenuItems(menuFile, files.length > 1)}
+          items={surfaceTabMenuItems(menuFile, files.length > 1, editors)}
           ariaLabel="File tab actions"
           onPick={onMenuPick}
           onClose={() => setMenu(null)}
