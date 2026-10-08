@@ -206,7 +206,7 @@ export function QuickModelSelector({
                   ?.querySelectorAll<HTMLButtonElement>("button")
                   [next]?.focus({ preventScroll: true });
               }}
-              className={`flex h-8 w-full min-w-0 items-center justify-center rounded-lg transition-colors ${visibleTab === id ? "bg-selection-emphasis text-content" : "text-content/40 hover:text-content hover:bg-selection-hover"}`}
+              className={`flex h-8 w-full min-w-0 items-center justify-center rounded-lg transition-colors ${visibleTab === id ? "bg-selection-emphasis text-content" : "text-muted hover:text-content hover:bg-selection-hover"}`}
             >
               {id === "favorites" ? (
                 <Star
@@ -221,7 +221,7 @@ export function QuickModelSelector({
         })}
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <label className="flex h-10 shrink-0 items-center gap-2 border-b border-stroke px-4 text-content/40">
+        <label className="flex h-10 shrink-0 items-center gap-2 border-b border-stroke px-4 text-muted">
           <Search className="size-3.5 shrink-0" />
           <input
             ref={searchRef}
@@ -241,7 +241,7 @@ export function QuickModelSelector({
             placeholder="Search models…"
             autoComplete="off"
             spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-muted"
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -295,7 +295,7 @@ export function QuickModelSelector({
                   ) : null}
                   <span className="truncate">{item.name}</span>
                   {item.provider ? (
-                    <span className="ml-auto truncate text-[11px] text-content/40">
+                    <span className="ml-auto truncate text-[11px] text-muted">
                       {item.provider.name}
                     </span>
                   ) : null}
@@ -318,7 +318,7 @@ export function QuickModelSelector({
                     setFavorites(next);
                     saveFavoriteModels(next);
                   }}
-                  className="grid size-8 shrink-0 place-items-center text-content/35 hover:text-content"
+                  className="grid size-8 shrink-0 place-items-center text-muted hover:text-content"
                 >
                   <Star
                     className="size-3.5"
@@ -328,7 +328,7 @@ export function QuickModelSelector({
               </div>
             ))
           ) : (
-            <p className="px-2 py-6 text-center text-[12px] text-content/45">
+            <p className="px-2 py-6 text-center text-[12px] text-muted">
               {query
                 ? "No matching models"
                 : visibleTab === "favorites"
@@ -351,7 +351,7 @@ export function QuickModelSelector({
                   onClick={() =>
                     changeSetting(fast.id, fastEnabled ? fastOff : fastOn)
                   }
-                  className={`grid size-7 place-items-center rounded-md transition-colors ${fastEnabled ? "bg-amber-400/20 text-amber-400 hover:bg-amber-400/30" : "text-content/40 hover:bg-selection-hover hover:text-content"}`}
+                  className={`grid size-7 place-items-center rounded-md transition-colors ${fastEnabled ? "bg-warning/20 text-warning hover:bg-warning/30" : "text-muted hover:bg-selection-hover hover:text-content"}`}
                 >
                   <Zap
                     className="size-4"
@@ -369,7 +369,7 @@ export function QuickModelSelector({
                 aria-label="Reset to saved defaults"
                 title="Reset to saved defaults"
                 onClick={resetSettings}
-                className="grid size-7 place-items-center rounded-md text-content/40 hover:bg-selection-hover hover:text-content"
+                className="grid size-7 place-items-center rounded-md text-muted hover:bg-selection-hover hover:text-content"
               >
                 <RotateCcw className="size-4" />
               </button>

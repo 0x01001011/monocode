@@ -162,10 +162,10 @@ export function useCheckRepairs(
   return [...groups.values()];
 }
 
-const neutral = "text-content/55";
-const positive = "text-emerald-700 dark:text-emerald-400";
-const negative = "text-rose-700 dark:text-rose-400";
-const active = "text-amber-700 dark:text-amber-400";
+const neutral = "text-muted";
+const positive = "text-success";
+const negative = "text-danger";
+const active = "text-warning";
 const states: Record<
   RepairState,
   { label: string; summary: string; Icon: IconComponent; color: string }
@@ -326,7 +326,7 @@ function RepairCard({
           aria-expanded={expanded}
           aria-controls={detailsId}
           onClick={() => setExpanded(!expanded)}
-          className="flex min-w-0 flex-1 items-center gap-2.5 rounded text-left focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded text-left"
         >
           <StatusIcon state={lead} />
           <span className="min-w-0 flex-1">
@@ -366,14 +366,14 @@ function RepairCard({
           </span>
           <ChevronRight
             aria-hidden="true"
-            className={`size-3 shrink-0 text-content/40 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
+            className={`size-3 shrink-0 text-muted transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
           />
         </button>
         {canShowCheck ? (
           <button
             type="button"
             onClick={() => onShowCheck?.(single.check)}
-            className="shrink-0 rounded-md px-2 py-1.5 text-[11px] text-content/70 hover:bg-selection hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+            className="shrink-0 rounded-md px-2 py-1.5 text-[11px] text-content/70 hover:bg-selection hover:text-content"
           >
             Show check
           </button>
@@ -382,7 +382,7 @@ function RepairCard({
           <button
             type="button"
             onClick={() => void repair.onOpenSession?.(group.sessionId)}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-stroke px-2.5 py-1.5 text-[11px] text-content/70 hover:bg-selection hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-stroke px-2.5 py-1.5 text-[11px] text-content/70 hover:bg-selection hover:text-content"
           >
             <MessageSquare aria-hidden="true" className="size-3.5" />
             Open conversation
@@ -392,7 +392,7 @@ function RepairCard({
       {expanded ? (
         <div
           id={detailsId}
-          className="space-y-2 border-t border-stroke px-3 py-2.5 text-[11px] text-content/55"
+          className="space-y-2 border-t border-stroke px-3 py-2.5 text-[11px] text-muted"
         >
           <p>Included checks</p>
           <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">

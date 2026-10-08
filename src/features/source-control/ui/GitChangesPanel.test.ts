@@ -7,8 +7,14 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(async () => {}),
 }));
 
-const { invalidateWatchedFiles } = vi.hoisted(() => ({
+const { invalidateWatchedFiles, reportError } = vi.hoisted(() => ({
   invalidateWatchedFiles: vi.fn(),
+  reportError: vi.fn(async () => {}),
+}));
+
+vi.mock("../../../shared/lib/confirm", () => ({
+  confirmNative: vi.fn(async () => true),
+  reportError,
 }));
 
 vi.mock("../../../platform/tauri/fs", () => ({
@@ -389,13 +395,12 @@ describe("GitChangesPanel folder actions", () => {
   });
 
   it("reports errors and enables folder actions again", async () => {
-    const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
+    reportError.mockClear();
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({ files: [changedFile("src/app.ts")] }),
     );
-    vi.mocked(gitStageFile).mockRejectedValueOnce(
-      new Error("Git index is locked"),
-    );
+    const locked = new Error("Git index is locked");
+    vi.mocked(gitStageFile).mockRejectedValueOnce(locked);
     await renderPanel();
     await showTree();
     invalidateWatchedFiles.mockClear();
@@ -408,10 +413,9 @@ describe("GitChangesPanel folder actions", () => {
       await vi.advanceTimersByTimeAsync(150);
     });
 
-    expect(alert).toHaveBeenCalledWith("Git index is locked");
+    expect(reportError).toHaveBeenCalledWith("stage src", locked);
     expect(stage.disabled).toBe(false);
     expect(invalidateWatchedFiles).not.toHaveBeenCalled();
-    alert.mockRestore();
   });
 });
 

@@ -65,7 +65,7 @@ describe("InboxDetail layout", () => {
       item({ state: "closed", stateReason: "not_planned" }),
     );
     expect(notPlanned.Icon.displayName).toBe("CircleX");
-    expect(notPlanned.className).toBe("text-rose-400/90");
+    expect(notPlanned.className).toBe("text-danger");
   });
 
   it("renders a linked item as a standalone, closable side panel", () => {

@@ -166,7 +166,7 @@ export function ProjectSearch({
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="px-3 py-2 text-[12px] text-content/50">No project folder</p>
+      <p className="px-3 py-2 text-[12px] text-muted">No project folder</p>
     );
   }
 
@@ -178,11 +178,11 @@ export function ProjectSearch({
           onClick={onClose}
           title="Back to files"
           aria-label="Back to files"
-          className="grid size-7 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content"
+          className="grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
         >
           <ChevronLeft className="size-4" strokeWidth={1.75} />
         </button>
-        <span className="min-w-0 flex-1 truncate text-[12px] text-content/55">
+        <span className="min-w-0 flex-1 truncate text-[12px] text-muted">
           Search in files
         </span>
       </div>
@@ -196,7 +196,7 @@ export function ProjectSearch({
             placeholder="Search"
             aria-label="Search"
             spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent py-1.5 text-[12px] text-content outline-none placeholder:text-content/35"
+            className="min-w-0 flex-1 bg-transparent py-1.5 text-[12px] text-content outline-none placeholder:text-muted"
           />
           <Toggle
             label="Match case"
@@ -226,7 +226,7 @@ export function ProjectSearch({
           placeholder="files to include"
           aria-label="files to include"
           spellCheck={false}
-          className="w-full rounded-md border border-content/10 bg-content/5 px-2 py-1.5 text-[11px] text-content outline-none placeholder:text-content/35"
+          className="w-full rounded-md border border-content/10 bg-content/5 px-2 py-1.5 text-[11px] text-content outline-none placeholder:text-muted"
         />
         <input
           value={exclude}
@@ -234,18 +234,18 @@ export function ProjectSearch({
           placeholder="files to exclude"
           aria-label="files to exclude"
           spellCheck={false}
-          className="w-full rounded-md border border-content/10 bg-content/5 px-2 py-1.5 text-[11px] text-content outline-none placeholder:text-content/35"
+          className="w-full rounded-md border border-content/10 bg-content/5 px-2 py-1.5 text-[11px] text-content outline-none placeholder:text-muted"
         />
       </div>
 
-      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-[11px] text-content/45">
+      <div className="flex min-h-8 shrink-0 items-center gap-2 px-3 py-1.5 text-[11px] text-muted">
         {loading ? (
           <>
             <LoaderCircle className="size-3 animate-spin" strokeWidth={1.75} />
             <span>Searching…</span>
           </>
         ) : error ? (
-          <span className="text-red-400">{error}</span>
+          <span className="text-danger">{error}</span>
         ) : query.trim() ? (
           <span>
             {matchCount === 0
@@ -271,7 +271,7 @@ export function ProjectSearch({
               </span>
             </div>
             <p
-              className="truncate px-2 pb-1 text-[10px] text-content/40"
+              className="truncate px-2 pb-1 text-[10px] text-muted"
               title={group.relative}
             >
               {group.relative}
@@ -285,7 +285,7 @@ export function ProjectSearch({
                     onDoubleClick={() => openMatch(match, true)}
                     className="flex w-full items-start gap-2 px-2 py-1 text-left hover:bg-content/5"
                   >
-                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-content/35 tabular-nums">
+                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-muted tabular-nums">
                       {match.line}
                     </span>
                     <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5 text-content/80">
@@ -328,7 +328,7 @@ function Toggle({
       className={`grid size-6 place-items-center rounded-sm ${
         active
           ? "bg-selection-hover text-content"
-          : "text-content/40 hover:bg-content/10 hover:text-content/70"
+          : "text-muted hover:bg-content/10 hover:text-content/70"
       }`}
     >
       {children}

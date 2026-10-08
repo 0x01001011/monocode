@@ -417,7 +417,7 @@ export function FileEditor({
 
   if (loadState.status === "loading") {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-content/45">
+      <div className="grid h-full place-items-center text-[12px] text-muted">
         Opening {basename(path)}…
       </div>
     );
@@ -427,11 +427,11 @@ export function FileEditor({
     return (
       <div className="grid h-full place-items-center p-6">
         <div className="max-w-md text-center">
-          <AlertCircle className="mx-auto mb-3 size-5 text-red-400" />
+          <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
           <p className="text-[13px] text-content">
             Couldn’t open {basename(path)}
           </p>
-          <p className="mt-1 text-[12px] leading-5 text-content/50">
+          <p className="mt-1 text-[12px] leading-5 text-muted">
             {loadState.message}
           </p>
           <button
@@ -523,7 +523,7 @@ export function FileEditor({
           }
         />
       )}
-      <footer className="flex h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-content/40">
+      <footer className="flex h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-muted">
         <span className="min-w-0 flex-1 truncate" title={path}>
           {relativePath}
         </span>
@@ -533,7 +533,7 @@ export function FileEditor({
           <span>Saved</span>
         ) : saveState.status === "error" ? (
           <span
-            className="max-w-64 truncate text-red-400"
+            className="max-w-64 truncate text-danger"
             title={saveState.message}
           >
             Save failed: {saveState.message}
@@ -1099,7 +1099,7 @@ function DiffChunkNav({
         >
           <ChevronUp className="size-3.5" strokeWidth={1.75} />
         </button>
-        <span className="min-w-10 px-0.5 text-center font-mono text-[10.5px] font-medium tabular-nums text-content/55 select-none">
+        <span className="min-w-10 px-0.5 text-center font-mono text-[10.5px] font-medium tabular-nums text-muted select-none">
           {total === 0 ? "0/0" : `${index + 1}/${total}`}
         </span>
         <button

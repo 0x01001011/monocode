@@ -75,14 +75,14 @@ export function OrchestrationSidebarAgents({
     (task) => task.status === "completed",
   ).length;
   const action =
-    "rounded px-1.5 py-0.5 text-[11px] text-content/55 hover:bg-content/10 hover:text-content disabled:opacity-35";
+    "rounded px-1.5 py-0.5 text-[11px] text-muted hover:bg-content/10 hover:text-content disabled:opacity-35";
   // Sits inside an already-lit row, so it needs its own surface to read as a
   // button rather than as another line of text.
   const solidAction =
     "rounded bg-content/15 px-1.5 py-0.5 text-[11px] text-content/75 hover:bg-content/25 hover:text-content disabled:opacity-35";
   return (
     <div className="relative mt-1.5">
-      <div className="mb-0.5 px-0.5 flex items-center justify-between text-[11px] text-content/45">
+      <div className="mb-0.5 px-0.5 flex items-center justify-between text-[11px] text-muted">
         <span>
           {summary.tasks.length}{" "}
           {summary.tasks.length === 1 ? "agent" : "agents"}
@@ -137,7 +137,7 @@ export function OrchestrationSidebarAgents({
               >
                 {/* One slot: the chevron stands in for the harness mark
                     whenever this row is open or under the pointer. */}
-                <span className="grid size-3.5 shrink-0 place-items-center text-content/45">
+                <span className="grid size-3.5 shrink-0 place-items-center text-muted">
                   {open ? (
                     <ChevronDown className="size-3" strokeWidth={1.75} />
                   ) : (
@@ -162,12 +162,12 @@ export function OrchestrationSidebarAgents({
                     task.status === "failed" ||
                     task.status === "blocked" ||
                     task.status === "interrupted"
-                      ? "text-amber-400"
+                      ? "text-warning"
                       : working
                         ? "text-accent"
                         : task.status === "completed"
-                          ? "text-emerald-400"
-                          : "text-content/45"
+                          ? "text-success"
+                          : "text-muted"
                   }`}
                 >
                   {task.needsInput ||
@@ -187,7 +187,7 @@ export function OrchestrationSidebarAgents({
               {open && (
                 <div className="space-y-2 pb-3 pl-6.5 pr-2">
                   <p
-                    className="flex min-w-0 items-center gap-1.5 text-[11px] text-content/45"
+                    className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted"
                     title={`${model} · ${HARNESS_TITLE[task.harness]}`}
                   >
                     <HarnessIcon
@@ -197,7 +197,7 @@ export function OrchestrationSidebarAgents({
                     <span className="min-w-0 truncate">{model}</span>
                   </p>
                   {live?.error && (
-                    <p className="text-[11px] text-red-400">{live.error}</p>
+                    <p className="text-[11px] text-danger">{live.error}</p>
                   )}
                   <div className="flex flex-wrap items-center gap-1">
                     {workers.openDetails && (
@@ -239,7 +239,7 @@ export function OrchestrationSidebarAgents({
         })}
       </div>
       {(error || run?.error) && (
-        <p role="alert" className="py-1 text-[11px] text-red-400">
+        <p role="alert" className="py-1 text-[11px] text-danger">
           {error ?? run?.error}
         </p>
       )}
@@ -247,7 +247,7 @@ export function OrchestrationSidebarAgents({
           agents together. Resume has no other home, so it stays. */}
       {run?.status === "paused" && (
         <div className="mt-1.5 space-y-1.5 border-t border-stroke pt-1.5">
-          <p className="px-0.5 text-[11px] leading-relaxed text-content/45">
+          <p className="px-0.5 text-[11px] leading-relaxed text-muted">
             {stopping
               ? "Stopping interrupted work before this run can resume."
               : leadBusy
@@ -255,7 +255,7 @@ export function OrchestrationSidebarAgents({
                 : "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review."}
           </p>
           {resumeBlocker && (
-            <p className="px-0.5 text-[11px] leading-relaxed text-amber-400">
+            <p className="px-0.5 text-[11px] leading-relaxed text-warning">
               {resumeBlocker.title || "Another conversation"} is still running
               in this project.
             </p>

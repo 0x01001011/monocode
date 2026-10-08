@@ -18,9 +18,9 @@ import {
 } from "../../../shared/ui/icons";
 
 const TONE = {
-  danger: "text-red-400",
-  warn: "text-amber-400",
-  muted: "text-content/35",
+  danger: "text-danger",
+  warn: "text-warning",
+  muted: "text-muted",
 };
 
 function Consequence({
@@ -95,8 +95,8 @@ export function DeleteWorktreeDialog({
           This permanently deletes the working copy and everything inside it.
         </p>
         <div className="rounded-lg border border-content/10 bg-content/5 p-3">
-          <p className="flex items-start gap-2.5 text-[12px] text-content/55">
-            <Folder className="mt-px size-3.5 shrink-0 text-content/35" />
+          <p className="flex items-start gap-2.5 text-[12px] text-muted">
+            <Folder className="mt-px size-3.5 shrink-0 text-muted" />
             <span className="min-w-0 flex-1 break-all font-mono">
               {prettyCwd(tree.path)}
             </span>
@@ -170,7 +170,7 @@ export function DeleteWorktreeDialog({
           </div>
         )}
         {error && (
-          <p role="alert" className="break-words text-[12.5px] text-red-400">
+          <p role="alert" className="break-words text-[12.5px] text-danger">
             {error}
           </p>
         )}
@@ -186,7 +186,7 @@ export function DeleteWorktreeDialog({
           <button
             type="submit"
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-md bg-red-500/20 px-3 py-1.5 font-medium text-red-400 hover:bg-red-500/30 disabled:opacity-40 disabled:hover:bg-red-500/20 active:scale-[0.97]"
+            className="inline-flex items-center gap-1.5 rounded-md bg-danger/10 px-3 py-1.5 font-medium text-danger hover:bg-danger/20 disabled:opacity-40 disabled:hover:bg-danger/10 active:scale-[0.97]"
           >
             {busy && <Loader className="size-3.5 animate-spin" />}
             {sessionCount && deleteSessions

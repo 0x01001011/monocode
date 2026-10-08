@@ -17,16 +17,23 @@ import {
 } from "../../../shared/lib/drag";
 import { FileTree } from "./FileTree";
 
-const { iconRender, directories, clipboardFiles, copied, dragDrop } =
-  vi.hoisted(() => ({
-    iconRender: vi.fn(),
-    directories: new Map<string, FsEntry[]>(),
-    clipboardFiles: [] as string[],
-    copied: [] as { from: string; destParent: string }[],
-    dragDrop: {
-      handler: null as null | ((event: { payload: unknown }) => void),
-    },
-  }));
+const {
+  confirmNative,
+  iconRender,
+  directories,
+  clipboardFiles,
+  copied,
+  dragDrop,
+} = vi.hoisted(() => ({
+  confirmNative: vi.fn(async () => false),
+  iconRender: vi.fn(),
+  directories: new Map<string, FsEntry[]>(),
+  clipboardFiles: [] as string[],
+  copied: [] as { from: string; destParent: string }[],
+  dragDrop: {
+    handler: null as null | ((event: { payload: unknown }) => void),
+  },
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (command: string, args: Record<string, string>) => {
@@ -39,6 +46,8 @@ vi.mock("@tauri-apps/api/core", () => ({
     throw new Error(`Unexpected command: ${command}`);
   }),
 }));
+
+vi.mock("../../../shared/lib/confirm", () => ({ confirmNative }));
 
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
@@ -179,7 +188,7 @@ describe("FileTree render isolation", () => {
       },
     };
     act(() => render(1));
-    expect(row("first.ts").querySelector(".text-amber-400")).not.toBeNull();
+    expect(row("first.ts").querySelector(".text-warning")).not.toBeNull();
     act(() => row("first.ts").click());
     expect(onOpenFile).toHaveBeenCalledWith(`${cwd}/first.ts`, undefined, {
       exact: true,
@@ -475,4 +484,118 @@ describe("FileTree starts Explorer file drags", () => {
 
     window.removeEventListener(EXPLORER_FILE_POINTER_DRAG_EVENT, onDrag);
   });
+});
+
+describe("FileTree keyboard model", () => {
+  beforeEach(async () => {
+    directories.set(cwd, [folder("docs"), file("first.ts")]);
+    directories.set(`${cwd}/docs`, [
+      { name: "guide.md", path: `${cwd}/docs/guide.md`, isDir: false },
+    ]);
+    await refreshDir(cwd);
+    await listCachedDir(`${cwd}/docs`);
+    saveExpanded(cwd, new Set([cwd]));
+  });
+
+  const docs = () => row("docs");
+  const guide = () =>
+    container.querySelector<HTMLButtonElement>(
+      `[role="treeitem"][title="${cwd}/docs/guide.md"]`,
+    );
+
+  it("exposes level, selection and a single roving tab stop", async () => {
+    saveSelected(cwd, `${cwd}/first.ts`);
+    await act(async () => render());
+    expect(docs().getAttribute("aria-level")).toBe("1");
+    expect(row("first.ts").getAttribute("aria-selected")).toBe("true");
+    expect(docs().getAttribute("aria-selected")).toBe("false");
+    const stops = [...container.querySelectorAll('[role="treeitem"]')].filter(
+      (item) => (item as HTMLElement).tabIndex === 0,
+    );
+    expect(stops).toEqual([row("first.ts")]);
+  });
+
+  it("keeps the tree reachable when the selection is not on screen", async () => {
+    saveSelected(cwd, `${cwd}/docs/guide.md`);
+    await act(async () => render());
+    expect(guide()).toBeNull();
+    expect(docs().tabIndex).toBe(0);
+    expect(row("first.ts").tabIndex).toBe(-1);
+  });
+
+  it("moves focus and selection with the arrow keys without opening files", async () => {
+    saveSelected(cwd, `${cwd}/docs`);
+    await act(async () => render());
+    docs().focus();
+    await press(docs(), { key: "ArrowDown" });
+    expect(document.activeElement).toBe(row("first.ts"));
+    expect(row("first.ts").getAttribute("aria-selected")).toBe("true");
+    expect(row("first.ts").tabIndex).toBe(0);
+    expect(props.onOpenFile).not.toHaveBeenCalled();
+    await press(row("first.ts"), { key: "ArrowUp" });
+    expect(document.activeElement).toBe(docs());
+    await press(docs(), { key: "End" });
+    expect(document.activeElement).toBe(row("first.ts"));
+    await press(row("first.ts"), { key: "Home" });
+    expect(document.activeElement).toBe(docs());
+  });
+
+  it("expands with Right, enters the folder, and goes back with Left", async () => {
+    saveSelected(cwd, `${cwd}/docs`);
+    await act(async () => render());
+    docs().focus();
+    expect(guide()).toBeNull();
+    await press(docs(), { key: "ArrowRight" });
+    expect(docs().getAttribute("aria-expanded")).toBe("true");
+    expect(guide()).not.toBeNull();
+    expect(guide()!.getAttribute("aria-level")).toBe("2");
+    await press(docs(), { key: "ArrowRight" });
+    expect(document.activeElement).toBe(guide());
+    await press(guide()!, { key: "ArrowLeft" });
+    expect(document.activeElement).toBe(docs());
+    await press(docs(), { key: "ArrowLeft" });
+    expect(docs().getAttribute("aria-expanded")).toBe("false");
+    expect(guide()).toBeNull();
+  });
+
+  it("enters the tree from the root row with ArrowDown", async () => {
+    await act(async () => render());
+    const rootButton = container.querySelector<HTMLButtonElement>(
+      "[data-explorer-root]",
+    )!;
+    rootButton.focus();
+    await press(rootButton, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(docs());
+  });
+
+  it("leaves modified arrow keys and the existing shortcuts alone", async () => {
+    saveSelected(cwd, `${cwd}/docs`);
+    await act(async () => render());
+    docs().focus();
+    await press(docs(), { key: "ArrowDown", altKey: true });
+    expect(document.activeElement).toBe(docs());
+  });
+});
+
+describe("FileTree delete confirmation", () => {
+  beforeEach(async () => {
+    directories.set(cwd, [folder("docs"), file("first.ts")]);
+    directories.set(`${cwd}/docs`, []);
+    await refreshDir(cwd);
+    await listCachedDir(`${cwd}/docs`);
+  });
+
+  it.each([
+    ["docs", "Delete folder “docs” and everything inside it?", "Delete folder"],
+    ["first.ts", "Delete “first.ts”?", "Delete file"],
+  ])(
+    "asks with a verb-first button before deleting %s",
+    async (name, message, okLabel) => {
+      saveSelected(cwd, `${cwd}/${name}`);
+      await act(async () => render());
+      await press(row(name), { key: "Delete" });
+      expect(confirmNative).toHaveBeenCalledWith(message, okLabel);
+      expect(row(name)).not.toBeNull();
+    },
+  );
 });

@@ -1,10 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   ExplorerMenu,
   type ExplorerMenuItem,
 } from "../../features/files/ui/ExplorerMenu";
 import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
+import { nextRovingIndex } from "../../features/workspace/ui/rovingFocus";
 import { runUpdateFlow } from "../model/updater";
 import {
   keybindingShortcutLabel,
@@ -66,6 +73,15 @@ export function MenuBar({
   const [, refreshShortcuts] = useState(loadKeybindingOverrides);
   const [autosave, setAutosave] = useState(loadAutosave);
   const barRef = useRef<HTMLDivElement>(null);
+  const [tabStop, setTabStop] = useState<MenuKey>("file");
+  // Where focus was when Alt revealed the bar, so closing it can hand focus back.
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+
+  const menuButtons = () =>
+    Array.from(
+      barRef.current?.querySelectorAll<HTMLElement>("[data-menubar-item]") ??
+        [],
+    );
 
   useEffect(
     () =>
@@ -132,9 +148,25 @@ export function MenuBar({
     setMenuAnchor(null);
   }, []);
 
+  // Alt reveals the bar and moves focus into it; hiding it hands focus back.
+  useEffect(() => {
+    if (open) {
+      const active = document.activeElement;
+      if (!barRef.current?.contains(active)) {
+        restoreFocusRef.current = active instanceof HTMLElement ? active : null;
+      }
+      menuButtons()[0]?.focus();
+      return;
+    }
+    restoreFocusRef.current?.focus();
+    restoreFocusRef.current = null;
+  }, [open]);
+
   const handlePick = useCallback(
     (id: string) => {
       closeMenu();
+      // The command decides where focus goes next.
+      restoreFocusRef.current = null;
       setOpen(false);
 
       switch (id) {
@@ -394,9 +426,52 @@ export function MenuBar({
     { key: "terminal", label: "Terminal" },
   ];
 
+  // The dropdown unmounts with focus inside it; put focus back on its button.
+  const dismissMenu = () => {
+    const key = activeMenu;
+    closeMenu();
+    if (!key) return;
+    requestAnimationFrame(() => {
+      if (document.activeElement && document.activeElement !== document.body) {
+        return;
+      }
+      barRef.current
+        ?.querySelector<HTMLElement>(`[data-menubar-item="${key}"]`)
+        ?.focus();
+    });
+  };
+
+  const onBarKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    // Keys from the portaled dropdown bubble through React; leave them to it.
+    if (!barRef.current?.contains(target)) return;
+    const buttons = menuButtons();
+    const index = buttons.indexOf(target);
+    if (index < 0) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu();
+      setOpen(false);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      openDropdown(MENUS[index]!.key, target);
+      return;
+    }
+    const next = nextRovingIndex(event.key, index, buttons.length);
+    if (next === null) return;
+    event.preventDefault();
+    buttons[next]?.focus();
+    if (activeMenu) openDropdown(MENUS[next]!.key, buttons[next]!);
+  };
+
   return (
     <div
       ref={barRef}
+      role="menubar"
+      aria-label="Application menu"
+      onKeyDown={onBarKeyDown}
       className="flex h-7 shrink-0 items-center gap-0.5 border-b border-stroke bg-content/5 px-2 text-[12px]"
       data-tauri-drag-region="false"
     >
@@ -406,6 +481,12 @@ export function MenuBar({
           <button
             key={key}
             type="button"
+            role="menuitem"
+            aria-haspopup="menu"
+            aria-expanded={isActive}
+            data-menubar-item={key}
+            tabIndex={tabStop === key ? 0 : -1}
+            onFocus={() => setTabStop(key)}
             data-tauri-drag-region="false"
             onClick={(e) => {
               if (isActive) {
@@ -437,7 +518,7 @@ export function MenuBar({
           items={getMenuItems(activeMenu)}
           ariaLabel={`${activeMenu} menu`}
           onPick={handlePick}
-          onClose={closeMenu}
+          onClose={dismissMenu}
         />
       ) : null}
     </div>

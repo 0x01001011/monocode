@@ -41,7 +41,7 @@ export function MonoHeader({
         </h2>
       </div>
       {greeting ? (
-        <p className="mt-3 max-w-sm text-[13px] leading-relaxed text-content/50">
+        <p className="mt-3 max-w-sm text-[13px] leading-relaxed text-muted">
           {agent.projects.length
             ? `I can see every session, note and folder in ${monoProjectsPhrase(agent.projects)}. Ask what’s going on, or hand me work.`
             : "Add the projects I should work on from my details, or just ask me something."}
@@ -50,7 +50,7 @@ export function MonoHeader({
         <MonoStatus
           state={state}
           color={agent.color}
-          className="mt-2.5 max-w-sm justify-center text-[12px] text-content/45"
+          className="mt-2.5 max-w-sm justify-center text-[12px] text-muted"
         />
       )}
     </header>

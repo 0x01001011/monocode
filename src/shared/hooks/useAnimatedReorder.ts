@@ -7,7 +7,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { setGrabbing, suppressTextSelection } from "../lib/drag";
-import { reorderMotion } from "../lib/motion";
+import { prefersReducedMotion, reorderMotion } from "../lib/motion";
 import { moveItem } from "../lib/reorder";
 
 export type ReorderExternalDrop<T extends string> = {
@@ -80,9 +80,7 @@ export function useAnimatedReorder<T extends string>(
       }
       const pointerId = event.pointerId;
       const startPosition = event[coordinate];
-      const reducedMotion = window.matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
+      const reducedMotion = prefersReducedMotion();
       const { duration: motionDuration, easing } = reorderMotion();
       const duration = reducedMotion ? 0 : motionDuration;
       const transition = `transform ${duration}ms ${easing}`;

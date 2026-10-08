@@ -226,7 +226,7 @@ export function CwdPicker({
                 open ? "bg-selection text-content" : "hover:bg-content/5"
               } disabled:opacity-40`
             : `flex min-w-0 items-center gap-1.5 ${
-                open ? "text-content" : "text-content/50 hover:text-content"
+                open ? "text-content" : "text-muted hover:text-content"
               } disabled:opacity-40`
         }
       >
@@ -238,7 +238,7 @@ export function CwdPicker({
         )}
         {chevron ? (
           <ChevronDown
-            className={`size-3 shrink-0 text-content/50 ${
+            className={`size-3 shrink-0 text-muted ${
               open ? "rotate-180" : ""
             }`}
             strokeWidth={1.75}
@@ -264,10 +264,10 @@ export function CwdPicker({
           >
             {inProject ? (
               <>
-                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-content/50">
+                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-muted">
                   Current project
                 </p>
-                <div className="px-2.5 py-1.5 text-content/50">
+                <div className="px-2.5 py-1.5 text-muted">
                   <p className="truncate text-[13px] text-content">
                     {renderProjectLabel?.(cwd) ?? basename(cwd)}
                   </p>
@@ -279,11 +279,11 @@ export function CwdPicker({
             ) : null}
             {previewRecents.length > 0 || mode === "move" ? (
               <>
-                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-content/50">
+                <p className="px-2.5 pb-1 pt-2 text-[10px] uppercase tracking-widest text-muted">
                   {mode === "move" ? "Move to project" : "Recent projects"}
                 </p>
                 {mode === "move" && previewRecents.length === 0 ? (
-                  <p className="px-2.5 py-2 text-[13px] text-content/50">
+                  <p className="px-2.5 py-2 text-[13px] text-muted">
                     No other projects
                   </p>
                 ) : null}
@@ -309,7 +309,7 @@ export function CwdPicker({
                     <span className="min-w-0 truncate text-[13px]">
                       {renderProjectLabel?.(item.path) ?? basename(item.path)}
                     </span>
-                    <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-content/45">
+                    <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-muted">
                       {prettyParent(item.path)}
                     </span>
                   </button>
@@ -365,7 +365,7 @@ export function CwdPicker({
                 }`}
               >
                 <span className="text-[13px]">New terminal</span>
-                <span className="shrink-0 font-mono text-[11px] text-content/45">
+                <span className="shrink-0 font-mono text-[11px] text-muted">
                   {MOD}`
                 </span>
               </button>
@@ -401,7 +401,7 @@ export function CwdPicker({
               <span className="min-w-0 truncate text-[13px]">
                 {renderProjectLabel?.(item.path) ?? basename(item.path)}
               </span>
-              <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-content/45">
+              <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-muted">
                 {prettyParent(item.path)}
               </span>
             </button>

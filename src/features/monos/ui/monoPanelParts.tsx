@@ -68,7 +68,7 @@ export function Section({
   return (
     <section className="border-t border-stroke px-2 pb-4 pt-3">
       <div className="flex items-center justify-between px-2 pb-2">
-        <h4 className="text-[11px] font-medium uppercase tracking-wide text-content/40">
+        <h4 className="text-[11px] font-medium uppercase tracking-wide text-muted">
           {title}
         </h4>
         {action}
@@ -87,7 +87,7 @@ export function Property({
 }) {
   return (
     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start text-[12px]">
-      <dt className="flex h-7 items-center text-content/45">{label}</dt>
+      <dt className="flex h-7 items-center text-muted">{label}</dt>
       <dd className="flex min-h-7 min-w-0 items-center text-content/85">
         {children}
       </dd>
@@ -97,9 +97,7 @@ export function Property({
 
 export function Hint({ children }: { children: ReactNode }) {
   return (
-    <p className="mt-2 px-2 text-[11px] leading-4 text-content/35">
-      {children}
-    </p>
+    <p className="mt-2 px-2 text-[11px] leading-4 text-muted">{children}</p>
   );
 }
 
@@ -124,9 +122,7 @@ export function AutoTextarea({
 
 export function Empty({ children }: { children: ReactNode }) {
   return (
-    <p className="px-2 py-6 text-center text-[12px] text-content/45">
-      {children}
-    </p>
+    <p className="px-2 py-6 text-center text-[12px] text-muted">{children}</p>
   );
 }
 
@@ -334,12 +330,12 @@ export function MemoryGauge({ memory }: { memory: string }) {
     budget.bytes / MEMORY_MAX_BYTES,
   );
   const tone = budget.droppedLines
-    ? "bg-red-500/70"
+    ? "bg-danger/70"
     : share >= 0.8
-      ? "bg-amber-500/70"
+      ? "bg-warning/70"
       : "bg-content/30";
   return (
-    <div className="mt-2 flex items-center gap-2 px-2 text-[11px] leading-4 text-content/45">
+    <div className="mt-2 flex items-center gap-2 px-2 text-[11px] leading-4 text-muted">
       <span className="h-1 flex-1 overflow-hidden rounded-full bg-content/8">
         <span
           className={`block h-full rounded-full ${tone}`}

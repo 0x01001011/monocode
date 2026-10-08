@@ -105,7 +105,7 @@ export function NewHabitPage({
                 create();
               }
             }}
-            className="h-8 w-full rounded-md bg-transparent px-2 text-[13px] font-medium text-content outline-none placeholder:text-content/35 hover:bg-content/5 focus:bg-content/5"
+            className="h-8 w-full rounded-md bg-transparent px-2 text-[13px] font-medium text-content outline-none placeholder:text-muted hover:bg-content/5 focus:bg-content/5"
           />
         </div>
 
@@ -125,7 +125,7 @@ export function NewHabitPage({
             onSubmit={create}
           />
           {error ? (
-            <p className="px-2 pt-2 text-[12px] text-red-500/80">{error}</p>
+            <p className="px-2 pt-2 text-[12px] text-danger">{error}</p>
           ) : null}
         </Section>
       </div>
@@ -158,7 +158,7 @@ function ScheduleFields({
       />
       {kind === "weekly" ? (
         <>
-          <span className="text-content/45">on</span>
+          <span className="text-muted">on</span>
           <SearchableSelect
             label="Day"
             value={String(schedule.dayOfWeek)}
@@ -171,7 +171,7 @@ function ScheduleFields({
           />
         </>
       ) : null}
-      <span className="text-content/45">at</span>
+      <span className="text-muted">at</span>
       {kind === "hourly" ? (
         <SearchableSelect
           label="Minute"
@@ -191,7 +191,7 @@ function ScheduleFields({
             if (event.target.value)
               onChange({ ...schedule, time: event.target.value });
           }}
-          className="h-7 rounded-md bg-content/10 px-2 text-[12px] text-content outline-none hover:bg-content/[0.14] focus-visible:bg-content/[0.14]"
+          className="h-7 rounded-md bg-content/10 px-2 text-[12px] text-content outline-none hover:bg-content/[0.14] focus-visible:bg-content/[0.14] focus-visible:focus-ring-inset"
         />
       )}
     </span>
@@ -222,7 +222,7 @@ function Instructions({
           onSubmit();
         }
       }}
-      className="block w-full resize-none rounded-md bg-transparent px-2 py-1 text-[12px] leading-5 text-content/75 outline-none placeholder:text-content/35 hover:bg-content/5 focus:bg-content/5 focus:text-content/90"
+      className="block w-full resize-none rounded-md bg-transparent px-2 py-1 text-[12px] leading-5 text-content/75 outline-none placeholder:text-muted hover:bg-content/5 focus:bg-content/5 focus:text-content/90"
     />
   );
 }

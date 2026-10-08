@@ -682,6 +682,27 @@ describe("settings pages", () => {
     expect(localStorage.getItem("monocode.tabAnimationsEnabled")).toBe("1");
   });
 
+  it("draws switches with a visible off track and a transform-moved thumb", async () => {
+    await render("general");
+    const control = container.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Tab animations"]',
+    )!;
+    const thumb = control.querySelector("span")!;
+
+    expect(control.classList).toContain("bg-content/40");
+    expect(control.classList).toContain("ring-inset");
+    expect(control.classList).not.toContain("bg-content/20");
+    expect(thumb.classList).toContain("translate-x-0");
+    expect(thumb.classList).toContain("shadow-sm");
+    expect(thumb.classList).toContain("motion-reduce:transition-none");
+    expect(thumb.className).not.toContain("transition-[left]");
+
+    await act(async () => control.click());
+
+    expect(control.classList).toContain("bg-accent");
+    expect(thumb.classList).toContain("translate-x-4");
+  });
+
   it("defaults to the icon rail and lets users hide it", async () => {
     await render("appearance");
     let control = container.querySelector<HTMLElement>(

@@ -95,7 +95,7 @@ export function BinaryFileView({ path, cwd }: Props) {
 
   if (state.status === "loading") {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-content/45">
+      <div className="grid h-full place-items-center text-[12px] text-muted">
         Opening {basename(path)}…
       </div>
     );
@@ -108,7 +108,7 @@ export function BinaryFileView({ path, cwd }: Props) {
         cwd={cwd}
         title={`Couldn’t open ${basename(path)}`}
         detail={state.message}
-        icon={<AlertCircle className="mx-auto mb-3 size-5 text-red-400" />}
+        icon={<AlertCircle className="mx-auto mb-3 size-5 text-danger" />}
         onRetry={reload}
       />
     );
@@ -225,7 +225,7 @@ function ImageView({
           }
         />
       </div>
-      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-content/50">
+      <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-[11px] text-muted">
         <span className="tabular-nums">
           {natural ? `${natural.w} × ${natural.h}` : "—"}
         </span>
@@ -333,8 +333,8 @@ function FileCard({
       <div className="max-w-md text-center">
         {icon}
         <p className="text-[13px] text-content">{title}</p>
-        <p className="mt-1 text-[12px] leading-5 text-content/50">{detail}</p>
-        <p className="mt-1 truncate font-mono text-[11px] text-content/35">
+        <p className="mt-1 text-[12px] leading-5 text-muted">{detail}</p>
+        <p className="mt-1 truncate font-mono text-[11px] text-muted">
           {displayPath(path, cwd)}
         </p>
         <div className="mt-4 flex items-center justify-center gap-2">

@@ -109,10 +109,10 @@ export function MonoSettingsPage({
                   onClick={open}
                   className="flex w-full flex-col rounded-lg px-3 py-2 text-left hover:bg-content/5"
                 >
-                  <span className="text-[13px] leading-5 text-red-400">
+                  <span className="text-[13px] leading-5 text-danger">
                     Reset conversation
                   </span>
-                  <span className="text-[12px] leading-5 text-content/40">
+                  <span className="text-[12px] leading-5 text-muted">
                     Clear all messages and start fresh
                   </span>
                 </button>
@@ -147,12 +147,12 @@ function NavRow({
     >
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-[13px] leading-5 text-content/90">{label}</span>
-        <span className="line-clamp-1 text-[12px] leading-5 text-content/40">
+        <span className="line-clamp-1 text-[12px] leading-5 text-muted">
           {description}
         </span>
       </span>
       {count !== undefined ? (
-        <span className="shrink-0 text-[12px] leading-5 tabular-nums text-content/40">
+        <span className="shrink-0 text-[12px] leading-5 tabular-nums text-muted">
           {count}
         </span>
       ) : null}

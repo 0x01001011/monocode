@@ -97,11 +97,11 @@ export function MonoIntroPopover({ anchor, look, onCreate, onLater }: Props) {
       <div className="px-5 pb-5 text-center">
         <h3 className="flex items-center justify-center gap-2 text-xl font-semibold text-content">
           Meet Monos
-          <span className="rounded-full bg-content/8 px-1.5 py-px text-[10px] font-medium text-content/55">
+          <span className="rounded-full bg-content/8 px-1.5 py-px text-[10px] font-medium text-muted">
             Experimental
           </span>
         </h3>
-        <p className="mx-auto mt-1.5 text-[13px] leading-relaxed text-content/55">
+        <p className="mx-auto mt-1.5 text-[13px] leading-relaxed text-muted">
           Agents of your own that live on the rail and work across your
           projects. They remember what matters and pick up habits they run on
           their own.

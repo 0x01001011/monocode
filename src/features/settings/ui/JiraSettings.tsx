@@ -97,7 +97,7 @@ export function JiraSettings() {
   return (
     <div className="px-4 py-3.5">
       {checking ? (
-        <p className="text-[12px] text-content/45">Checking Jira connection…</p>
+        <p className="text-[12px] text-muted">Checking Jira connection…</p>
       ) : status?.connected ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 text-[12px] text-content/65">
@@ -118,7 +118,7 @@ export function JiraSettings() {
           }}
           className="flex flex-col gap-3"
         >
-          <p className="text-[12px] leading-relaxed text-content/45">
+          <p className="text-[12px] leading-relaxed text-muted">
             Connect your Jira Cloud site using your Atlassian email and an API
             token without scopes. Disconnect deletes the saved credentials.
           </p>
@@ -188,7 +188,7 @@ export function JiraSettings() {
         </form>
       )}
       {error ? (
-        <p role="alert" className="mt-3 text-[12px] text-red-400/90">
+        <p role="alert" className="mt-3 text-[12px] text-danger">
           {error}
         </p>
       ) : null}
@@ -205,7 +205,7 @@ export function JiraSettings() {
               Refresh projects
             </SecondaryButton>
           </div>
-          <p className="text-[12px] text-content/45">
+          <p className="text-[12px] text-muted">
             Unchecked projects stay out of the inbox.
           </p>
           {projects.map((project) => (
@@ -225,8 +225,7 @@ export function JiraSettings() {
                   saveHiddenJiraProjectIds(next);
                 }}
               />
-              {project.name}{" "}
-              <span className="text-content/40">{project.key}</span>
+              {project.name} <span className="text-muted">{project.key}</span>
             </label>
           ))}
         </div>

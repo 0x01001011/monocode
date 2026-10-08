@@ -60,9 +60,9 @@ export function ConfirmReset({
         <Modal title={title} size="sm" onClose={close}>
           <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
             <p className="text-[13px] leading-5 text-content/70">{body}</p>
-            <p className="text-[12px] leading-5 text-content/50">{kept}</p>
+            <p className="text-[12px] leading-5 text-muted">{kept}</p>
             {error ? (
-              <p role="alert" className="text-[12px] leading-5 text-red-400">
+              <p role="alert" className="text-[12px] leading-5 text-danger">
                 {failure} {error}
               </p>
             ) : null}
@@ -79,7 +79,7 @@ export function ConfirmReset({
                 type="button"
                 disabled={busy}
                 onClick={() => void reset()}
-                className="rounded-md bg-red-500/20 px-3 py-1.5 text-[12px] font-medium text-red-300 enabled:hover:bg-red-500/30 disabled:opacity-50"
+                className="rounded-md bg-danger/10 px-3 py-1.5 text-[12px] font-medium text-danger enabled:hover:bg-danger/20 disabled:opacity-50"
               >
                 {busy ? "Resetting…" : label}
               </button>

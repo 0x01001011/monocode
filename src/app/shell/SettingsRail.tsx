@@ -54,7 +54,7 @@ export function SettingsNav({ section, onSelect, onClose }: Props) {
       >
         {settingsSectionsByGroup().map((group) => (
           <div key={group.id} className="flex flex-col gap-px">
-            <div className="px-2 pb-1 text-xs font-semibold text-content/35">
+            <div className="px-2 pb-1 text-xs font-semibold text-muted">
               {group.label}
             </div>
             {group.sections.map((item) => (
@@ -95,7 +95,7 @@ function NavRow({
       className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left ${
         active
           ? "bg-selection text-content"
-          : "text-content/50 hover:bg-content/5 hover:text-content"
+          : "text-muted hover:bg-content/5 hover:text-content"
       }`}
     >
       <Icon className="size-4 shrink-0 opacity-70" strokeWidth={1.75} />

@@ -1,3 +1,11 @@
+/** True when the user asked the OS for less motion. Safe where `matchMedia` is missing. */
+export function prefersReducedMotion() {
+  return (
+    typeof window !== "undefined" &&
+    !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
 /** Read the shared CSS tokens so pointer gestures and CSS use the same timing. */
 export function reorderMotion() {
   const style = window.getComputedStyle(document.documentElement);

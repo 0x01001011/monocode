@@ -311,7 +311,7 @@ export function UsageFooter({
   return (
     <footer
       aria-label={ariaLabel}
-      className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto border-t border-stroke px-3 text-[11px] text-content/55"
+      className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto border-t border-stroke px-3 text-[11px] text-muted"
     >
       {session?.harness === "pi" ? (
         <PiUsage key={`${session.id}:${session.model}`} model={session.model} now={now} />
@@ -354,7 +354,7 @@ export function UsageFooter({
           ) : null}
           <button
             type="button"
-            className="grid size-4.5 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content disabled:opacity-50"
+            className="hit-area grid size-4.5 shrink-0 place-items-center rounded text-muted [--hit-area-extend:3px] hover:bg-content/10 hover:text-content disabled:opacity-50"
             aria-label="Refresh usage"
             title="Refresh usage"
             disabled={refreshing}
@@ -386,7 +386,7 @@ export function UsageFooter({
               className={`inline-flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 hover:bg-content/10 ${
                 projectTerminalActive
                   ? "text-accent"
-                  : "text-content/40 hover:text-content"
+                  : "text-muted hover:text-content"
               }`}
               aria-label={terminalLabel}
               aria-pressed={projectTerminalActive}
@@ -468,7 +468,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
       <button
         ref={trigger}
         type="button"
-        className="-mx-1 inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 text-content/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97]"
+        className="-mx-1 inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 text-muted transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97]"
         aria-label={`${HARNESS_TITLE[session.harness]} sign-in required`}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -478,7 +478,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         <HarnessIcon harness={session.harness} className="size-3 shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
         {authRequired ? (
-          <span className="text-[10px] text-amber-600 dark:text-amber-300">
+          <span className="text-[10px] text-warning">
             sign in
           </span>
         ) : null}
@@ -587,7 +587,7 @@ function RunningTerminalChip({
               <span className="min-w-0 flex-1 truncate">
                 {terminal.process}
               </span>
-              <span className="max-w-[7rem] shrink-0 truncate text-[11px] text-content/40">
+              <span className="max-w-[7rem] shrink-0 truncate text-[11px] text-muted">
                 {terminal.label}
               </span>
             </button>

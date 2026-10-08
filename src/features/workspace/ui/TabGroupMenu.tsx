@@ -18,6 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { normalizeHex } from "../../../shared/lib/colorUtils";
+import { formatErrorReport } from "../../../shared/lib/confirm";
 import { projectKey } from "../../../shared/lib/paths";
 import { clearProjectLogo, pickAndSetProjectLogo } from "../../projects/model/projectLogos";
 import { PROJECT_MASCOTS, projectMascot } from "../../projects/model/projectMascots";
@@ -173,6 +174,7 @@ export function TabGroupMenu({
   const input = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(label);
   const [customPickerOpen, setCustomPickerOpen] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
 
   useEffect(() => {
     input.current?.focus();
@@ -232,7 +234,7 @@ export function TabGroupMenu({
           onChange={(e) => setName(e.target.value)}
           onBlur={commitName}
           aria-label="Group name"
-          className="mb-2 w-full rounded-lg border border-content/10 bg-content/5 px-2.5 py-1.5 text-[13px] text-content outline-none ring-accent/40 focus:ring-1"
+          className="mb-2 w-full rounded-lg border border-content/10 bg-content/5 px-2.5 py-1.5 text-[13px] text-content outline-none focus-visible:focus-ring-inset"
         />
 
         {logoProject ? (
@@ -244,13 +246,15 @@ export function TabGroupMenu({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 void (async () => {
+                  setLogoError(null);
                   try {
                     const path = await pickAndSetProjectLogo(logoProject);
                     if (path) onLogoChange();
+                    onClose();
                   } catch (error) {
                     console.error("Failed to save project logo:", error);
-                  } finally {
-                    onClose();
+                    // Stay open so the failure is read before the menu goes.
+                    setLogoError(formatErrorReport("save the logo", error));
                   }
                 })();
               }}
@@ -265,7 +269,7 @@ export function TabGroupMenu({
               />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] text-content/50">Project logo</p>
+              <p className="text-[11px] text-muted">Project logo</p>
               <p className="truncate text-[12px] text-content/70">
                 {logoPath ? "Shown in tabs and composer" : "Optional — replaces folder icon"}
               </p>
@@ -279,12 +283,20 @@ export function TabGroupMenu({
                 onClick={() => {
                   void clearProjectLogo(projectKey(logoProject)).then(onLogoChange);
                 }}
-                className="grid size-7 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content"
+                className="grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
               >
                 <Trash2 className="size-3.5" strokeWidth={1.75} />
               </button>
             ) : null}
           </div>
+        ) : null}
+        {logoError ? (
+          <p
+            role="alert"
+            className="mb-2 whitespace-pre-line break-words px-0.5 text-[11px] leading-4 text-danger"
+          >
+            {logoError}
+          </p>
         ) : null}
 
         <div className="mb-2">
@@ -309,7 +321,7 @@ export function TabGroupMenu({
         ) : null}
 
         <div className="mb-2 px-0.5">
-          <p className="mb-1 text-[11px] text-content/50">Mascot</p>
+          <p className="mb-1 text-[11px] text-muted">Mascot</p>
           <div className="flex items-center justify-between gap-1">
             {PROJECT_MASCOTS.map((mascot) => (
               <MascotSwatch
@@ -469,13 +481,13 @@ function MenuRow({
       }}
       className={`flex min-h-8 w-full items-center gap-2.5 rounded-lg px-2 text-left text-[13px] leading-none ${
         item.disabled
-          ? "text-content/30"
+          ? "text-faint"
           : item.danger
-            ? "text-red-300/90 hover:bg-red-500/15"
+            ? "text-danger hover:bg-danger/15"
             : "text-content hover:bg-content/5"
       }`}
     >
-      <Icon className="size-3.5 shrink-0 text-content/55" strokeWidth={1.75} />
+      <Icon className="size-3.5 shrink-0 text-muted" strokeWidth={1.75} />
       <span className={`min-w-0 flex-1 leading-label ${item.description ? "py-2" : "truncate"}`}>
         {item.label}
         {item.description ? (
@@ -485,10 +497,10 @@ function MenuRow({
         ) : null}
       </span>
       {item.submenu ? (
-        <ChevronRight className="size-3.5 shrink-0 text-content/50" strokeWidth={1.75} />
+        <ChevronRight className="size-3.5 shrink-0 text-muted" strokeWidth={1.75} />
       ) : null}
       {item.shortcut ? (
-        <span className="shrink-0 text-[11px] text-content/40">
+        <span className="shrink-0 text-[11px] text-muted">
           {item.shortcut}
         </span>
       ) : null}

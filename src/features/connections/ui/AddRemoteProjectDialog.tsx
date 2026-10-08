@@ -124,7 +124,7 @@ export function AddRemoteProjectDialog({
           <h2 className="text-[13px] font-medium leading-tight text-content">
             Open folder on a machine
           </h2>
-          <p className="text-[12px] leading-snug text-content/55">
+          <p className="text-[12px] leading-snug text-muted">
             Sessions in this project run on that machine, using its checkout and
             its Codex or Claude Code sign-in. They keep running when you close
             MonoCode here.
@@ -132,7 +132,7 @@ export function AddRemoteProjectDialog({
         </div>
         {!loaded ? null : !machine ? (
           <>
-            <p className="text-[12px] leading-snug text-content/55">
+            <p className="text-[12px] leading-snug text-muted">
               No machines are connected yet. Add one in Settings, then open a
               folder on it here.
             </p>
@@ -171,7 +171,7 @@ export function AddRemoteProjectDialog({
                 searchable={false}
               />
             ) : (
-              <p className="text-[12px] text-content/55">
+              <p className="text-[12px] text-muted">
                 On <span className="text-content/80">{machine.name}</span>
               </p>
             )}
@@ -205,12 +205,12 @@ export function AddRemoteProjectDialog({
                   />
                 ))}
                 {directory && !directory.entries.length ? (
-                  <p className="px-2 py-1.5 text-[12px] text-content/45">
+                  <p className="px-2 py-1.5 text-[12px] text-muted">
                     No subfolders
                   </p>
                 ) : null}
                 {!directory && loading ? (
-                  <p className="px-2 py-1.5 text-[12px] text-content/45">
+                  <p className="px-2 py-1.5 text-[12px] text-muted">
                     Loading folders…
                   </p>
                 ) : null}
@@ -219,7 +219,7 @@ export function AddRemoteProjectDialog({
             {error ? (
               <p
                 role="alert"
-                className="whitespace-pre-wrap break-words text-[12px] leading-snug text-red-400/90"
+                className="whitespace-pre-wrap break-words text-[12px] leading-snug text-danger"
               >
                 {error}
               </p>
@@ -256,7 +256,7 @@ function FolderRow({ name, onOpen }: { name: string; onOpen: () => void }) {
       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-content/75 hover:bg-content/8 hover:text-content"
     >
       <Folder
-        className="size-3.5 shrink-0 text-content/45"
+        className="size-3.5 shrink-0 text-muted"
         strokeWidth={1.75}
       />
       <span className="min-w-0 flex-1 truncate">{name}</span>

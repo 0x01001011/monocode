@@ -207,7 +207,7 @@ export function ProjectBackgroundDialog({
                 />
               )
             ) : (
-              <div className="grid h-40 place-items-center text-[12px] text-content/40">
+              <div className="grid h-40 place-items-center text-[12px] text-muted">
                 No background selected
               </div>
             )}
@@ -223,7 +223,7 @@ export function ProjectBackgroundDialog({
             ) : null}
             {path ? "Change image" : "Choose image"}
           </button>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-content/45">
+          <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
             {locked
               ? `Shown behind ${name}'s chat, dimmed with the Haze effect.`
               : path
@@ -231,7 +231,7 @@ export function ProjectBackgroundDialog({
                 : "This project currently follows the global Appearance setting."}
           </p>
           {error ? (
-            <p className="mt-1.5 text-[12px] text-red-400">{error}</p>
+            <p className="mt-1.5 text-[12px] text-danger">{error}</p>
           ) : null}
         </div>
 
@@ -242,7 +242,7 @@ export function ProjectBackgroundDialog({
                 <span className="text-[13px] font-medium text-content">
                   Background effect
                 </span>
-                <p className="text-[11px] text-content/45 line-clamp-1">
+                <p className="text-[11px] text-muted line-clamp-1">
                   {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
                 </p>
               </div>
@@ -287,7 +287,7 @@ export function ProjectBackgroundDialog({
                     className={`rounded-[5px] px-1.5 py-1 ${
                       scope === option.value
                         ? "bg-selection text-content"
-                        : "text-content/50 hover:text-content"
+                        : "text-muted hover:text-content"
                     }`}
                   >
                     {option.label}
@@ -341,7 +341,7 @@ export function ProjectBackgroundDialog({
             type="button"
             onClick={() => void removeImage()}
             disabled={busy}
-            className="w-full rounded-md border border-content/10 px-2.5 py-1.5 text-[12px] text-red-400 hover:border-red-400/40 hover:bg-red-400/10 disabled:opacity-40"
+            className="w-full rounded-md border border-content/10 px-2.5 py-1.5 text-[12px] text-danger hover:border-danger/40 hover:bg-danger/10 disabled:opacity-40"
           >
             Remove background image
           </button>

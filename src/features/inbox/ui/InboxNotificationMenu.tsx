@@ -112,11 +112,11 @@ export function InboxNotificationMenu({
           <p className="text-xs font-medium text-content">
             Inbox
           </p>
-          <p role="status" className="text-xs text-content/50">
+          <p role="status" className="text-xs text-muted">
             {`${allIds.length} ${allIds.length === 1 ? "project" : "projects"} · ${mutedIds.length} muted`}
           </p>
           {saveError ? (
-            <p role="alert" className="text-xs text-red-400">
+            <p role="alert" className="text-xs text-danger">
               {saveError}
             </p>
           ) : null}

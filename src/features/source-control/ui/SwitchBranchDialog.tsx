@@ -3,6 +3,7 @@ import { Loader, WandSparkles, X } from "../../../shared/ui/icons";
 import { useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { generateCommitMessage } from "../../../integrations/harness";
+import { reportError } from "../../../shared/lib/confirm";
 import { LAYER } from "../../../shared/lib/layers";
 import { MOD } from "../../../platform/tauri/platform";
 
@@ -84,7 +85,7 @@ export function SwitchBranchDialog({
       if (!controller.signal.aborted) setMessage(generated);
     } catch (err) {
       if (!controller.signal.aborted) {
-        window.alert(err instanceof Error ? err.message : String(err));
+        void reportError("generate a commit message", err);
       }
     } finally {
       if (generateAbortRef.current === controller) {
@@ -125,7 +126,7 @@ export function SwitchBranchDialog({
           <h2 className="text-[13px] font-medium leading-tight text-content">
             Uncommitted changes
           </h2>
-          <p className="text-[12px] leading-snug text-content/55">
+          <p className="text-[12px] leading-snug text-muted">
             {creating
               ? `Creating “${branch}” would overwrite your local changes. Stash them for later, or commit them on this branch first.`
               : `Switching to “${branch}” would overwrite your local changes. Stash them for later, or commit them on this branch first.`}
@@ -140,7 +141,7 @@ export function SwitchBranchDialog({
             placeholder={`Message (${MOD}↩ to commit)`}
             disabled={Boolean(busy) || generating}
             aria-label="Commit message"
-            className="max-h-40 w-full resize-none overflow-y-auto rounded-md bg-content/10 py-1 pr-8 pl-2 text-[13px] leading-5 text-content outline-none placeholder:text-content/35 disabled:opacity-40"
+            className="max-h-40 w-full resize-none overflow-y-auto rounded-md bg-content/10 py-1 pr-8 pl-2 text-[13px] leading-5 text-content outline-none placeholder:text-muted focus-visible:focus-ring-inset disabled:opacity-40"
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
               if (
@@ -187,7 +188,7 @@ export function SwitchBranchDialog({
         </div>
 
         {error ? (
-          <p className="whitespace-pre-wrap text-[11px] leading-4 text-red-400/90">
+          <p className="whitespace-pre-wrap text-[11px] leading-4 text-danger">
             {error}
           </p>
         ) : null}

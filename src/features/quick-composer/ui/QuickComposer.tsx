@@ -514,7 +514,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
         aria-label="Close composer"
         title="Close (Esc)"
         onClick={dismiss}
-        className="absolute right-2 top-3.5 z-20 grid size-5 place-items-center rounded text-content/35 hover:bg-selection-hover hover:text-content"
+        className="absolute right-2 top-3.5 z-20 grid size-5 place-items-center rounded text-muted hover:bg-selection-hover hover:text-content"
       >
         <X className="size-3" />
       </button>
@@ -540,7 +540,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           disabled={projects.length === 0}
           title="Project (⌘P)"
           aria-expanded={picker === "project"}
-          className={`ml-auto flex min-w-0 max-w-[40%] shrink items-center gap-1.5 rounded-md px-1.5 h-6 text-[12px] disabled:opacity-50 ${picker === "project" ? "bg-selection-emphasis text-content" : "text-content/55 hover:bg-selection-hover hover:text-content"}`}
+          className={`ml-auto flex min-w-0 max-w-[40%] shrink items-center gap-1.5 rounded-md px-1.5 h-6 text-[12px] disabled:opacity-50 ${picker === "project" ? "bg-selection-emphasis text-content" : "text-muted hover:bg-selection-hover hover:text-content"}`}
         >
           {cwd ? (
             <QuickProjectIcon
@@ -633,7 +633,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       </div>
 
       {attachments.files.length && !attachmentsSupported ? (
-        <p role="alert" className="px-5 pb-2 text-xs text-amber-400">
+        <p role="alert" className="px-5 pb-2 text-xs text-warning">
           Choose a provider that supports attachments, or remove the attached
           files.
         </p>
@@ -685,11 +685,11 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
             <ChevronDown className="size-3 shrink-0 opacity-60" />
           </button>
         ) : null}
-        <span className="ml-auto flex shrink-0 items-center gap-3 text-[11px] text-content/45">
+        <span className="ml-auto flex shrink-0 items-center gap-3 text-[11px] text-muted">
           {attachments.loading ? (
             <span role="status">Adding attachment…</span>
           ) : error ? (
-            <span className="max-w-72 truncate text-red-400" title={error}>
+            <span className="max-w-72 truncate text-danger" title={error}>
               {error}
             </span>
           ) : (
@@ -706,7 +706,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
             type="button"
             onClick={() => void submit(false)}
             disabled={!canSubmit}
-            className="rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-40"
+            className="primary-action rounded-md px-2.5 py-1 text-[12px] font-medium"
           >
             {leadingMode?.name === DRAFT_COMMAND.name ? "Save draft" : "Start"}
           </button>
@@ -764,7 +764,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
               className="shrink-0 border-t border-stroke p-2"
             >
               {commandOptions.length === 0 ? (
-                <p className="px-2 py-2 text-[12px] text-content/45">
+                <p className="px-2 py-2 text-[12px] text-muted">
                   No matching commands
                 </p>
               ) : (
@@ -782,7 +782,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                     className={optionClass(index, true)}
                   >
                     <CommandLabel name={command.name} />
-                    <span className="text-[11px] leading-4 text-content/50">
+                    <span className="text-[11px] leading-4 text-muted">
                       {command.description}
                     </span>
                   </button>
@@ -816,7 +816,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
 
           {picker === "project" ? (
             <div className="flex min-h-0 flex-col border-t border-stroke">
-              <label className="flex shrink-0 items-center gap-2 px-4 py-2 text-content/45">
+              <label className="flex shrink-0 items-center gap-2 px-4 py-2 text-muted">
                 <Search className="size-3.5 shrink-0" />
                 <input
                   ref={queryRef}
@@ -839,7 +839,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                   aria-label="Find a project"
                   spellCheck={false}
                   autoComplete="off"
-                  className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
+                  className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-muted"
                 />
               </label>
               <div
@@ -849,9 +849,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                 className="min-h-0 max-h-64 overflow-y-auto overscroll-none px-2 pb-2"
               >
                 {optionCount === 0 ? (
-                  <p className="px-2 py-2 text-[12px] text-content/45">
-                    No matches
-                  </p>
+                  <p className="px-2 py-2 text-[12px] text-muted">No matches</p>
                 ) : (
                   projectOptions.map((path, index) => (
                     <button
@@ -871,7 +869,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                         className="size-3 shrink-0"
                       />
                       <span className="truncate">{projectName(path)}</span>
-                      <span className="ml-auto truncate pl-3 text-[11px] text-content/40">
+                      <span className="ml-auto truncate pl-3 text-[11px] text-muted">
                         {prettyParent(path)}
                       </span>
                     </button>
@@ -902,7 +900,7 @@ function CommandLabel({ name }: { name: string }) {
 
 function Kbd({ children }: { children: string }) {
   return (
-    <kbd className="rounded border border-content/12 px-1 font-sans text-[10px] text-content/55">
+    <kbd className="rounded border border-content/12 px-1 font-sans text-[10px] text-muted">
       {children}
     </kbd>
   );

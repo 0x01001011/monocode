@@ -120,7 +120,7 @@ export function MonoSessionsPanel({
     >
       <MonoSidebarHeader title="Sessions" onClose={onClose} />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none px-3 py-3">
-        <p className="px-1 pb-3 text-[11px] text-content/45">
+        <p className="px-1 pb-3 text-[11px] text-muted">
           {launches.length} {launches.length === 1 ? "session" : "sessions"}{" "}
           launched in this turn
         </p>
@@ -167,13 +167,13 @@ export function MonoSessionsPanel({
                 data-mono-session={launch.sessionId}
                 disabled={unavailable || !!opening}
                 onClick={() => void open(launch.sessionId)}
-                className="group flex w-full items-center gap-2 rounded-lg border border-stroke bg-content/3 px-3 py-2.5 text-left outline-none hover:border-content/20 hover:bg-content/6 focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-default disabled:opacity-50"
+                className="group flex w-full items-center gap-2 rounded-lg border border-stroke bg-content/3 px-3 py-2.5 text-left outline-none hover:border-content/20 hover:bg-content/6 focus-visible:focus-ring disabled:cursor-default disabled:opacity-50"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-medium text-content">
                     {title}
                   </p>
-                  <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-content/45">
+                  <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted">
                     <HarnessIcon
                       harness={harness}
                       className="size-3 shrink-0"
@@ -191,12 +191,12 @@ export function MonoSessionsPanel({
                     </span>
                   </div>
                   <p
-                    className="mt-2 flex items-center gap-1.5 text-[11px] text-content/55"
+                    className="mt-2 flex items-center gap-1.5 text-[11px] text-muted"
                     role="status"
                   >
                     <span
                       aria-hidden
-                      className={`size-1.5 rounded-full ${status === "Working" ? "animate-pulse bg-[var(--mono-color)]" : status === "Needs input" ? "bg-amber-500/70" : "bg-content/30"}`}
+                      className={`size-1.5 rounded-full ${status === "Working" ? "animate-pulse bg-[var(--mono-color)]" : status === "Needs input" ? "bg-warning/70" : "bg-content/30"}`}
                     />
                     {opening === launch.sessionId ? "Opening…" : status}
                   </p>
@@ -210,7 +210,7 @@ export function MonoSessionsPanel({
           })}
         </div>
         {error ? (
-          <p role="alert" className="px-1 pt-3 text-xs text-red-400">
+          <p role="alert" className="px-1 pt-3 text-xs text-danger">
             {error}
           </p>
         ) : null}

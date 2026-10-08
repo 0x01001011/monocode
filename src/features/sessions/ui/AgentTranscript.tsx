@@ -1573,7 +1573,10 @@ function LiveFoldTitle({
       ? `${formatWorkingDuration(elapsedMs, modelName)} · ${backgroundLabel(background)}`
       : formatWorkingDuration(elapsedMs, modelName);
   const shimmer = (
-    <Shimmer className="min-w-0 truncate font-sans text-sm" duration={1}>
+    <Shimmer
+      className="min-w-0 truncate font-sans text-sm tabular-nums"
+      duration={1}
+    >
       {text}
     </Shimmer>
   );

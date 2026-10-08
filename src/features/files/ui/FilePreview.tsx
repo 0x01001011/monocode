@@ -142,7 +142,7 @@ export function FilePreview({
             aria-label={variant === "popover" ? "Preview lines" : undefined}
           >
             {preview.contentOnly && !lines.length ? (
-              <p className="px-3 py-2 font-mono text-xs text-content/50">
+              <p className="px-3 py-2 font-mono text-xs text-muted">
                 Empty file
               </p>
             ) : null}
@@ -195,7 +195,7 @@ function PreviewLine({
       className={`relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""} ${bg}`}
     >
       <span className={`absolute inset-y-0 left-0 w-0.5 ${bar}`} />
-      <span className="w-7 shrink-0 pr-1 text-right font-mono text-[10px] text-content/35">
+      <span className="w-7 shrink-0 pr-1 text-right font-mono text-[10px] text-muted">
         {line.number ?? " "}
       </span>
       {showGutter ? (
@@ -216,12 +216,12 @@ function PreviewLine({
 
 function StatusIcon({ status }: { status: Status }) {
   if (status === "rejected") {
-    return <X className="size-3.5 shrink-0 text-red-400" strokeWidth={2} />;
+    return <X className="size-3.5 shrink-0 text-danger" strokeWidth={2} />;
   }
   if (status === "pending") {
     return (
       <CircleDashed
-        className="size-3.5 shrink-0 text-content/40"
+        className="size-3.5 shrink-0 text-muted"
         strokeWidth={1.75}
       />
     );
@@ -237,7 +237,7 @@ function highlight(text: string, dimmed: boolean) {
     trimmed.startsWith("///") ||
     trimmed.startsWith("#")
   ) {
-    return <span className={`text-content/45 ${dim}`}>{text}</span>;
+    return <span className={`text-muted ${dim}`}>{text}</span>;
   }
 
   const parts: { text: string; color: string }[] = [];
@@ -252,7 +252,7 @@ function highlight(text: string, dimmed: boolean) {
     const color = KEYWORDS.has(token)
       ? "text-teal-300"
       : /^[A-Z]/.test(token)
-        ? "text-amber-200/90"
+        ? "text-warning"
         : "";
     parts.push({ text: token, color });
     last = match.index + token.length;

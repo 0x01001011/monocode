@@ -81,7 +81,7 @@ export function MonoRailSection({
   return (
     <div className="mb-2 shrink-0" data-mono-rail>
       <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
-        <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
+        <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-muted">
           Monos
         </span>
         {/* With none yet, the row below is the way to add one. */}
@@ -91,7 +91,7 @@ export function MonoRailSection({
             title="New mono"
             aria-label="New mono"
             onClick={onCreate}
-            className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
+            className="hit-area grid size-5 shrink-0 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content"
           >
             <Plus className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -117,7 +117,7 @@ export function MonoRailSection({
             title="New mono"
             aria-label="New mono"
             onClick={onCreate}
-            className="grid h-8 w-full cursor-default place-items-center rounded-md border border-dashed border-content/15 text-content/50 hover:border-content/30 hover:bg-content/5 hover:text-content"
+            className="grid h-8 w-full cursor-default place-items-center rounded-md border border-dashed border-content/15 text-muted hover:border-content/30 hover:bg-content/5 hover:text-content"
           >
             <Plus className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -214,7 +214,7 @@ export function MonoRailSection({
                   event.stopPropagation();
                   setMenu({ id: mono.id, anchor: event.currentTarget });
                 }}
-                className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
+                className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
               >
                 <MoreHorizontal className="size-4" strokeWidth={1.75} />
               </button>
@@ -315,7 +315,7 @@ function MonoMenu({
           commitName();
           onClose();
         }}
-        className="mb-2 w-full rounded-lg border border-content/10 bg-content/5 px-2.5 py-1.5 text-[13px] text-content outline-none ring-accent/40 placeholder:text-content/45 focus:ring-1"
+        className="mb-2 w-full rounded-lg border border-content/10 bg-content/5 px-2.5 py-1.5 text-[13px] text-content outline-none placeholder:text-muted focus-visible:focus-ring-inset"
       />
       <div className="mb-2 flex flex-col gap-2">
         <MascotPicker
@@ -346,7 +346,7 @@ function MonoMenu({
         type="button"
         role="menuitem"
         onClick={onDelete}
-        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-red-400 hover:bg-content/8"
+        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-danger hover:bg-content/8"
       >
         <Trash2 className="size-3.5 shrink-0" strokeWidth={1.75} />
         Delete mono…

@@ -222,7 +222,7 @@ export function FilePicker({
         className="absolute left-1/2 top-[12%] flex w-[min(560px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-content/10 bg-content/5 backdrop-blur-xl"
       >
         <div className="pb-1.5">
-          <label className="flex items-center gap-2 border-b border-stroke px-2 py-2.5 text-content/50">
+          <label className="flex items-center gap-2 border-b border-stroke px-2 py-2.5 text-muted">
             <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
             <input
               ref={search}
@@ -234,7 +234,7 @@ export function FilePicker({
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/40"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-muted"
               onChange={(e) => {
                 setQuery(e.target.value);
                 setActive(0);
@@ -244,7 +244,7 @@ export function FilePicker({
           </label>
         </div>
         {empty ? (
-          <p className="px-3 pb-3 pt-1 text-[12px] text-content/50">{empty}</p>
+          <p className="px-3 pb-3 pt-1 text-[12px] text-muted">{empty}</p>
         ) : paletteMode ? (
           <ActionList
             actions={actionResults}
@@ -342,7 +342,7 @@ function ActionList({
             }`}
           >
             <RefreshCw
-              className="size-4 shrink-0 text-content/50"
+              className="size-4 shrink-0 text-muted"
               strokeWidth={1.75}
             />
             <span className="min-w-0 flex-1 truncate">
@@ -353,7 +353,7 @@ function ActionList({
               />
             </span>
             {action.hint ? (
-              <kbd className="ml-auto shrink-0 rounded border border-content/10 bg-content/5 px-1.5 py-0.5 font-mono text-[10px] text-content/50">
+              <kbd className="ml-auto shrink-0 rounded border border-content/10 bg-content/5 px-1.5 py-0.5 font-mono text-[10px] text-muted">
                 {action.hint}
               </kbd>
             ) : null}
@@ -447,7 +447,7 @@ function FileList({
               />
             </span>
             {dir ? (
-              <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
+              <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-muted">
                 <MatchText
                   text={dir}
                   positions={file.positions.filter((pos) => pos < slash)}

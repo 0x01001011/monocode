@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { prefersReducedMotion } from "../lib/motion";
 
 /** Room around the text for particles drifting past its box. */
 const PAD = 20;
@@ -20,10 +21,6 @@ type Particle = {
   vy: number;
   life: number;
 };
-
-function reducedMotion(): boolean {
-  return !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
 
 function fitText(ctx: CanvasRenderingContext2D, text: string, width: number) {
   if (ctx.measureText(text).width <= width) return text;
@@ -121,7 +118,7 @@ export function ParticleText({
     stopRef.current?.();
     const root = rootRef.current;
     const label = textRef.current;
-    if (!root || !label || reducedMotion()) return;
+    if (!root || !label || prefersReducedMotion()) return;
     const width = label.clientWidth;
     const height = label.clientHeight;
     if (width === 0 || height === 0) return;

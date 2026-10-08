@@ -526,7 +526,7 @@ it.each([
       expect(options[index].querySelector("svg")?.outerHTML).toBe(
         renderToStaticMarkup(
           createElement(Icon, {
-            className: "size-3.5 shrink-0 text-content/50",
+            className: "size-3.5 shrink-0 text-muted",
           }),
         ),
       );
