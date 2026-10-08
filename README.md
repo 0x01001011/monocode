@@ -33,7 +33,7 @@ macOS (Apple Silicon): download [MonoCode.dmg](https://dl.usemono.dev/MonoCode.d
 
 macOS (Intel): download [MonoCode_x64.dmg](https://dl.usemono.dev/MonoCode_x64.dmg), open it, drag MonoCode to Applications.
 
-Linux (x86_64): download the `.deb` or AppImage from [GitHub Releases](https://github.com/hardbeat920/monocode/releases/latest). Install the `.deb` with `sudo apt install ./MonoCode_*.deb`. The AppImage needs WebKitGTK 4.1 on the host, the same as the `.deb` (`libwebkit2gtk-4.1-0` on Debian/Ubuntu, `webkit2gtk4.1` on Fedora, `webkit2gtk-4.1` on Arch); make it executable with `chmod +x MonoCode_*.AppImage` and run it. On Fedora and Enterprise Linux 10, download the `.rpm` from the same release page — see [Fedora / Enterprise Linux packages](#fedora--enterprise-linux-packages) for the one extra repository step Enterprise Linux needs.
+Linux (x86_64): download the `.deb` or AppImage from [GitHub Releases](https://github.com/hardbeat920/monocode/releases/latest). Install the `.deb` with `sudo apt install ./MonoCode_*.deb`. The AppImage needs WebKitGTK 4.1 on the host, the same as the `.deb` (`libwebkit2gtk-4.1-0` on Debian/Ubuntu, `webkit2gtk4.1` on Fedora, `webkit2gtk-4.1` on Arch); make it executable with `chmod +x MonoCode_*.AppImage` and run it. The AppImage updates itself from Settings → General; the `.deb` and `.rpm` update through apt or dnf. Keep the AppImage somewhere you can write to (for example `~/Applications`) so updates can replace it. On Fedora and Enterprise Linux 10, download the `.rpm` from the same release page — see [Fedora / Enterprise Linux packages](#fedora--enterprise-linux-packages) for the one extra repository step Enterprise Linux needs.
 
 Windows (x86_64): download the NSIS installer from [GitHub Releases](https://github.com/hardbeat920/monocode/releases/latest) and run it.
 
@@ -81,6 +81,8 @@ npm run build:linux
 
 The Linux build emits `.deb` and AppImage bundles under `target/release/bundle/`.
 `build:linux` repacks the AppImage so it uses the host WebKitGTK 4.1 stack instead of bundled Ubuntu libraries.
+
+Prerelease tags such as `v0.9.1-beta.1` publish to `beta/latest.json`, and beta builds use that feed even when a stable updater endpoint is configured. Beta releases leave the stable feed and macOS download links unchanged. To trial AppImage updates, install a beta AppImage in a writable directory, publish a newer beta, and verify the update downloads, installs, and relaunches successfully before publishing a stable version.
 Tauri loads `src-tauri/tauri.linux.conf.json` automatically for Linux development and builds.
 
 ### Fedora / Enterprise Linux packages
