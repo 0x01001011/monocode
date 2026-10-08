@@ -308,6 +308,7 @@ pub fn run() {
             automations::automation_run_update,
             external_editor::list_external_editors,
             external_editor::open_in_external_editor,
+            external_editor::open_remote_in_external_editor,
             fs::resolve_project_location,
             fs::open_path_with_default_app,
             fs::list_dir,

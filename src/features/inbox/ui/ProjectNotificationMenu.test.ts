@@ -14,8 +14,8 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (command: string) => {
     if (command === "list_external_editors") {
       return [
-        { id: "vscode", name: "Visual Studio Code" },
-        { id: "zed", name: "Zed" },
+        { id: "vscode", name: "Visual Studio Code", remote: true },
+        { id: "zed", name: "Zed", remote: true },
       ];
     }
     if (command === "open_in_external_editor") return;
@@ -90,6 +90,9 @@ it("opens a project in a detected editor from the project context menu", async (
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("open_in_external_editor", {
     editorId: "zed",
     cwd: "/work/private",
+    file: null,
+    line: null,
+    column: null,
   });
 });
 

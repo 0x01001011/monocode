@@ -27,7 +27,7 @@ Let "Open in editor" work for projects on an SSH machine, and add it to file tab
 
 ## Desktop
 - `useProjectMenu.tsx`: for a remote project path call the new command; list only editors with `remote`; the submenu shows "No remote-capable editors found" when empty.
-- New "Open in <editor>" item on file tabs (`SurfaceTabs.tsx`), the file-tree context menu (`FileTree.tsx`) and worktree rows, for local and remote files. For a local file it uses the existing editor launch with `--goto` (VS Code family) so the line is honored there too. The editor is the last one used (localStorage), else the first in the list.
+- New "Open in Editor" submenu on file tabs (`SurfaceTabs.tsx`) and the file-tree context menu (`FileTree.tsx`), for local and remote files, listing editors from a lazily loaded cache (`editorMenu.ts`). Worktree rows are a follow-up; the file tree's folder entries already cover a worktree root. For a local file it uses the existing editor launch with `--goto` (VS Code family) so the line is honored there too. The last editor used (localStorage) is listed first in the submenu.
 - Failures show through `FileActionError`; nothing is silently ignored.
 
 ## Verification

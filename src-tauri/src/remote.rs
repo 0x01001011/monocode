@@ -242,6 +242,29 @@ fn store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         .join("remote-machines.json"))
 }
 
+fn ssh_of(machines: &[StoredMachine], environment_id: &str) -> Result<SshTarget, String> {
+    machines
+        .iter()
+        .find(|machine| machine.environment_id == environment_id)
+        .ok_or("This machine is no longer connected.")?
+        .ssh
+        .clone()
+        .ok_or_else(|| "This machine has no SSH address to open in an editor.".to_string())
+}
+
+/// The SSH address of a connected machine, for launching an editor on it.
+pub fn machine_ssh(
+    app: &AppHandle,
+    state: &RemoteConnections,
+    environment_id: &str,
+) -> Result<SshTarget, String> {
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    ssh_of(&read(&store_path(app)?)?, environment_id)
+}
+
 #[tauri::command(async)]
 pub fn remote_machines(
     app: AppHandle,
@@ -705,6 +728,36 @@ pub fn remote_network_changed(state: State<'_, RemoteConnections>) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stored(environment_id: &str, ssh: Option<SshTarget>) -> StoredMachine {
+        StoredMachine {
+            id: format!("id-{environment_id}"),
+            name: "box".into(),
+            endpoint: "http://127.0.0.1:1".into(),
+            environment_id: environment_id.into(),
+            token: "secret".into(),
+            ssh,
+        }
+    }
+
+    #[test]
+    fn an_editor_finds_the_ssh_address_by_environment_id() {
+        let target = SshTarget {
+            target: "k@kgpu".into(),
+            port: None,
+            remote_port: 3774,
+        };
+        let machines = [stored("env-a", None), stored("env-b", Some(target))];
+        assert_eq!(ssh_of(&machines, "env-b").unwrap().target, "k@kgpu");
+        assert_eq!(
+            ssh_of(&machines, "env-a").unwrap_err(),
+            "This machine has no SSH address to open in an editor."
+        );
+        assert_eq!(
+            ssh_of(&machines, "env-z").unwrap_err(),
+            "This machine is no longer connected."
+        );
+    }
     #[test]
     fn a_slow_host_does_not_look_like_a_dead_tunnel() {
         use std::{net::TcpListener, thread, time::Duration};
