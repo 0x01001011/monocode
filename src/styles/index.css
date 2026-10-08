@@ -2781,6 +2781,11 @@ html.theme-light .mono-pill {
   overflow: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
+  scrollbar-width: none;
+}
+
+.zen-phase-body > .zen-phase-live::-webkit-scrollbar {
+  display: none;
 }
 
 /*
