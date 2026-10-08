@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentTranscript } from "../../src/features/sessions/ui/AgentTranscript";
 import type { Block } from "../../src/features/sessions/model/session";
@@ -29,6 +30,34 @@ const blocks: Block[] = Array.from({ length: 20 }, (_, index): Block[] => [
   },
 ]).flat();
 
-createRoot(document.getElementById("root")!).render(
-  <AgentTranscript blocks={blocks} initialTurns={20} />,
-);
+// Like the transcript pool, parking detaches the transcript from the page.
+const root = document.getElementById("root")!;
+const host = document.createElement("div");
+host.className = "contents";
+root.appendChild(host);
+
+function Fixture() {
+  const [parked, setParked] = useState(false);
+  useEffect(() => {
+    Object.assign(window, {
+      parkTranscript: () => {
+        host.remove();
+        setParked(true);
+      },
+      showTranscript: () => {
+        root.appendChild(host);
+        setParked(false);
+      },
+    });
+  }, []);
+  return (
+    <AgentTranscript
+      blocks={blocks}
+      initialTurns={20}
+      visible={!parked}
+      parked={parked}
+    />
+  );
+}
+
+createRoot(host).render(<Fixture />);

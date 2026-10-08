@@ -159,6 +159,7 @@ import {
 } from "../model/transcriptHighlights";
 
 const NEAR_BOTTOM_PX = 16;
+const WHEEL_HOLD_MS = 150;
 /*
  * Tool calls often land in a burst. Each arrival waits for the one before it
  * to finish its whole entrance — rail, branch, row — before starting its own.
@@ -326,11 +327,12 @@ function AgentTranscriptComponent({
   );
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const scroller = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
+  const stickToBottom = useDebugStickRef(scroller); // TEMP scroll debug
   const refreshChatMotion = useRef<(() => void) | null>(null);
   const showJumpRef = useRef(false);
   const distanceFromBottom = useRef(0);
   const lastScrollTop = useRef(0);
+  const wheelHold = useRef(0);
   const prependHeight = useRef<number | null>(null);
   const prependAnchor = useRef<{ element: HTMLElement; top: number } | null>(
     null,
@@ -460,7 +462,10 @@ function AgentTranscriptComponent({
       // The browser can apply a manual scroll before dispatching its event.
       // Reconcile that offset before a streaming commit or observer pins it.
       syncPinned(el);
-      if (stickToBottom.current) pinTranscript(el);
+      // A gesture whose direction is not known yet may already be scrolling
+      // off the main thread. Pinning now would snap it back to the end.
+      if (stickToBottom.current && performance.now() >= wheelHold.current)
+        pinTranscript(el);
     },
     [pinTranscript, syncPinned],
   );
@@ -505,14 +510,25 @@ function AgentTranscriptComponent({
   useEffect(() => {
     if (!visible || !scrollerEl) return;
     const onScroll = () => {
+      scrollLog("scroll", scrollerEl, { last: lastScrollTop.current }); // TEMP
       if (scrollerEl.isConnected && scrollerEl.clientHeight > 0)
         syncPinned(scrollerEl);
     };
+    let release: ReturnType<typeof setTimeout> | undefined;
     const onWheel = (e: WheelEvent) => {
       if (innerScrollerTakes(scrollerEl, e)) return;
       if (e.deltaY < 0) {
         stickToBottom.current = false;
         setShowJump(true);
+      } else if (e.deltaY === 0) {
+        // A trackpad gesture can open with an event that carries no
+        // direction, and the rest of it may reach us after the scroll has
+        // moved. Hold the pin until its upward events can release it.
+        wheelHold.current = performance.now() + WHEEL_HOLD_MS;
+        clearTimeout(release);
+        release = setTimeout(() => {
+          if (scrollerEl.isConnected) followTranscript(scrollerEl);
+        }, WHEEL_HOLD_MS);
       }
     };
     const onPointerDown = (event: PointerEvent) => {
@@ -526,11 +542,19 @@ function AgentTranscriptComponent({
       passive: true,
     });
     return () => {
+      clearTimeout(release);
       scrollerEl.removeEventListener("scroll", onScroll);
       scrollerEl.removeEventListener("wheel", onWheel);
       scrollerEl.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [bottomAligned, scrollerEl, setShowJump, syncPinned, visible]);
+  }, [
+    bottomAligned,
+    scrollerEl,
+    followTranscript,
+    setShowJump,
+    syncPinned,
+    visible,
+  ]);
 
   useLayoutEffect(() => {
     stickToBottom.current = true;
@@ -576,7 +600,11 @@ function AgentTranscriptComponent({
       stickToBottom.current = true;
       setShowJump(false);
       pinTranscript(el);
-    } else if (restore && !stickToBottom.current) {
+    } else if (restore && stickToBottom.current) {
+      // Reattaching reset the offset to the top. Pin before any follow reads
+      // that reset as the reader scrolling up and lets go of the end.
+      pinTranscript(el);
+    } else if (restore) {
       el.scrollTop = Math.max(
         0,
         el.scrollHeight - el.clientHeight - distanceFromBottom.current,
@@ -639,10 +667,12 @@ function AgentTranscriptComponent({
     if (previousHeight == null) {
       // The opening window grows above the screen. Settle the offset in this
       // commit: a scroll event queued by an earlier pin would otherwise read
-      // the taller transcript first and unpin it partway up.
+      // the taller transcript first and unpin it partway up. The insert can
+      // also nudge the offset itself, so do not read that as the reader
+      // scrolling; a wheel or touch has already released the pin.
       if (stickToBottom.current) {
         syncTranscriptViewport(el);
-        followTranscript(el);
+        pinTranscript(el);
       } else {
         el.scrollTop =
           el.scrollHeight - el.clientHeight - distanceFromBottom.current;
@@ -661,7 +691,7 @@ function AgentTranscriptComponent({
       : el.scrollHeight - previousHeight;
     el.scrollTop += shift;
     rememberScroll(el);
-  }, [visibleTurnCount, followTranscript, rememberScroll]);
+  }, [visibleTurnCount, pinTranscript, rememberScroll]);
 
   // Short turns can leave the first paint with empty space above them, and
   // the rest of the window arriving later would then push everything down.
@@ -1063,6 +1093,9 @@ function AgentTranscriptComponent({
                 background={backgroundTasks}
                 modelName={turnModelName}
               />
+            ) : agentMascot && agentName ? (
+              // A Mono signs its settled turns with just its mascot and name.
+              <span className="font-semibold">{agentName}</span>
             ) : durationMs != null ? (
               formatWorkingDuration(durationMs, turnModelName, true)
             ) : inlineWork && turnModelName ? (
@@ -2709,6 +2742,19 @@ function WorkFoldLine({
       {title}
     </span>
   );
+  // A settled Mono turn signs off in a pill, like the day separators.
+  const content =
+    agentMascot && !live ? (
+      <MonoSignaturePill>
+        {icon}
+        {label}
+      </MonoSignaturePill>
+    ) : (
+      <>
+        {icon}
+        {label}
+      </>
+    );
   const row = `flex w-full min-w-0 items-center gap-1.5 px-4 py-1 text-left${
     open ? " zen-fold-drop" : ""
   }`;
@@ -2720,8 +2766,7 @@ function WorkFoldLine({
         role={live ? "status" : undefined}
         aria-live={live ? "polite" : undefined}
       >
-        {icon}
-        {label}
+        {content}
       </div>
     );
   }
@@ -2734,9 +2779,16 @@ function WorkFoldLine({
       onClick={onToggle}
       className={`group ${row}`}
     >
-      {icon}
-      {label}
+      {content}
     </button>
+  );
+}
+
+function MonoSignaturePill({ children }: { children: ReactNode }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 rounded-full bg-content/[0.07] py-0.5 pr-3 pl-2">
+      {children}
+    </span>
   );
 }
 
@@ -2984,6 +3036,18 @@ function MonoTurnHeader({
           : `Waiting for ${backgroundTasks.length} background tasks…`,
     };
   }
+  const mark = agentMascot ? (
+    <PixelMascot
+      name={agentMascot.mascot}
+      color={agentMascot.color}
+      still
+      className="size-3.5 shrink-0"
+    />
+  ) : harness ? (
+    <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
+  ) : (
+    <ActivityPhaseIcon kind={status.kind} />
+  );
   return (
     <div
       data-mono-work
@@ -2991,23 +3055,18 @@ function MonoTurnHeader({
       data-transcript-search-current={searchCurrent || undefined}
       className="flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans text-sm text-content/50"
     >
-      {agentMascot ? (
-        <PixelMascot
-          name={agentMascot.mascot}
-          color={agentMascot.color}
-          still
-          className="size-3.5 shrink-0"
-        />
-      ) : harness ? (
-        <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
-      ) : (
-        <ActivityPhaseIcon kind={status.kind} />
-      )}
       {active ? (
         <>
+          {mark}
           {name ? (
             <>
-              <span className="max-w-[45%] truncate">{name}</span>
+              <span
+                className={`max-w-[45%] truncate${
+                  agentMascot ? " font-semibold" : ""
+                }`}
+              >
+                {name}
+              </span>
               <span aria-hidden className="shrink-0 text-content/25">
                 ·
               </span>
@@ -3020,8 +3079,16 @@ function MonoTurnHeader({
             />
           </div>
         </>
+      ) : agentMascot ? (
+        <MonoSignaturePill>
+          {mark}
+          <span className="min-w-0 truncate">{title}</span>
+        </MonoSignaturePill>
       ) : (
-        <span className="min-w-0 truncate">{title}</span>
+        <>
+          {mark}
+          <span className="min-w-0 truncate">{title}</span>
+        </>
       )}
     </div>
   );
@@ -4844,7 +4911,44 @@ function scrollClampedToBottom(el: HTMLElement, previousTop: number): boolean {
   return previousTop > bottom && Math.abs(el.scrollTop - bottom) < 1;
 }
 
+// TEMP scroll debug: remove once the mid-chat open is found.
+type ScrollLogEntry = Record<string, unknown>;
+function scrollLog(event: string, el: HTMLElement | null, extra = {}) {
+  const log = ((window as unknown as { __scrollLog?: ScrollLogEntry[] })
+    .__scrollLog ??= []);
+  const entry = {
+    t: Math.round(performance.now()),
+    event,
+    top: el ? Math.round(el.scrollTop) : null,
+    height: el?.scrollHeight ?? null,
+    client: el?.clientHeight ?? null,
+    connected: el?.isConnected ?? null,
+    turns: el?.querySelectorAll(".transcript-turn").length ?? null,
+    ...extra,
+    stack: new Error().stack?.split("\n").slice(2, 9).join(" | "),
+  };
+  log.push(entry);
+  if (log.length > 400) log.shift();
+  console.debug("[transcript-scroll]", entry);
+}
+function useDebugStickRef(scroller: RefObject<HTMLDivElement | null>) {
+  const [ref] = useState(() => {
+    let value = true;
+    return {
+      get current() {
+        return value;
+      },
+      set current(next: boolean) {
+        if (next !== value) scrollLog(`stick=${next}`, scroller.current);
+        value = next;
+      },
+    };
+  });
+  return ref;
+}
+
 function pinToBottom(el: HTMLElement | null) {
+  if (el) scrollLog("pin", el);
   if (!el) return;
   el.scrollTop = el.scrollHeight;
 }

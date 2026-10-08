@@ -59,3 +59,26 @@ test("scrolling settled history keeps the scroll range fixed", async ({
     .filter((sample, index) => sample.top > samples[index].top + 1);
   expect(upwardGestureReversals).toEqual([]);
 });
+
+test("revisiting a parked transcript returns to the latest turn", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/transcript.html");
+  const scroller = page.locator(".agent-transcript");
+  const distanceFromBottom = () =>
+    scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect(scroller.locator(".transcript-turn")).toHaveCount(20);
+  await expect.poll(distanceFromBottom).toBeLessThanOrEqual(1);
+
+  await page.evaluate(() =>
+    (window as unknown as { parkTranscript: () => void }).parkTranscript(),
+  );
+  await expect(scroller).toHaveCount(0);
+  await page.evaluate(() =>
+    (window as unknown as { showTranscript: () => void }).showTranscript(),
+  );
+
+  await expect.poll(distanceFromBottom).toBeLessThanOrEqual(1);
+  await page.waitForTimeout(300);
+  expect(await distanceFromBottom()).toBeLessThanOrEqual(1);
+});
