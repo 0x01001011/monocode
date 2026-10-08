@@ -1267,6 +1267,10 @@ function AgentTranscriptComponent({
                   live={live}
                   waitingForAnswers={!!pendingQuestion}
                   backgroundTasks={backgroundTasks}
+                  onShowWork={
+                    onShowWork ? () => onShowWork(turnId, turn) : undefined
+                  }
+                  workExpanded={activeWorkTurnId === turnId}
                   searchCurrent={
                     turn.some((block) => block.id === searchCurrent) &&
                     !items.some(
@@ -3006,6 +3010,8 @@ function MonoTurnHeader({
   live,
   waitingForAnswers,
   backgroundTasks,
+  onShowWork,
+  workExpanded,
   searchCurrent,
 }: {
   blocks: Block[];
@@ -3017,6 +3023,8 @@ function MonoTurnHeader({
   live: boolean;
   waitingForAnswers: boolean;
   backgroundTasks?: string[];
+  onShowWork?: () => void;
+  workExpanded?: boolean;
   searchCurrent: boolean;
 }) {
   const activity = useMemo(
@@ -3047,6 +3055,9 @@ function MonoTurnHeader({
     <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
   ) : (
     <ActivityPhaseIcon kind={status.kind} />
+  );
+  const ticker = (
+    <MonoWorkTicker status={{ ...status, active: live }} showIcon={false} />
   );
   return (
     <div
@@ -3088,12 +3099,20 @@ function MonoTurnHeader({
               ) : null}
             </>
           )}
-          <div className="min-w-0 flex-1">
-            <MonoWorkTicker
-              status={{ ...status, active: live }}
-              showIcon={false}
-            />
-          </div>
+          {onShowWork ? (
+            <button
+              type="button"
+              title={workExpanded ? "Hide activity" : "Show activity"}
+              aria-label={workExpanded ? "Hide activity" : "Show activity"}
+              aria-expanded={!!workExpanded}
+              onClick={onShowWork}
+              className="min-w-0 flex-1 cursor-pointer text-left outline-none transition-opacity duration-150 hover:opacity-70 focus-visible:opacity-70"
+            >
+              {ticker}
+            </button>
+          ) : (
+            <div className="min-w-0 flex-1">{ticker}</div>
+          )}
         </>
       ) : agentMascot ? (
         <MonoSignaturePill>
