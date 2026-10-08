@@ -615,7 +615,10 @@ import {
   removeArtifactCard,
   ARTIFACT_DELETED_EVENT,
 } from "../features/artifacts/artifacts";
-import { MonoChangesPanel } from "../features/monos/ui/MonoChangesPanel";
+import {
+  MonoChangesPanel,
+  type MonoChangesRequest,
+} from "../features/monos/ui/MonoChangesPanel";
 import { ArtifactPanel } from "../features/artifacts/ui/ArtifactPanel";
 import {
   claimDueAutomations,
@@ -1104,7 +1107,7 @@ function Workspace({
   const [monoChanges, setMonoChanges] = useState<{
     sessionId: string;
     cwd: string;
-    path?: string;
+    request: MonoChangesRequest;
   } | null>(null);
   const monoChangesOpener = useRef<HTMLElement | null>(null);
   const onCloseMonoChanges = useCallback(() => {
@@ -4080,12 +4083,11 @@ function Workspace({
 
   // A Mono view covers the workspace, so its session changes open beside the
   // chat instead of in a project tab hidden behind it.
-  const onOpenMonoDiff = useCallback(
-    (path?: string, session?: { sessionId: string; cwd: string }) => {
-      if (!session) {
-        onOpenDiff(path);
-        return;
-      }
+  const openMonoChanges = useCallback(
+    (
+      session: { sessionId: string; cwd: string },
+      request: MonoChangesRequest,
+    ) => {
       monoChangesOpener.current =
         document.activeElement instanceof HTMLElement
           ? document.activeElement
@@ -4094,9 +4096,24 @@ function Workspace({
       setMonoActivity(null);
       setMonoSessions(null);
       setMonoArtifact(null);
-      setMonoChanges({ ...session, path });
+      setMonoChanges({ ...session, request });
     },
-    [onOpenDiff],
+    [],
+  );
+  const onOpenMonoDiff = useCallback(
+    (path?: string, session?: { sessionId: string; cwd: string }) => {
+      if (!session) {
+        onOpenDiff(path);
+        return;
+      }
+      openMonoChanges(session, { path, tab: "changes" });
+    },
+    [onOpenDiff, openMonoChanges],
+  );
+  const onCommitMonoChanges = useCallback(
+    (session: { sessionId: string; cwd: string }) =>
+      openMonoChanges(session, { tab: "commit" }),
+    [openMonoChanges],
   );
 
   const onOpenWorkingTreeDiff = useCallback(
@@ -12781,6 +12798,7 @@ function Workspace({
                                       onShowMonoActivity={onShowMonoActivity}
                                       onOpenArtifact={onOpenMonoArtifact}
                                       onOpenDiff={onOpenMonoDiff}
+                                      onCommitChanges={onCommitMonoChanges}
                                       monoActivityTurnId={
                                         selectedMonoActivity?.turnId
                                       }
@@ -12847,8 +12865,9 @@ function Workspace({
                     <MonoChangesPanel
                       sessionId={monoChanges.sessionId}
                       cwd={monoChanges.cwd}
-                      focusPath={monoChanges.path}
+                      request={monoChanges.request}
                       color={monoViewMono.color}
+                      textHarness={monoViewSession?.harness}
                       onClose={onCloseMonoChanges}
                       windowControls={
                         monoCovers && !IS_MAC ? <WindowControls /> : undefined

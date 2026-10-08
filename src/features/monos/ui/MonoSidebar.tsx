@@ -79,10 +79,13 @@ export function MonoSidebar({
 
 export function MonoSidebarHeader({
   title,
+  heading,
   onClose,
   actions,
 }: {
   title: string;
+  /** Richer content in place of the plain title text. */
+  heading?: ReactNode;
   onClose: () => void;
   actions?: ReactNode;
 }) {
@@ -93,7 +96,7 @@ export function MonoSidebarHeader({
       data-tauri-drag-region="deep"
     >
       <h3 className="flex min-w-0 flex-1 items-center pl-4 text-[13px] font-medium text-content">
-        {title}
+        {heading ?? title}
       </h3>
       <div className="flex shrink-0 items-center gap-0.5 px-3">
         {actions}

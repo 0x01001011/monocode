@@ -946,7 +946,7 @@ function ChangedFiles({
   );
 }
 
-function usePrStatus(
+export function usePrStatus(
   cwd: string,
   branch: string | null | undefined,
 ): { pr: GitPr | null; reload: () => void } {
@@ -1008,7 +1008,7 @@ function syncStatusLabel(index: GitDiffIndex): string {
   return "No files";
 }
 
-function GitSyncActions({
+export function GitSyncActions({
   index,
   pr,
   busy,
