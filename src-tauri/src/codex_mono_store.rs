@@ -227,6 +227,12 @@ fn link_entry(source: &Path, target: &Path) -> Result<(), String> {
         if link == source {
             return Ok(());
         }
+        // Windows junctions can return a different path spelling than the
+        // canonical source (for example, without the verbatim path prefix).
+        #[cfg(windows)]
+        if link.canonicalize().is_ok_and(|resolved| resolved == source) {
+            return Ok(());
+        }
         return Err(format!(
             "Unexpected link in Mono Codex storage: {}",
             target.display()
@@ -541,7 +547,10 @@ fn copy_rollouts_with_edges(
         let temp = dest.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
         std::fs::copy(path, &temp)
             .map_err(|e| format!("Could not retain the full Codex thread: {e}"))?;
-        std::fs::File::open(&temp)
+        // Windows requires write access when flushing a file to disk.
+        std::fs::File::options()
+            .write(true)
+            .open(&temp)
             .and_then(|f| f.sync_all())
             .map_err(|e| e.to_string())?;
         std::fs::rename(&temp, dest).map_err(|e| e.to_string())?;
@@ -552,7 +561,9 @@ fn copy_rollouts_with_edges(
         std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
         std::fs::write(&path, serde_json::to_vec(edges).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
-        std::fs::File::open(&path)
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
             .and_then(|f| f.sync_all())
             .map_err(|e| e.to_string())?;
     } else if edge_snapshot.exists() {
