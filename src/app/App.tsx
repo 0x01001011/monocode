@@ -12122,6 +12122,7 @@ function Workspace({
     },
     openFile: onOpenFile,
     resume: onUsageLimitResume,
+    create: () => createMono().id,
   });
 
   const sessionPaneProps = {
