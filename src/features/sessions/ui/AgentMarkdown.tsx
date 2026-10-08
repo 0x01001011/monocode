@@ -534,7 +534,14 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     [],
   );
   const fileOpen = useMemo(
-    () => ({ cwd, onOpenFile, onFileContextMenu }),
+    () => ({
+      cwd,
+      onOpenFile: onOpenFile
+        ? ((path, navigation, options) =>
+            onOpenFile(path, navigation, { cwd, ...options })) as OpenFileFn
+        : undefined,
+      onFileContextMenu,
+    }),
     [cwd, onOpenFile, onFileContextMenu],
   );
   const remarkPlugins = useMemo<PluggableList>(

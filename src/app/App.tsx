@@ -176,6 +176,7 @@ import {
   resolveFileOpenRequest,
   resolveOpenablePath,
 } from "../features/files/model/fileIndex";
+import { transcriptTexts } from "../features/files/model/mentionedPaths";
 import {
   closeLeaf,
   closeSurfacePanes,
@@ -6227,9 +6228,14 @@ function Workspace({
     (path, navigation, options) => {
       closeMonoView();
       void (async () => {
-        const fileCwd = gitCwdRef.current;
+        const fileCwd = options?.cwd ?? gitCwdRef.current;
         const fileProjectCwd = sidebarCwdRef.current;
-        const resolved = await resolveFileOpenRequest(fileCwd, path, options);
+        const resolved = await resolveFileOpenRequest(
+          fileCwd,
+          path,
+          options,
+          () => transcriptTexts(sessionsRef.current, fileCwd),
+        );
         rememberOpenedFile(fileCwd, resolved);
         const tab = tabsRef.current.find(
           (entry) => entry.id === activeTabIdRef.current,

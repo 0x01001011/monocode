@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProjectFile } from "../../../platform/tauri/fs";
-import { listProjectFiles } from "../../../platform/tauri/fs";
+import { listProjectFiles, statFiles } from "../../../platform/tauri/fs";
 import {
   invalidateProjectFiles,
   loadProjectFiles,
@@ -43,10 +43,14 @@ vi.mock("../../../platform/tauri/fs", async (importOriginal) => {
   return {
     ...actual,
     listProjectFiles: vi.fn(async () => files),
+    statFiles: vi.fn(async (paths: string[]) =>
+      paths.map((path) => ({ path, mtimeMs: null })),
+    ),
   };
 });
 
 const list = vi.mocked(listProjectFiles);
+const stat = vi.mocked(statFiles);
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -95,6 +99,63 @@ describe("resolveOpenablePath", () => {
       resolveFileOpenRequest(cwd, ignored, { exact: true }),
     ).resolves.toBe(ignored);
     expect(list).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveFileOpenRequest with session mentions", () => {
+  const bare = `${cwd}/research.md`;
+  const mentioned = `${cwd}/autoresearch/loop-1/research.md`;
+  const texts = () => [
+    "report: autoresearch/loop-1/research.md",
+    "see research.md",
+  ];
+
+  beforeEach(() => {
+    invalidateProjectFiles();
+    list.mockResolvedValue(files);
+  });
+
+  function existing(...paths: string[]) {
+    stat.mockImplementation(async (input) =>
+      input.map((path) => ({ path, mtimeMs: paths.includes(path) ? 1 : null })),
+    );
+  }
+
+  it("opens the path the agent named when a bare gitignored file is missing", async () => {
+    existing(mentioned);
+    expect(await resolveFileOpenRequest(cwd, bare, undefined, texts)).toBe(
+      mentioned,
+    );
+  });
+
+  it("keeps the direct path when that file exists", async () => {
+    existing(bare, mentioned);
+    expect(await resolveFileOpenRequest(cwd, bare, undefined, texts)).toBe(
+      bare,
+    );
+  });
+
+  it("falls back to the direct path when no mentioned path exists", async () => {
+    existing();
+    expect(await resolveFileOpenRequest(cwd, bare, undefined, texts)).toBe(
+      bare,
+    );
+  });
+
+  it("does not stat or search the transcript for exact opens", async () => {
+    existing(mentioned);
+    const mentions = vi.fn(texts);
+    expect(
+      await resolveFileOpenRequest(cwd, bare, { exact: true }, mentions),
+    ).toBe(bare);
+    expect(mentions).not.toHaveBeenCalled();
+  });
+
+  it("survives an unreachable host while checking candidates", async () => {
+    stat.mockRejectedValue(new Error("offline"));
+    expect(await resolveFileOpenRequest(cwd, bare, undefined, texts)).toBe(
+      bare,
+    );
   });
 });
 

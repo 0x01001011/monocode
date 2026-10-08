@@ -42,6 +42,11 @@ export type FileOpenOptions = {
   exact?: boolean;
   /** Open as a permanent tab instead of the pane's preview tab. */
   pin?: boolean;
+  /**
+   * Checkout the reference was written against, such as the session that
+   * rendered a chat link. Used instead of the focused pane's checkout.
+   */
+  cwd?: string;
 };
 
 export type OpenFileFn = (
