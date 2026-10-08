@@ -831,6 +831,7 @@ pub fn harness_spawn(
     account: Option<HarnessAccount>,
     binary_provider: Option<String>,
     binary_path: Option<String>,
+    codex_store: Option<String>,
 ) -> Result<u32, String> {
     let workdir = expand_home(&cwd);
     if !workdir.is_dir() {
@@ -857,6 +858,27 @@ pub fn harness_spawn(
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, &command);
     apply_provider_account(&app, &mut cmd, account.as_ref())?;
+    let codex_store = match codex_store.as_deref() {
+        None => None,
+        Some("mono")
+            if binary_provider.as_deref() == Some("codex")
+                && account.as_ref().is_some_and(|a| a.provider == "codex")
+                && args.first().is_some_and(|a| a == "app-server") =>
+        {
+            let store =
+                crate::codex_mono_store::prepare(&app, account.as_ref().map(|a| a.id.as_str()))?;
+            let private_path = serde_json::to_string(&store.home).map_err(|e| e.to_string())?;
+            // Explicit config takes precedence over CODEX_SQLITE_HOME. Override
+            // both so a user's sqlite_home cannot index Monos in the Codex app.
+            cmd.env("CODEX_HOME", &store.home)
+                .env("CODEX_SQLITE_HOME", &store.home)
+                .args(["-c", &format!("sqlite_home={private_path}")]);
+            Some(Arc::new(store))
+        }
+        Some(_) => {
+            return Err("Private Mono storage is only supported for Codex app-server".into())
+        }
+    };
 
     crate::control::configure_child(&app, &session_id, &mut cmd);
 
@@ -897,9 +919,19 @@ pub fn harness_spawn(
 
     let stdout_app = app.clone();
     let stdout_id = session_id.clone();
+    let wait_store = codex_store.clone();
+    let stdout_store = codex_store;
     thread::spawn(move || {
         for line in BufReader::new(stdout).lines() {
             let Ok(line) = line else { break };
+            if let Some(store) = &stdout_store {
+                if line.contains("\"turn/completed\"")
+                    || line.contains("\"item/started\"")
+                    || line.contains("\"account/updated\"")
+                {
+                    store.sync_auth();
+                }
+            }
             let _ = stdout_app.emit(
                 STDOUT_EVENT,
                 HarnessLine {
@@ -930,6 +962,9 @@ pub fn harness_spawn(
     let wait_pid = pid;
     thread::spawn(move || {
         let code = child.wait().ok().and_then(|status| status.code());
+        if let Some(store) = wait_store {
+            store.sync_auth();
+        }
         if let Some(host) = wait_app.try_state::<HarnessHost>() {
             if host.remove_if_pid(&wait_id, wait_pid).is_some() {
                 host.stop_sse(&wait_id);

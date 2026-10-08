@@ -114,36 +114,6 @@ it("briefs the fresh session with recent turns word for word and earlier ones as
   expect(rotation.earlier).toHaveLength(3);
 });
 
-it("restores a lost ephemeral Mono session from its saved exchanges", () => {
-  const blocks = turn("Remember the release date", "It is Friday", T0);
-  const session = { providerSessionId: "old_ephemeral_thread", blocks };
-  expect(rotationReason(session)).toBeUndefined();
-  const reason = rotationReason(session, false);
-  expect(reason).toBe("restart");
-  const plan = planRotation(blocks, undefined, reason!, T0 + HOUR);
-  expect(plan.brief("mono-1")).toContain(
-    "Remember the release date\n\nYou:\nIt is Friday",
-  );
-  expect(plan.brief("mono-1")).toContain(
-    'sessions.read {"sessionId":"mono-1"}',
-  );
-  saveMonoRotation("mono-1", plan.rotation);
-  expect(loadMonoRotation("mono-1")?.reason).toBe("restart");
-});
-
-it("does not add a restart brief to a new Mono chat", () => {
-  expect(rotationReason({ blocks: [] }, false)).toBeUndefined();
-});
-
-it("reloads the soul when editing the only turn after a Mono restart", () => {
-  expect(
-    rotationReason(
-      { providerSessionId: "old_ephemeral_thread", blocks: [] },
-      false,
-    ),
-  ).toBe("restart");
-});
-
 it("remembers a completion report without overwriting the answer to the user's chat", () => {
   const blocks: Block[] = [
     ...turn("Explain the design", "The design uses a queue.", T0),

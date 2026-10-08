@@ -277,7 +277,7 @@ import {
   forgetHarnessSession,
   generateHarnessTitle,
   generateHarnessBranchName,
-  hasLiveCodexSession,
+  migrateMonoCodexSession,
   isLiveHarness,
   latestTurnNeedsHarnessLogin,
   probeHarnessAvailability,
@@ -1677,6 +1677,58 @@ function Workspace({
       harnessEvents.cancelScheduled();
     };
   }, [resumed, readProjectReturnMemory, harnessEvents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Retain known existing Mono threads before hiding their original entries.
+    // Sending a turn uses the same migration lock, so it can safely overlap.
+    void (async () => {
+      for (const mono of listMonos()) {
+        if (cancelled) return;
+        if (!mono.sessionId) continue;
+        try {
+          const session =
+            sessionsRef.current.find((s) => s.id === mono.sessionId) ??
+            (await getSession(mono.sessionId));
+          if (
+            !session ||
+            cancelled ||
+            sessionsRef.current.find((s) => s.id === session.id)?.busy
+          )
+            continue;
+          const cwd = sessionWorkCwd(session);
+          if (!cwd || cwd === "~") continue;
+          const threadIds = new Set<string>();
+          if (session.harness === "codex" && session.providerSessionId)
+            threadIds.add(session.providerSessionId);
+          for (const block of session.blocks) {
+            for (const thread of block.btwThreads ?? []) {
+              if (
+                (thread.harness ?? session.harness) === "codex" &&
+                thread.providerThreadId
+              )
+                threadIds.add(thread.providerThreadId);
+            }
+          }
+          for (const threadId of threadIds) {
+            if (cancelled) return;
+            await migrateMonoCodexSession({
+              sessionId: session.id,
+              threadId,
+              cwd,
+              providerAccountId: session.providerAccountId,
+            });
+          }
+        } catch (error) {
+          // Keep the original context intact; the next native operation retries.
+          console.warn("Could not migrate saved Mono Codex context", error);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [monosSnap]);
 
   useEffect(() => {
     void probeHarnessAvailability();
@@ -7062,13 +7114,9 @@ function Workspace({
       // A Mono's chat never ends, but the provider session behind it does:
       // once it fills most of the model's context window, this turn starts
       // a fresh one, briefed on where the conversation was.
-      const monoSessionLost =
-        mono &&
-        current.harness === "codex" &&
-        !hasLiveCodexSession(sessionId, true);
       const monoRotationReason =
-        mono && !pendingSwitch && (!editedResend || monoSessionLost)
-          ? rotationReason(current, !monoSessionLost)
+        mono && !pendingSwitch && !editedResend
+          ? rotationReason(current)
           : undefined;
       const monoRotation = monoRotationReason
         ? planRotation(
@@ -7627,8 +7675,10 @@ function Workspace({
                 cwd: workCwd,
                 model: current.model,
                 modelSettings: current.modelSettings,
+                providerAccountId,
                 runtimeMode: current.runtimeMode,
-                ephemeral: mono || current.ephemeral === true,
+                ephemeral: current.ephemeral === true,
+                codexStore: mono ? "mono" : undefined,
                 controlsAgents:
                   operatorAccess ||
                   orchestrator.run(sessionId)?.status === "active",
@@ -7681,7 +7731,8 @@ function Workspace({
               modelSettings: current.modelSettings,
               providerAccountId,
               runtimeMode: current.runtimeMode,
-              ephemeral: mono || current.ephemeral === true,
+              ephemeral: current.ephemeral === true,
+              codexStore: mono ? "mono" : undefined,
               intent: intent === "orchestrate" ? "plan" : intent,
               // A /operator user turn enables app access for this thread;
               // orchestration leads retain their separate control access.
@@ -7709,6 +7760,14 @@ function Workspace({
             ),
           );
           if (monoRotation) {
+            if (current.harness === "codex" && current.providerSessionId) {
+              await migrateMonoCodexSession({
+                sessionId,
+                threadId: current.providerSessionId,
+                cwd: workCwd,
+                providerAccountId,
+              });
+            }
             await forgetHarnessSession(current.harness, sessionId);
             const fresh = (session: Session) =>
               session.id === sessionId
@@ -9219,6 +9278,7 @@ function Workspace({
         model: model || undefined,
         modelSettings: input.thread.modelSettings ?? input.source.modelSettings,
         ephemeral: false,
+        codexStore: isMonoSession(input.source.id) ? "mono" : undefined,
         threadId: input.thread.providerThreadId,
         onThreadId: (providerThreadId) => {
           if (controller.signal.aborted) return;
@@ -9751,7 +9811,8 @@ function Workspace({
                 selectedProviderAccountId(current.harness, current.cwd))
               : undefined,
             runtimeMode: current.runtimeMode,
-            ephemeral: isMonoSession(sessionId) || current.ephemeral === true,
+            ephemeral: current.ephemeral === true,
+            codexStore: isMonoSession(sessionId) ? "mono" : undefined,
             controlsAgents:
               isMonoSession(sessionId) ||
               operatorEnabledInThread(current.blocks) ||

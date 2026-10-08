@@ -23,13 +23,13 @@ const VERBATIM_REPLY_CHARS = 3_000;
 const LINE_CHARS = 280;
 const EARLIER_CHARS = 3_000;
 
-export type RotationReason = "context" | "restart";
+export type RotationReason = "context";
 
 /** What the latest rotation started the provider session with. */
 export type MonoRotation = {
   at: number;
-  /** Older saved rotations can still have an idle reason. */
-  reason: RotationReason | "idle";
+  /** Preserve saved briefs from older rotation policies. */
+  reason: RotationReason | "idle" | "restart";
   /** The last block the replaced session saw; the fresh one takes it from here. */
   afterBlockId?: string;
   /** One line per exchange before the verbatim ones, oldest first. */
@@ -49,15 +49,7 @@ type Exchange = {
 /** Whether the next turn should start a fresh provider session, and why. */
 export function rotationReason(
   session: Pick<Session, "providerSessionId" | "context" | "blocks">,
-  canResume = true,
 ): RotationReason | undefined {
-  // Ephemeral providers cannot restore their context after parking or exit.
-  // The transcript still lives in MonoCode and supplies the next brief.
-  if (
-    !canResume &&
-    (session.providerSessionId || exchanges(session.blocks).length)
-  )
-    return "restart";
   // Nothing to rotate: the next turn already starts a new session.
   if (!session.providerSessionId) return undefined;
   // With no reported window, leave compaction to the provider.
