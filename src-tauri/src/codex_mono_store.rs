@@ -264,16 +264,10 @@ fn link_entry(source: &Path, target: &Path) -> Result<(), String> {
     {
         if source.is_dir() {
             // Junctions work without Administrator privileges or Developer Mode.
-            // Paths are environment values, never interpolated into shell code.
-            let mut cmd = std::process::Command::new("powershell.exe");
-            cmd.args(["-NoProfile", "-NonInteractive", "-Command",
-                "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:MONOCODE_LINK_DEST -Target $env:MONOCODE_LINK_SOURCE | Out-Null"])
-                .env("MONOCODE_LINK_DEST", target).env("MONOCODE_LINK_SOURCE", source);
-            crate::hide_window_console(&mut cmd);
-            let output = cmd.output().map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                return Err("Could not share the Codex configuration directory".into());
-            }
+            // Windows PowerShell adds an NT prefix to an already verbatim
+            // canonical path, producing a junction with an unreadable target.
+            junction::create(source, target)
+                .map_err(|e| format!("Could not share the Codex configuration directory: {e}"))?;
         } else if source.is_file() {
             std::fs::hard_link(source, target)
                 .map_err(|e| format!("Could not share Codex configuration: {e}"))?;
@@ -787,18 +781,62 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn rejects_a_private_state_link_to_the_original_home() {
         let fixture = Fixture::new();
         std::fs::create_dir_all(fixture.source().join("sessions")).unwrap();
         std::fs::create_dir_all(fixture.home()).unwrap();
+        #[cfg(unix)]
         std::os::unix::fs::symlink(
             fixture.source().join("sessions"),
             fixture.home().join("sessions"),
         )
         .unwrap();
+        #[cfg(windows)]
+        junction::create(
+            fixture.source().join("sessions"),
+            fixture.home().join("sessions"),
+        )
+        .unwrap();
         assert!(prepare_files(&fixture.source(), &fixture.home()).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn shares_readable_directory_junctions_with_verbatim_paths() {
+        let fixture = Fixture::new();
+        let source = fixture.source().join("skills [shared]");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(fixture.home()).unwrap();
+        std::fs::write(source.join("skill.txt"), "shared skill").unwrap();
+        // canonicalize supplies the verbatim prefix that broke PowerShell.
+        let source = source.canonicalize().unwrap();
+        let target = fixture.home().canonicalize().unwrap().join("skills");
+        link_entry(&source, &target).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(target.join("skill.txt")).unwrap(),
+            "shared skill"
+        );
+        link_entry(&source, &target).unwrap();
+        assert_eq!(target.canonicalize().unwrap(), source);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_an_unrelated_configuration_junction() {
+        let fixture = Fixture::new();
+        let source = fixture.source();
+        let other = fixture.0.join("other-account");
+        let target = fixture.home().join("skills");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::create_dir_all(fixture.home()).unwrap();
+        junction::create(&other, &target).unwrap();
+        assert!(link_entry(&source.canonicalize().unwrap(), &target).is_err());
+        assert_eq!(
+            target.canonicalize().unwrap(),
+            other.canonicalize().unwrap()
+        );
     }
 
     #[test]
