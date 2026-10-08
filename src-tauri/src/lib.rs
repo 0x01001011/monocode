@@ -40,7 +40,6 @@ mod rate_limits;
 mod reminders;
 mod remote;
 mod remote_ssh;
-mod tunnel_registry;
 mod search;
 mod session_store;
 mod skills;
@@ -48,6 +47,7 @@ mod skills_watch;
 pub mod ssh_askpass;
 #[cfg(target_os = "windows")]
 mod tray;
+mod tunnel_registry;
 mod window;
 mod window_transfer;
 #[cfg(windows)]

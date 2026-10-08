@@ -27,7 +27,10 @@ pub fn record(ssh_pid: u32) {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
     }
-    let _ = std::fs::write(dir.join(ssh_pid.to_string()), std::process::id().to_string());
+    let _ = std::fs::write(
+        dir.join(ssh_pid.to_string()),
+        std::process::id().to_string(),
+    );
 }
 
 /// Drop the record once the tunnel process has been stopped.
@@ -141,7 +144,13 @@ mod tests {
         let reaped = reap_in(
             &dir,
             |pid| matches!(pid, 2 | 100 | 200 | 300),
-            |pid| Some(if pid == 300 { "/bin/vim notes.md".into() } else { TUNNEL.to_string() }),
+            |pid| {
+                Some(if pid == 300 {
+                    "/bin/vim notes.md".into()
+                } else {
+                    TUNNEL.to_string()
+                })
+            },
             |pid| stopped.borrow_mut().push(pid),
         );
         assert_eq!(reaped, 1);
