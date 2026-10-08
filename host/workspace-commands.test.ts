@@ -90,6 +90,26 @@ describe("skill root read-only allowance", () => {
     ).toEqual(["---", "name: user-only"]);
   });
 
+  it("refuses a save when the file changed after the caller read it", async () => {
+    const { project, commands } = setup();
+    const path = join(project, "notes.md");
+    writeFileSync(path, "one\n");
+    const [{ mtimeMs }] = (await commands.run("stat_files", { paths: [path] })) as {
+      mtimeMs: number;
+    }[];
+
+    await commands.run("write_text_file", { path, content: "two\n", expectedMtimeMs: mtimeMs });
+    expect(readFileSync(path, "utf8")).toBe("two\n");
+
+    await expect(
+      commands.run("write_text_file", { path, content: "mine\n", expectedMtimeMs: mtimeMs - 5000 }),
+    ).rejects.toThrow("[save-conflict]");
+    expect(readFileSync(path, "utf8")).toBe("two\n");
+
+    await commands.run("write_text_file", { path, content: "forced\n" });
+    expect(readFileSync(path, "utf8")).toBe("forced\n");
+  });
+
   it("rejects writes and deletes to a listed skill file", async () => {
     const { home, commands } = setup();
     const path = join(home, ".claude/skills/user-only/SKILL.md");

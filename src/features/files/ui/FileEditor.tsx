@@ -53,9 +53,10 @@ import {
   readTextFile,
   subscribeGitChanged,
   writeTextFile,
+  isSaveConflict,
   type GitFileDiffKind,
 } from "../../../platform/tauri/fs";
-import { syncWatchedMtime, watchFile } from "../model/fileWatch";
+import { syncWatchedMtime, watchedMtime, watchFile } from "../model/fileWatch";
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation } from "../../search/model/search";
 import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
@@ -167,6 +168,9 @@ export function FileEditor({
   const loadGeneration = useRef(0);
   const dirtyRef = useRef(false);
   const pendingDiskRef = useRef(false);
+  // Set after a save was refused because the file changed on disk; the next
+  // save is then an explicit overwrite.
+  const overwriteRef = useRef(false);
   const eolRef = useRef<LineEnding>("\n");
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
@@ -176,6 +180,7 @@ export function FileEditor({
     // and restore the file's own line endings on save. Feeding CRLF text
     // into the LF document doubles every line (see editorDoc.ts).
     eolRef.current = detectLineEnding(raw);
+    overwriteRef.current = false;
     const content = normalizeLineBreaks(raw);
     setLoadState((current) => {
       if (current.status === "ready" && current.content === content) {
@@ -341,18 +346,29 @@ export function FileEditor({
       setSaveState({ status: "saving" });
       const serializedContent = restoreLineEnding(content, eolRef.current);
       const operation = saveQueue.current.then(() =>
-        writeTextFile(path, serializedContent),
+        writeTextFile(
+          path,
+          serializedContent,
+          overwriteRef.current ? undefined : watchedMtime(path),
+        ),
       );
       saveQueue.current = operation.catch(() => {});
       try {
         await operation;
+        overwriteRef.current = false;
         await syncWatchedMtime(path);
         notifyGitChanged();
         if (generation === saveGeneration.current) {
           setSaveState({ status: "saved" });
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const conflict = isSaveConflict(error);
+        if (conflict) overwriteRef.current = true;
+        const message = conflict
+          ? "This file changed on disk after it was opened. Save again to overwrite it."
+          : error instanceof Error
+            ? error.message
+            : String(error);
         if (generation === saveGeneration.current) {
           setSaveState({ status: "error", message });
         }
@@ -493,7 +509,7 @@ export function FileEditor({
                 onDirtyChange={dirtyChange}
                 onErrorCountChange={errorCountChange}
                 onSave={save}
-                canAutosave={() => !pendingDiskRef.current}
+                canAutosave={() => !pendingDiskRef.current && !overwriteRef.current}
                 onStageGit={
                   showDiff && gitDiff?.kind === "unstaged"
                     ? stageGit
@@ -517,7 +533,7 @@ export function FileEditor({
           onDirtyChange={dirtyChange}
           onErrorCountChange={errorCountChange}
           onSave={save}
-          canAutosave={() => !pendingDiskRef.current}
+          canAutosave={() => !pendingDiskRef.current && !overwriteRef.current}
           onStageGit={
             showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined
           }

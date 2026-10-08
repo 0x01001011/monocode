@@ -226,6 +226,54 @@ describe("file editor line endings", () => {
     expect(written.content).toBe("changed alpha\n");
   });
 
+  it("warns when the file changed on disk, then overwrites on an explicit save", async () => {
+    disk.content = "alpha\n";
+    const writes: Record<string, unknown>[] = [];
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "stat_files") {
+        return [{ path: "/repo/notes.txt", mtimeMs: 100 }];
+      }
+      if (command === "write_text_file") {
+        writes.push(args!);
+        if (writes.length === 1) {
+          throw new Error("[save-conflict] This file changed on disk after it was opened.");
+        }
+      }
+      return defaultInvoke(command, args);
+    });
+    const view = await renderEditor("/repo/notes.txt");
+    const save = () =>
+      view.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "s", ctrlKey: true }),
+      );
+
+    await act(async () => {
+      view.dispatch({ changes: { from: 0, insert: "mine " } });
+      save();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.waitFor(() =>
+        expect(container.textContent).toContain("Save again to overwrite it."),
+      );
+    });
+    expect(writes[0]).toMatchObject({ expectedMtimeMs: 100 });
+
+    // Autosave must not quietly overwrite what the warning just protected.
+    await act(async () => {
+      view.dispatch({ changes: { from: 0, insert: "more " } });
+      await vi.advanceTimersByTimeAsync(FILE_EDITOR_AUTOSAVE_DELAY_MS * 2);
+    });
+    expect(writes).toHaveLength(1);
+
+    await act(async () => {
+      save();
+      await vi.waitFor(() => expect(writes).toHaveLength(2));
+    });
+    expect(writes[1]).not.toHaveProperty("expectedMtimeMs");
+    expect(written.content).toBe("more mine alpha\n");
+  });
+
   it("preserves queued save line endings after switching files", async () => {
     let releaseFirstWrite!: () => void;
     const firstWrite = new Promise<void>((resolve) => {

@@ -601,8 +601,29 @@ export function deleteGeneratedImages(paths: string[]): Promise<void> {
   return invoke<void>("delete_generated_images", { paths });
 }
 
-export function writeTextFile(path: string, content: string): Promise<void> {
-  return invoke<void>("write_text_file", { path, content });
+/** Prefix of the error a save returns when the file changed since it was read. */
+export const SAVE_CONFLICT = "[save-conflict]";
+
+export function isSaveConflict(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes(SAVE_CONFLICT);
+}
+
+/**
+ * `expectedMtimeMs` is the modified time the editor last saw; the save fails
+ * with a save conflict if the file changed since. Omit it to overwrite.
+ */
+export function writeTextFile(
+  path: string,
+  content: string,
+  expectedMtimeMs?: number | null,
+): Promise<void> {
+  return invoke<void>(
+    "write_text_file",
+    typeof expectedMtimeMs === "number"
+      ? { path, content, expectedMtimeMs }
+      : { path, content },
+  );
 }
 
 /** Last path segment, or `/` for the filesystem root. */
