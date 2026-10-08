@@ -88,6 +88,7 @@ type Live = {
   providerAccountId?: string;
   /** Thread-level network policy used when this app-server opened the thread. */
   controlsAgents: boolean;
+  ephemeral: boolean;
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
@@ -134,6 +135,7 @@ type Resume = {
   threadId: string;
   cwd: string;
   providerAccountId?: string;
+  ephemeral?: boolean;
 };
 
 const liveByThread = new Map<string, Live>();
@@ -181,6 +183,9 @@ export async function sendCodexTurn(input: SendTurnInput): Promise<void> {
 export async function compactCodexContext(
   input: CompactContextInput,
 ): Promise<void> {
+  if (input.ephemeral && !hasLiveCodexSession(input.sessionId, true)) {
+    throw new Error("Send a message before compacting this chat");
+  }
   let live: Live;
   try {
     live = await ensureLive(input);
@@ -209,6 +214,11 @@ export async function compactCodexContext(
 export async function rewindCodexLastTurn(
   input: RewindLastTurnInput,
 ): Promise<RewindLastTurnResult> {
+  // A restored Mono has no native turn to revert. Its replacement prompt
+  // starts from the saved conversation brief in a fresh ephemeral thread.
+  if (input.ephemeral && !hasLiveCodexSession(input.sessionId, true)) {
+    return { submitted: false };
+  }
   let live: Live;
   try {
     live = await ensureLive(input);
@@ -457,9 +467,27 @@ export function bindCodexSession(
   });
 }
 
+/** Ephemeral Mono context exists only while its app-server is alive. */
+export function hasLiveCodexSession(
+  sessionId: string,
+  ephemeral?: boolean,
+): boolean {
+  const live = liveByThread.get(sessionId);
+  return (
+    !!live &&
+    !live.rpc.isClosed &&
+    (ephemeral === undefined || live.ephemeral === ephemeral)
+  );
+}
+
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   const existing = liveByThread.get(input.sessionId);
   const controlsAgents = input.controlsAgents === true;
+  const ephemeral =
+    input.ephemeral ??
+    existing?.ephemeral ??
+    resumeByThread.get(input.sessionId)?.ephemeral ??
+    false;
   if (
     existing &&
     existing.cwd === input.cwd &&
@@ -467,7 +495,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       existing.providerAccountId,
       input.providerAccountId,
     ) &&
-    existing.controlsAgents === controlsAgents
+    existing.controlsAgents === controlsAgents &&
+    existing.ephemeral === ephemeral
   ) {
     existing.onEvent = input.onEvent;
     return existing;
@@ -490,6 +519,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
   const resume = resumeByThread.get(input.sessionId);
   const canResume =
+    !ephemeral &&
     resume != null &&
     resume.cwd === input.cwd &&
     sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
@@ -645,13 +675,16 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     if (!threadId) {
       const opened = await rpc.request<{ thread?: { id?: string } }>(
         "thread/start",
-        buildThreadStartParams({
-          cwd: input.cwd,
-          runtimeMode: input.runtimeMode,
-          controlsAgents: input.controlsAgents,
-          model,
-          serviceTier,
-        }),
+        {
+          ...buildThreadStartParams({
+            cwd: input.cwd,
+            runtimeMode: input.runtimeMode,
+            controlsAgents: input.controlsAgents,
+            model,
+            serviceTier,
+          }),
+          ...(ephemeral ? { ephemeral: true } : {}),
+        },
       );
       threadId = opened.thread?.id?.trim();
     }
@@ -667,6 +700,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       cwd: input.cwd,
       providerAccountId: input.providerAccountId,
       controlsAgents,
+      ephemeral,
       runtimeMode: input.runtimeMode,
       planning: input.intent === "plan",
       onEvent: input.onEvent,
@@ -699,6 +733,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       threadId,
       cwd: input.cwd,
       providerAccountId: input.providerAccountId,
+      ephemeral,
     });
     live.onEvent({
       type: "session.providerBound",

@@ -165,6 +165,8 @@ export type HarnessSessionInput = {
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
   runtimeMode: RuntimeMode;
+  /** Keep provider context in memory; MonoCode owns the saved transcript. */
+  ephemeral?: boolean;
   intent?: TurnIntent;
   /**
    * This session drives MonoCode's control CLI, which reaches the app over

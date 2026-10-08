@@ -277,6 +277,7 @@ import {
   forgetHarnessSession,
   generateHarnessTitle,
   generateHarnessBranchName,
+  hasLiveCodexSession,
   isLiveHarness,
   latestTurnNeedsHarnessLogin,
   probeHarnessAvailability,
@@ -577,11 +578,9 @@ import {
   updateHabits,
 } from "../features/monos/model/monoHabits";
 import {
-  loadMonoBaseline,
   loadMonoRotation,
   planRotation,
   rotationReason,
-  saveMonoBaseline,
   saveMonoRotation,
 } from "../features/monos/model/monoRotation";
 import {
@@ -1100,15 +1099,20 @@ function Workspace({
     monoArtifactOpener.current?.focus();
   }, []);
   useEffect(() => {
-    const listening = listen<string>(ARTIFACT_DELETED_EVENT, ({ payload: id }) => {
-      const previous = sessionsRef.current;
-      const updated = previous.map((session) => removeArtifactCard(session, id));
-      if (updated.some((session, index) => session !== previous[index])) {
-        sessionsRef.current = updated;
-        setSessions(updated);
-      }
-      setMonoArtifact((current) => (current?.id === id ? null : current));
-    });
+    const listening = listen<string>(
+      ARTIFACT_DELETED_EVENT,
+      ({ payload: id }) => {
+        const previous = sessionsRef.current;
+        const updated = previous.map((session) =>
+          removeArtifactCard(session, id),
+        );
+        if (updated.some((session, index) => session !== previous[index])) {
+          sessionsRef.current = updated;
+          setSessions(updated);
+        }
+        setMonoArtifact((current) => (current?.id === id ? null : current));
+      },
+    );
     return () => {
       void listening.then((unlisten) => unlisten());
     };
@@ -6413,12 +6417,7 @@ function Workspace({
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
-          let next = withHarnessChoice(
-            s,
-            harness,
-            resolved.id,
-            modelSettings,
-          );
+          let next = withHarnessChoice(s, harness, resolved.id, modelSettings);
           if (plan.kind === "arm") {
             next = { ...next, pendingSwitch: plan.pending };
           } else if (plan.kind === "revert") {
@@ -7061,15 +7060,15 @@ function Workspace({
       }
 
       // A Mono's chat never ends, but the provider session behind it does:
-      // once it grows expensive, or after a long break, this turn starts a
-      // fresh one, briefed on where the conversation was.
+      // once it fills most of the model's context window, this turn starts
+      // a fresh one, briefed on where the conversation was.
+      const monoSessionLost =
+        mono &&
+        current.harness === "codex" &&
+        !hasLiveCodexSession(sessionId, true);
       const monoRotationReason =
-        mono && !pendingSwitch && !editedResend
-          ? rotationReason(
-              current,
-              Date.now(),
-              loadMonoBaseline(sessionId, current.harness),
-            )
+        mono && !pendingSwitch && (!editedResend || monoSessionLost)
+          ? rotationReason(current, !monoSessionLost)
           : undefined;
       const monoRotation = monoRotationReason
         ? planRotation(
@@ -7554,15 +7553,8 @@ function Workspace({
           const routed = routePlanEvent(event);
           if (routed) enqueueHarnessEvent(sessionId, routed);
         };
-        // A fresh provider session's first context reading is what the Mono
-        // costs before any conversation; rotation measures growth from it.
-        let measureMonoBaseline = false;
         const routeTurnEvent = (event: HarnessEvent) => {
           if (turnGen.current.get(sessionId) !== gen) return;
-          if (measureMonoBaseline && event.type === "context" && event.used) {
-            measureMonoBaseline = false;
-            saveMonoBaseline(sessionId, current.harness, event.used);
-          }
           if (editedResend && !editedResend.isAccepted()) {
             pendingEditedEvents.push(event);
             return;
@@ -7636,6 +7628,10 @@ function Workspace({
                 model: current.model,
                 modelSettings: current.modelSettings,
                 runtimeMode: current.runtimeMode,
+                ephemeral: mono || current.ephemeral === true,
+                controlsAgents:
+                  operatorAccess ||
+                  orchestrator.run(sessionId)?.status === "active",
                 ...(editedProviderTurnId
                   ? { providerTurnId: editedProviderTurnId }
                   : {}),
@@ -7685,6 +7681,7 @@ function Workspace({
               modelSettings: current.modelSettings,
               providerAccountId,
               runtimeMode: current.runtimeMode,
+              ephemeral: mono || current.ephemeral === true,
               intent: intent === "orchestrate" ? "plan" : intent,
               // A /operator user turn enables app access for this thread;
               // orchestration leads retain their separate control access.
@@ -7726,7 +7723,6 @@ function Workspace({
             setSessions((prev) => prev.map(fresh));
             saveMonoRotation(sessionId, monoRotation.rotation);
           }
-          measureMonoBaseline = mono && !current.providerSessionId;
           // The agent's soul and memory live in its folder. A native session
           // is handed them once, and memory again only when it changes.
           const monoRecord = mono ? monoForSession(sessionId) : undefined;
@@ -8294,7 +8290,9 @@ function Workspace({
   );
   const queueMonoSessionCompletionRef = useRef(queueMonoSessionCompletion);
   queueMonoSessionCompletionRef.current = queueMonoSessionCompletion;
-  const monoCompletionBatches = useRef<MonoSessionCompletionBatches | null>(null);
+  const monoCompletionBatches = useRef<MonoSessionCompletionBatches | null>(
+    null,
+  );
   if (!monoCompletionBatches.current) {
     monoCompletionBatches.current = new MonoSessionCompletionBatches(
       (monoId, message, current) =>
@@ -9752,6 +9750,11 @@ function Workspace({
                 selectedProviderAccountId(current.harness, current.cwd))
               : undefined,
             runtimeMode: current.runtimeMode,
+            ephemeral: isMonoSession(sessionId) || current.ephemeral === true,
+            controlsAgents:
+              isMonoSession(sessionId) ||
+              operatorEnabledInThread(current.blocks) ||
+              orchestrator.run(sessionId)?.status === "active",
             onEvent: (event) => {
               if (turnGen.current.get(sessionId) !== gen) return;
               enqueueHarnessEvent(sessionId, event);
@@ -10760,11 +10763,14 @@ function Workspace({
             monoOf: (id) => {
               const mono =
                 monoForSession(id) ?? findMono(habitRunMono(id) ?? "");
-              return mono && {
-                id: mono.id,
-                projects: mono.projects,
-                showStartedSessionsInSidebar: mono.showStartedSessionsInSidebar,
-              };
+              return (
+                mono && {
+                  id: mono.id,
+                  projects: mono.projects,
+                  showStartedSessionsInSidebar:
+                    mono.showStartedSessionsInSidebar,
+                }
+              );
             },
             habits: { load: loadHabits, update: updateHabits },
             agentFiles: (monoId) => loadMonoFiles(monoId),
@@ -11899,9 +11905,7 @@ function Workspace({
       listen("close_all_tabs", () =>
         run("close-all", actions.current.onCloseAllTabs),
       ),
-      listen("close_tab", () =>
-        run("close", actions.current.onCloseFocused),
-      ),
+      listen("close_tab", () => run("close", actions.current.onCloseFocused)),
       listen<boolean>("toggle_autosave", ({ payload }) => {
         const saved = saveAutosave(payload);
         if (saved !== payload && IS_MAC) {

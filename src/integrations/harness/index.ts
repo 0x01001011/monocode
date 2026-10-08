@@ -31,6 +31,7 @@ export {
   stopCodexSession,
   forgetCodexSession,
   bindCodexSession,
+  hasLiveCodexSession,
 } from "./providers/codex/codex";
 export {
   sendOpenCodeTurn,
