@@ -175,8 +175,13 @@ impl CheckpointStore {
                 continue;
             }
             if let Some(review) = read_review(&entry.path())? {
+                // `review.cwd` is stored in its JavaScript form (no Windows
+                // verbatim prefix), so compare `root` in the same form: a
+                // `\\?\C:\x` root never starts with a `C:/x` path.
                 let other = Path::new(&review.cwd);
-                if review.active.is_some() && (root.starts_with(other) || other.starts_with(root)) {
+                let root = Path::new(&path_to_js(root)).to_path_buf();
+                if review.active.is_some() && (root.starts_with(other) || other.starts_with(&root))
+                {
                     active.push((entry.path(), review));
                 }
             }
