@@ -1,0 +1,93 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { HtmlPreview } from "./HtmlPreview";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+
+let root: Root;
+let container: HTMLDivElement;
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.mocked(invoke).mockImplementation(async (command) =>
+    command === "preview_open" ? "tok1" : undefined,
+  );
+  vi.mocked(listen).mockResolvedValue(() => {});
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
+
+async function mount() {
+  await act(async () =>
+    root.render(
+      createElement(HtmlPreview, {
+        source: { kind: "artifact", id: "artifact-1" },
+        title: "Dashboard",
+        version: 1,
+      }),
+    ),
+  );
+  await act(async () => {});
+}
+const button = (label: string) =>
+  container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+const press = (key: string) => {
+  const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+  act(() => {
+    window.dispatchEvent(event);
+  });
+  return event;
+};
+
+it("shows the page with reload and expand controls", async () => {
+  await mount();
+  expect(container.querySelector("iframe")).not.toBeNull();
+  expect(button("Reload preview")).not.toBeNull();
+  expect(button("Expand preview")).not.toBeNull();
+});
+
+it("reloads the page on demand without opening a second preview", async () => {
+  await mount();
+  const before = container.querySelector("iframe");
+  act(() => button("Reload preview")!.click());
+  await act(async () => {});
+  const after = container.querySelector("iframe");
+  expect(after).not.toBeNull();
+  expect(after).not.toBe(before);
+  expect(vi.mocked(invoke).mock.calls.filter(([c]) => c === "preview_open")).toHaveLength(1);
+});
+
+it("expands to fill the reader and collapses with Escape before anything else sees it", async () => {
+  await mount();
+  const outer = container.querySelector("[data-html-preview-root]")!;
+  expect(outer.getAttribute("data-expanded")).toBeNull();
+  act(() => button("Expand preview")!.click());
+  expect(outer.getAttribute("data-expanded")).toBe("true");
+  expect(button("Collapse preview")).not.toBeNull();
+  const bubbled = vi.fn();
+  window.addEventListener("keydown", bubbled);
+  const event = press("Escape");
+  window.removeEventListener("keydown", bubbled);
+  expect(outer.getAttribute("data-expanded")).toBeNull();
+  // The reader behind it must stay open: this Escape was spent collapsing.
+  expect(event.defaultPrevented).toBe(true);
+  expect(bubbled).not.toHaveBeenCalled();
+});
+
+it("leaves Escape alone while the preview is not expanded", async () => {
+  await mount();
+  const event = press("Escape");
+  expect(event.defaultPrevented).toBe(false);
+});

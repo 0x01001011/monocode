@@ -30,17 +30,21 @@ export function HtmlFrame({
   source,
   title,
   version,
+  reloadKey,
 }: {
   source: HtmlFrameSource;
   title: string;
   /** Changing it reloads the page, e.g. an artifact's `updatedAt`. */
   version?: number;
+  /** Bumped by a Reload control; reloads the page without reopening the preview. */
+  reloadKey?: number;
 }) {
   const sourceKey =
     source.kind === "file" ? `file:${source.path}` : `artifact:${source.id}`;
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [reload, setReload] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const tokenRef = useRef<string | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const lastOpen = useRef(0);
@@ -76,7 +80,7 @@ export function HtmlFrame({
       if (opened) void closePreview(opened).catch(() => undefined);
     };
     // sourceKey captures every field of `source` that matters.
-  }, [sourceKey]);
+  }, [sourceKey, attempt]);
 
   useEffect(() => {
     let live = true;
@@ -130,13 +134,26 @@ export function HtmlFrame({
 
   if (error)
     return (
-      <p role="alert" className="p-6 text-[13px] text-content/65">
-        Could not open this preview.
-      </p>
+      <div
+        role="alert"
+        className="grid h-full place-items-center gap-2 p-6 text-center text-[13px] text-content/65"
+      >
+        <p>Could not open this preview.</p>
+        <button
+          type="button"
+          onClick={() => setAttempt((n) => n + 1)}
+          className="rounded-md border border-content/15 px-2.5 py-1 text-[12px] text-content/80 hover:bg-content/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          Retry
+        </button>
+      </div>
     );
   if (!token)
     return (
-      <p role="status" className="sr-only">
+      <p
+        role="status"
+        className="grid h-full place-items-center text-[12px] text-content/45"
+      >
         Loading preview…
       </p>
     );
@@ -144,7 +161,7 @@ export function HtmlFrame({
   return (
     <iframe
       // A new element reloads the page and every subresource it fetched.
-      key={`${token}:${reload}:${version ?? ""}`}
+      key={`${token}:${reload}:${reloadKey ?? 0}:${version ?? ""}`}
       ref={frameRef}
       name={frameName}
       data-html-preview={token}
