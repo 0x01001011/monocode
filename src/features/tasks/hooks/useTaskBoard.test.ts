@@ -144,6 +144,19 @@ describe("useTaskBoard", () => {
     expect(latest?.sections.map((s) => s.source)).toEqual(["sdd"]);
   });
 
+  it("reads the plan workspaces from the plan root (the session's working copy), not the project", async () => {
+    const wt = "/wt/mc-1/.superpowers/sdd/2026-10-05-plan";
+    const { fs } = fakeFs({
+      ...workspace("2026-10-01-root-plan", "Project root plan", 1_000),
+      [`${wt}/progress.md`]: { text: LEDGER, mtimeMs: 9_000 },
+      [`${wt}/task-1-brief.md`]: { text: "### Task 1: Worktree plan\n", mtimeMs: 8_000 },
+    });
+    await mount(base(fs, { planCwd: "/wt/mc-1" }));
+    expect(latest?.selectedWorkspace).toBe("2026-10-05-plan");
+    expect(latest?.plan?.nodes[0]?.title).toBe("Worktree plan");
+    expect(latest?.workspaces.map((w) => w.dir)).toEqual([wt]);
+  });
+
   it("polls every 3s while visible and not at all when idle", async () => {
     const visible = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
     await mount(base(visible.fs));

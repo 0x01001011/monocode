@@ -100,6 +100,16 @@ describe("useSidebarTasks", () => {
     expect(result?.board.statusCard.kind).toBe("idle");
   });
 
+  it("reads the plan from the active session's working copy, else the project", () => {
+    render(base({ activeSession: active("a", { worktreeCwd: "/wt/mc-1" }) }));
+    expect(lastInput().planCwd).toBe("/wt/mc-1");
+    expect(lastInput().projectCwd).toBe("/proj");
+    render(base({ activeSession: active("a") }));
+    expect(lastInput().planCwd).toBe("/proj");
+    render(base({ activeSession: active("a", { cwd: "/elsewhere", worktreeCwd: "/wt/x" }) }));
+    expect(lastInput().planCwd).toBe("/proj");
+  });
+
   it("reads the quiet threshold from the setting, five minutes by default", () => {
     render(base());
     expect(lastInput().quietAfterMs).toBe(5 * 60_000);

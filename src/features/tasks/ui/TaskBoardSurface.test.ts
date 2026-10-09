@@ -9,6 +9,7 @@ import { TaskBoardSurface } from "./TaskBoardSurface";
 
 type ViewProps = {
   projectCwd: string;
+  planCwd?: string;
   session?: Session;
   sessions: { id: string; busy: boolean }[];
   quietAfterMs?: number;
@@ -52,6 +53,15 @@ describe("TaskBoardSurface", () => {
     expect(props?.projectCwd).toBe("/proj");
     expect(props?.session).toBe(sessions[0]);
     expect(props?.sessions.map((s) => [s.id, s.busy])).toEqual([["a", false], ["b", true]]);
+  });
+
+  it("reads the plan from the tab's working copy, defaulting to the project", () => {
+    act(() =>
+      root.render(createElement(TaskBoardSurface, { projectCwd: "/proj", planCwd: "/wt/mc-1", sessionId: "a", sessions: [session("a")] })),
+    );
+    expect(view.props.at(-1)).toMatchObject({ projectCwd: "/proj", planCwd: "/wt/mc-1" });
+    act(() => root.render(createElement(TaskBoardSurface, { projectCwd: "/proj", sessionId: "a", sessions: [session("a")] })));
+    expect(view.props.at(-1)?.planCwd).toBe("/proj");
   });
 
   it("still renders when the session is not loaded", () => {

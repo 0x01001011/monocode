@@ -161,6 +161,7 @@ function FilePaneComponent({
           <div className="absolute inset-0 h-full">
             <TaskBoardSurface
               projectCwd={taskBoard.projectCwd ?? taskBoard.cwd}
+              planCwd={taskBoard.cwd}
               sessionId={taskBoard.taskBoard.sessionId}
               sessions={sessions}
               visible={visible}

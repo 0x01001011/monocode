@@ -33,6 +33,11 @@ export type TaskBoard = {
 
 type Input = {
   projectCwd: string;
+  /**
+   * Where the plan workspaces live: the session's working copy (its worktree), which the
+   * SDD controller writes into. Defaults to `projectCwd`.
+   */
+  planCwd?: string;
   activeSession?: Session;
   sessions: readonly StatusSessionInput[];
   visible: boolean;
@@ -76,6 +81,7 @@ async function loadPlan(
 
 export function useTaskBoard(input: Input): TaskBoard {
   const { projectCwd, activeSession, sessions, visible } = input;
+  const planCwd = input.planCwd ?? projectCwd;
   const fs = input.fs ?? tauriSddFs;
   const pollVisible = input.pollMs?.visible ?? DEFAULT_POLL.visible;
   const pollHidden = input.pollMs?.hiddenBusy ?? DEFAULT_POLL.hiddenBusy;
@@ -95,7 +101,7 @@ export function useTaskBoard(input: Input): TaskBoard {
   const [choice, setChoice] = useState<{ cwd: string; slug: string }>();
   const [clock, setClock] = useState(() => nowRef.current());
   const request = useRef(0);
-  const wanted = choice?.cwd === projectCwd ? choice.slug : undefined;
+  const wanted = choice?.cwd === planCwd ? choice.slug : undefined;
 
   useEffect(() => {
     if (!polling) return;
@@ -103,11 +109,11 @@ export function useTaskBoard(input: Input): TaskBoard {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       const id = ++request.current;
-      const next = await loadPlan(fs, projectCwd, wanted, nowRef.current());
+      const next = await loadPlan(fs, planCwd, wanted, nowRef.current());
       // A newer load, a cwd/session change or an unmount makes this result stale.
       if (cancelled || id !== request.current) return;
       setLoaded((prev) => {
-        const result: Loaded = { cwd: projectCwd, ...next };
+        const result: Loaded = { cwd: planCwd, ...next };
         return prev && JSON.stringify(prev) === JSON.stringify(result) ? prev : result;
       });
       setClock(nowRef.current());
@@ -125,17 +131,17 @@ export function useTaskBoard(input: Input): TaskBoard {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [polling, interval, fs, projectCwd, wanted, sessionId, blockCount]);
+  }, [polling, interval, fs, planCwd, wanted, sessionId, blockCount]);
 
   const selectWorkspace = useCallback(
-    (slug: string) => setChoice({ cwd: projectCwd, slug }),
-    [projectCwd],
+    (slug: string) => setChoice({ cwd: planCwd, slug }),
+    [planCwd],
   );
 
   const runs = useSyncExternalStore(orchestrator.subscribe, orchestrator.snapshot, orchestrator.snapshot);
   const run = useMemo(() => (sessionId ? orchestrator.run(sessionId) : undefined), [sessionId, runs]);
 
-  const data = loaded?.cwd === projectCwd ? loaded : undefined;
+  const data = loaded?.cwd === planCwd ? loaded : undefined;
   const plan = data?.plan;
 
   const sections = useStable(

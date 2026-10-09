@@ -10,14 +10,16 @@ type Props = Pick<
   ComponentProps<typeof TaskBoardView>,
   "onAction" | "onOpenNode" | "onOpenPlan" | "onChangeDecision" | "visible"
 > & {
-  /** The project whose plans the board reads. */
+  /** The project: its sessions are the board's status inputs. */
   projectCwd: string;
+  /** The session's working copy, where its plan workspaces live; defaults to `projectCwd`. */
+  planCwd?: string;
   sessionId: string;
   sessions: readonly Session[];
 };
 
 /** An editor tab's board: finds its session among the loaded ones and its siblings in the project. */
-export function TaskBoardSurface({ projectCwd, sessionId, sessions, ...handlers }: Props) {
+export function TaskBoardSurface({ projectCwd, planCwd = projectCwd, sessionId, sessions, ...handlers }: Props) {
   const remote = isRemoteProjectPath(projectCwd);
   const quietAfterMinutes = useQuietAfterMinutes();
   const actions = useContext(TaskActionsContext);
@@ -45,6 +47,7 @@ export function TaskBoardSurface({ projectCwd, sessionId, sessions, ...handlers 
   return (
     <TaskBoardView
       projectCwd={projectCwd}
+      planCwd={planCwd}
       session={session}
       sessions={statusSessions}
       quietAfterMs={quietAfterMinutes * 60_000}

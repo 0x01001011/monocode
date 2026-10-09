@@ -3,6 +3,7 @@ import type { SessionSummary } from "../../sessions/data/sessionStore";
 import { useQuietAfterMinutes } from "../../settings/model/tasksPrefs";
 import { sameProjectPath } from "../../projects/model/recents";
 import { sessionNeedsInput, type Block, type Session } from "../../sessions/model/session";
+import { planRootFor } from "../model/planRoot";
 import type { StatusSessionInput } from "../model/statusCard";
 import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
 
@@ -161,6 +162,7 @@ export function useSidebarTasks(input: Input): { board: TaskBoard; running: bool
 
   const board = useTaskBoard({
     projectCwd: cwd,
+    planCwd: planRootFor(cwd, activeSession),
     ...(activeSession ? { activeSession } : {}),
     sessions: statusSessions,
     quietAfterMs: quietAfterMinutes * 60_000,

@@ -427,6 +427,7 @@ import {
   useTaskActions,
   type TaskActionHost,
 } from "../features/tasks/hooks/useTaskActions";
+import { planRootFor } from "../features/tasks/model/planRoot";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
 import {
@@ -4097,10 +4098,12 @@ function Workspace({
     );
     if (!session) return;
     const projectCwd = sidebarCwdRef.current;
+    // The tab's cwd is where the plan is read: the session's working copy.
+    const planCwd = planRootFor(projectCwd, session);
     setTabs((prev) =>
       prev.map((tab) =>
         tab.id === activeTabId
-          ? openTaskBoardTab(tab, session.cwd, session.id, projectCwd, true)
+          ? openTaskBoardTab(tab, planCwd, session.id, projectCwd, true)
           : tab,
       ),
     );

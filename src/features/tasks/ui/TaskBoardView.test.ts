@@ -234,13 +234,23 @@ describe("TaskBoardView", () => {
     expect(text()).not.toContain("Nothing needs you");
   });
 
-  it("Open plan calls the handler with the plan path and carries it in the tooltip", () => {
+  it("Open plan opens the plan path resolved against the plan root and carries it in the tooltip", () => {
     const onOpenPlan = vi.fn();
     render({ onOpenPlan });
     const open = buttons("Open plan")[0];
     expect(open.getAttribute("title")).toBe(PLAN_PATH);
     click(open);
-    expect(onOpenPlan).toHaveBeenCalledWith(PLAN_PATH);
+    expect(onOpenPlan).toHaveBeenCalledWith(`/repo/${PLAN_PATH}`);
+  });
+
+  it("reads the plan from the working copy and opens the plan there", () => {
+    const onOpenPlan = vi.fn();
+    render({ onOpenPlan, planCwd: "/wt/mc-1" });
+    const input = hook.calls.at(-1) as { projectCwd: string; planCwd?: string };
+    expect(input.projectCwd).toBe("/repo");
+    expect(input.planCwd).toBe("/wt/mc-1");
+    click(buttons("Open plan")[0]);
+    expect(onOpenPlan).toHaveBeenCalledWith(`/wt/mc-1/${PLAN_PATH}`);
   });
 
   it("row chevron toggles the detail row with aria-expanded", () => {

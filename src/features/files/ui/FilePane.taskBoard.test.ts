@@ -6,9 +6,10 @@ import { newEditorPane, newFileTab, newTaskBoardTab } from "../../workspace/mode
 import { newSession } from "../../sessions/model/session";
 import { FilePane } from "./FilePane";
 
-const surface = vi.hoisted(() => ({ renders: [] as { projectCwd: string; sessionId: string; sessions: unknown; visible?: boolean }[] }));
+type SurfaceProps = { projectCwd: string; planCwd?: string; sessionId: string; sessions: unknown; visible?: boolean };
+const surface = vi.hoisted(() => ({ renders: [] as SurfaceProps[] }));
 vi.mock("../../tasks/ui/TaskBoardSurface", () => ({
-  TaskBoardSurface: (props: { projectCwd: string; sessionId: string; sessions: unknown; visible?: boolean }) => {
+  TaskBoardSurface: (props: SurfaceProps) => {
     surface.renders.push(props);
     return createElement("div", { "data-testid": "board" }, `board for ${props.sessionId}`);
   },
@@ -60,7 +61,8 @@ describe("file pane task board tabs", () => {
   it("renders the board for the active task board tab and keeps it out of the file loop", async () => {
     await act(async () => root.render(createElement(FilePane, props)));
     expect(container.textContent).toContain("board for session-a");
-    expect(surface.renders.at(-1)).toMatchObject({ projectCwd: "/project", sessionId: "session-a" });
+    // The tab's cwd is the session's working copy: the plan is read there.
+    expect(surface.renders.at(-1)).toMatchObject({ projectCwd: "/project", planCwd: "/repo", sessionId: "session-a" });
     // The generic loop would have mounted a second surface for the board's cwd path.
     const surfaceArea = container.querySelector("[data-testid=board]")?.parentElement?.parentElement;
     expect(surfaceArea?.children).toHaveLength(1);
@@ -69,7 +71,7 @@ describe("file pane task board tabs", () => {
   it("falls back to the tab cwd when no project cwd is stored", async () => {
     const pane = newEditorPane(newTaskBoardTab("/repo", "session-b"));
     await act(async () => root.render(createElement(FilePane, { ...props, pane })));
-    expect(surface.renders.at(-1)).toMatchObject({ projectCwd: "/repo", sessionId: "session-b" });
+    expect(surface.renders.at(-1)).toMatchObject({ projectCwd: "/repo", planCwd: "/repo", sessionId: "session-b" });
   });
 
   it("mounts the board only while its tab is active and re-renders it with new sessions", async () => {

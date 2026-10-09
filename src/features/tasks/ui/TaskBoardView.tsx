@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check } from "../../../shared/ui/icons";
 import type { Session } from "../../sessions/model/session";
 import { useTaskBoard } from "../hooks/useTaskBoard";
+import { planFilePath } from "../model/planRoot";
 import { progressLine } from "../model/progress";
 import type { StatusAction, StatusCard, StatusKind, StatusSessionInput } from "../model/statusCard";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
@@ -12,6 +13,8 @@ import { TaskGlyph, type GlyphKind } from "./TaskGlyph";
 
 type Props = {
   projectCwd: string;
+  /** The working copy the plan workspaces are read from; defaults to `projectCwd`. */
+  planCwd?: string;
   session?: Session;
   sessions: readonly StatusSessionInput[];
   /** False while the tab is hidden or covered: no fast polling and no clock tick. */
@@ -60,8 +63,8 @@ function revealHeading(heading: Element | null | undefined) {
 }
 
 /** The whole plan as a table: every task, the final review, then decisions and small issues. */
-export function TaskBoardView({ projectCwd, session, sessions, visible = true, quietAfterMs, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
-  const board = useTaskBoard({ projectCwd, ...(session ? { activeSession: session } : {}), sessions, visible, ...(quietAfterMs !== undefined ? { quietAfterMs } : {}) });
+export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessions, visible = true, quietAfterMs, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
+  const board = useTaskBoard({ projectCwd, planCwd, ...(session ? { activeSession: session } : {}), sessions, visible, ...(quietAfterMs !== undefined ? { quietAfterMs } : {}) });
   const card = board.statusCard;
   const plan = board.plan;
   const notesRef = useRef<HTMLDivElement>(null);
@@ -157,7 +160,7 @@ export function TaskBoardView({ projectCwd, session, sessions, visible = true, q
           <button
             type="button"
             title={plan.planPath}
-            onClick={() => plan.planPath && onOpenPlan?.(plan.planPath)}
+            onClick={() => plan.planPath && onOpenPlan?.(planFilePath(planCwd, plan.planPath))}
             className={`${BUTTON} shrink-0 bg-selection text-content`}
           >
             Open plan
