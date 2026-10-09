@@ -149,6 +149,16 @@ describe.runIf(process.platform !== "win32")(
       );
       vi.stubEnv("HOME", home);
       vi.stubEnv("PATH", "/usr/bin:/bin");
+      // CI images export these (GitHub's Ubuntu runners set NVM_DIR), which
+      // would redirect the lookup away from the temporary HOME.
+      for (const key of [
+        "NVM_DIR",
+        "FNM_DIR",
+        "VOLTA_HOME",
+        "PNPM_HOME",
+        "ASDF_DATA_DIR",
+      ])
+        vi.stubEnv(key, "");
       for (const [key, value] of Object.entries(env))
         vi.stubEnv(key, value.replace("$HOME", home));
       try {
