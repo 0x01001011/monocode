@@ -15,6 +15,7 @@ mod fs;
 mod gitlab;
 mod harness;
 mod harness_updates;
+mod html_preview;
 mod inbox_media;
 mod jira;
 mod linear;
@@ -234,6 +235,9 @@ pub fn run() {
         .manage(pty::PtyHost::new())
         .manage(remote::RemoteConnections::default())
         .manage(window_transfer::WindowTransferState::new())
+        .register_asynchronous_uri_scheme_protocol("preview", |ctx, request, responder| {
+            html_preview::handle_request(ctx.app_handle(), request, responder)
+        })
         .setup(|app| {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
@@ -241,6 +245,7 @@ pub fn run() {
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
             skills_watch::start(app.handle());
+            html_preview::init(app.handle());
             menu::install(app.handle())?;
             #[cfg(target_os = "windows")]
             tray::install(app.handle())?;
@@ -503,6 +508,8 @@ pub fn run() {
             artifacts::artifacts_get,
             artifacts::artifacts_upsert,
             artifacts::artifacts_delete,
+            html_preview::preview_open,
+            html_preview::preview_close,
             notes::notes_delete,
             notes::notes_save_image,
             notes::notes_image_path,

@@ -12,12 +12,14 @@ use crate::session_store::{validate_id, SessionStore};
 #[serde(rename_all = "lowercase")]
 pub enum ArtifactKind {
     Document,
+    Html,
 }
 
 impl ArtifactKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Document => "document",
+            Self::Html => "html",
         }
     }
 }
@@ -198,6 +200,15 @@ fn list_artifacts(conn: &Connection) -> rusqlite::Result<Vec<Artifact>> {
     rows.collect()
 }
 
+/// Body of an HTML artifact for the preview scheme; other kinds are not served.
+pub(crate) fn html_body(conn: &Connection, id: &str) -> Option<String> {
+    get_artifact(conn, id)
+        .ok()
+        .flatten()
+        .filter(|artifact| artifact.kind == ArtifactKind::Html)
+        .map(|artifact| artifact.body)
+}
+
 fn get_artifact(conn: &Connection, id: &str) -> rusqlite::Result<Option<Artifact>> {
     conn.query_row(
         "SELECT id, artifact_kind, title, body, source_session_id, source_cwd,
@@ -213,6 +224,7 @@ fn read_artifact(row: &rusqlite::Row<'_>) -> rusqlite::Result<Artifact> {
     let kind: String = row.get(1)?;
     let kind = match kind.as_str() {
         "document" => ArtifactKind::Document,
+        "html" => ArtifactKind::Html,
         _ => {
             return Err(rusqlite::Error::InvalidParameterName(
                 "Unsupported artifact kind".into(),
@@ -229,6 +241,29 @@ fn read_artifact(row: &rusqlite::Row<'_>) -> rusqlite::Result<Artifact> {
         created_at: row.get(6)?,
         updated_at: row.get(7)?,
     })
+}
+
+#[cfg(test)]
+pub(crate) mod tests_support {
+    use super::*;
+    use crate::notes::upsert_content;
+
+    /// Store a row of the given kind and read it back through the artifact API.
+    pub(crate) fn save_and_read(id: &str, kind: &str, body: &str) -> Option<Artifact> {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let note = NoteUpsert {
+            id: id.into(),
+            title: id.into(),
+            body: body.into(),
+            tags: Vec::new(),
+            source_session_id: None,
+            source_cwd: None,
+            finalize_slug: false,
+        };
+        upsert_content(&conn, &note, "artifact", Some(kind)).unwrap();
+        get_artifact(&conn, id).ok().flatten()
+    }
 }
 
 #[cfg(test)]
