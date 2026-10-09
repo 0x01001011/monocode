@@ -153,12 +153,22 @@ impl Shared {
                 filter.insert(root.clone());
                 filter.insert(canonical_form(root));
             }
-            let targets = state
+            let mut targets: Vec<(PathBuf, bool)> = state
                 .requested
                 .iter()
                 .filter_map(|root| watch_target(root))
                 .filter(|target| !state.watched.contains(target))
                 .collect();
+            // Guards come after every primary target so none is registered
+            // twice: one OS watch per path.
+            for root in &state.requested {
+                if let Some(guard) = deletion_guard(root, cfg!(windows)) {
+                    let same_path = |(path, _): &(PathBuf, bool)| path == &guard.0;
+                    if !state.watched.iter().any(same_path) && !targets.iter().any(same_path) {
+                        targets.push(guard);
+                    }
+                }
+            }
             (stale, targets)
         };
         // The state lock is released before talking to the OS: the event
@@ -209,6 +219,19 @@ fn watch_target(root: &Path) -> Option<(PathBuf, bool)> {
     } else {
         nearest_existing_dir(root).map(|ancestor| (ancestor, false))
     }
+}
+
+/// Windows drops a directory watch without any event when the directory is
+/// deleted, so deleting or recreating a skills root would go unnoticed. On
+/// Windows also watch the parent of an existing root, non-recursively, which
+/// does report the root disappearing and reappearing.
+fn deletion_guard(root: &Path, windows: bool) -> Option<(PathBuf, bool)> {
+    if !windows || !root.is_dir() {
+        return None;
+    }
+    root.parent()
+        .filter(|parent| parent.is_dir())
+        .map(|parent| (parent.to_path_buf(), false))
 }
 
 pub(crate) struct SkillsWatcher {
@@ -419,6 +442,17 @@ mod tests {
         })
         .unwrap();
         (watcher, fired)
+    }
+
+    #[test]
+    fn windows_also_watches_the_parent_of_an_existing_root() {
+        let root = temp_root("guard");
+        let parent = root.parent().unwrap().to_path_buf();
+        assert_eq!(deletion_guard(&root, true), Some((parent, false)));
+        assert_eq!(deletion_guard(&root, false), None);
+        // A missing root is already covered by its nearest existing ancestor.
+        assert_eq!(deletion_guard(&root.join("missing"), true), None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
