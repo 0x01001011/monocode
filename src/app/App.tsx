@@ -201,6 +201,7 @@ import {
   openCommitTab,
   newAgentTab,
   openEditorTab,
+  editorTabKey,
   openSessionChangesTab,
   openTaskBoardTab,
   pinEditorFile,
@@ -13272,7 +13273,7 @@ function toTitleTab(
         : file.releaseNotes
           ? `release-notes:${file.releaseNotes.version}`
           : file.taskBoard
-            ? `task-board:${file.cwd}:${file.taskBoard.sessionId}`
+            ? editorTabKey(file)
             : file.path;
     if (seenKeys.has(key)) return;
     seenKeys.add(key);

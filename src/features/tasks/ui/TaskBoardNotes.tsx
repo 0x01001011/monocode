@@ -9,6 +9,7 @@ type Props = {
 
 const DECISIONS_EXPLAINER = "Calls the agent made without stopping to ask. Change any of them by telling the agent.";
 const ISSUES_EXPLAINER = "Things the reviewer chose not to block on. The final review decides which to fix.";
+const NAME_CHARS = 60;
 const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
 
 function Source({ note }: { note: BoardNote }) {
@@ -35,6 +36,7 @@ export function TaskBoardNotes({ decisions, issues, onChangeDecision }: Props) {
                 <span className="min-w-0 flex-1">{note.text}</span>
                 <button
                   type="button"
+                  aria-label={`Change this: ${note.text.length > NAME_CHARS ? `${note.text.slice(0, NAME_CHARS).trimEnd()}…` : note.text}`}
                   onClick={() => onChangeDecision?.(note)}
                   className={`min-h-6 rounded-md px-2 text-[11.5px] whitespace-nowrap text-content/66 hover:bg-selection-subtle ${FOCUS}`}
                 >

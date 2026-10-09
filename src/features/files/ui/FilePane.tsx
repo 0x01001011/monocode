@@ -63,6 +63,8 @@ type Props = {
   focused: boolean;
   /** The title bar already names a standalone file, so avoid repeating it. */
   showTabs?: boolean;
+  /** False while the workspace is hidden or covered; a task board then stops polling. */
+  visible?: boolean;
   dirtyFileIds: Set<string>;
   fileErrorCounts: Map<string, number>;
   sessions: Session[];
@@ -90,6 +92,7 @@ function FilePaneComponent({
   pane,
   focused,
   showTabs = true,
+  visible = true,
   dirtyFileIds,
   fileErrorCounts,
   sessions,
@@ -116,7 +119,7 @@ function FilePaneComponent({
   const activeFile = pane.files.find((file) => file.id === pane.activeFileId);
   const sessionReview =
     activeFile && isSessionChangesTab(activeFile) ? activeFile : undefined;
-  // Only the visible board is mounted, so a hidden one does not keep polling.
+  // Only the active tab's board is mounted; `visible` quiets it while the whole workspace is hidden.
   const taskBoard =
     activeFile && isTaskBoardTab(activeFile) ? activeFile : undefined;
   const unifiedReview =
@@ -160,6 +163,7 @@ function FilePaneComponent({
               projectCwd={taskBoard.projectCwd ?? taskBoard.cwd}
               sessionId={taskBoard.taskBoard.sessionId}
               sessions={sessions}
+              visible={visible}
             />
           </div>
         ) : commitReview && activeFile?.commit ? (
@@ -259,6 +263,7 @@ export const FilePane = memo(FilePaneComponent, (previous, next) => {
     previous.pane !== next.pane ||
     previous.focused !== next.focused ||
     previous.showTabs !== next.showTabs ||
+    previous.visible !== next.visible ||
     previous.dirtyFileIds !== next.dirtyFileIds ||
     previous.fileErrorCounts !== next.fileErrorCounts ||
     previous.onFocus !== next.onFocus ||

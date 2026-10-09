@@ -6,9 +6,9 @@ import { newEditorPane, newFileTab, newTaskBoardTab } from "../../workspace/mode
 import { newSession } from "../../sessions/model/session";
 import { FilePane } from "./FilePane";
 
-const surface = vi.hoisted(() => ({ renders: [] as { projectCwd: string; sessionId: string; sessions: unknown }[] }));
+const surface = vi.hoisted(() => ({ renders: [] as { projectCwd: string; sessionId: string; sessions: unknown; visible?: boolean }[] }));
 vi.mock("../../tasks/ui/TaskBoardSurface", () => ({
-  TaskBoardSurface: (props: { projectCwd: string; sessionId: string; sessions: unknown }) => {
+  TaskBoardSurface: (props: { projectCwd: string; sessionId: string; sessions: unknown; visible?: boolean }) => {
     surface.renders.push(props);
     return createElement("div", { "data-testid": "board" }, `board for ${props.sessionId}`);
   },
@@ -88,5 +88,12 @@ describe("file pane task board tabs", () => {
     await act(async () => root.render(createElement(FilePane, { ...props, pane: shown, sessions: [session] })));
     expect(surface.renders.length).toBeGreaterThan(before);
     expect(surface.renders.at(-1)?.sessions).toEqual([session]);
+  });
+
+  it("passes visibility to the board, shown by default and quiet when hidden", async () => {
+    await act(async () => root.render(createElement(FilePane, props)));
+    expect(surface.renders.at(-1)?.visible).toBe(true);
+    await act(async () => root.render(createElement(FilePane, { ...props, visible: false })));
+    expect(surface.renders.at(-1)?.visible).toBe(false);
   });
 });

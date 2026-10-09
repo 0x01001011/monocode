@@ -14,6 +14,8 @@ type Props = {
   projectCwd: string;
   session?: Session;
   sessions: readonly StatusSessionInput[];
+  /** False while the tab is hidden or covered: no fast polling and no clock tick. */
+  visible?: boolean;
   onAction?: (action: StatusAction, card: StatusCard) => void;
   onOpenNode?: (node: BoardNode, section: BoardSection) => void;
   onOpenPlan?: (path: string) => void;
@@ -48,13 +50,13 @@ function EmptyState({ loading }: { loading: boolean }) {
 }
 
 /** The whole plan as a table: every task, the final review, then decisions and small issues. */
-export function TaskBoardView({ projectCwd, session, sessions, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
-  const board = useTaskBoard({ projectCwd, ...(session ? { activeSession: session } : {}), sessions, visible: true });
+export function TaskBoardView({ projectCwd, session, sessions, visible = true, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
+  const board = useTaskBoard({ projectCwd, ...(session ? { activeSession: session } : {}), sessions, visible });
   const card = board.statusCard;
   const plan = board.plan;
-  const running = sessions.some((s) => s.busy) || (card.kind !== "idle" && card.kind !== "done");
+  const running = visible && (sessions.some((s) => s.busy) || (card.kind !== "idle" && card.kind !== "done"));
 
-  // The tab owns its clock so a tick re-renders only this view; it ticks only while work runs.
+  // The tab owns its clock so a tick re-renders only this view; it ticks only while it is shown and work runs.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!running) return;

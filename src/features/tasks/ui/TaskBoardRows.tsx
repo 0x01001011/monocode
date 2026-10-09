@@ -20,8 +20,14 @@ const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offse
 const LINK = `min-h-6 rounded-md px-1.5 text-[11.5px] text-accent hover:bg-selection-subtle ${FOCUS}`;
 const COLUMNS = 4;
 
-const REVIEW_TARGETS: ReadonlySet<BoardTarget["kind"]> = new Set(["report", "brief", "review"]);
-const TRANSCRIPT_TARGETS: ReadonlySet<BoardTarget["kind"]> = new Set(["transcript", "session"]);
+/** The button label for each kind of target a node can open; commits have their own button. */
+const OPEN_LABEL: Partial<Record<BoardTarget["kind"], string>> = {
+  report: "Open report",
+  brief: "Open brief",
+  review: "Open review",
+  transcript: "Open transcript",
+  session: "Open session",
+};
 
 const TONE: Record<ChainTone, string> = {
   plain: "text-content/85",
@@ -31,7 +37,7 @@ const TONE: Record<ChainTone, string> = {
 
 const taskName = (node: BoardNode): string => (node.index !== undefined ? `Task ${node.index}` : node.title);
 const hasDetail = (node: BoardNode): boolean =>
-  Boolean(node.commits || node.models || node.steps?.length || node.target);
+  Boolean(node.commits || node.models || node.steps?.length || (node.target && OPEN_LABEL[node.target.kind]));
 
 function Happened({ node, hasParked }: { node: BoardNode; hasParked: boolean }) {
   const what = whatHappened(node, hasParked);
@@ -64,9 +70,7 @@ function StepMark({ done }: { done: boolean }) {
 }
 
 function Detail({ node, section, id, onOpenNode }: Pick<RowProps, "node" | "section" | "onOpenNode"> & { id: string }) {
-  const target = node.target;
-  const review = target && REVIEW_TARGETS.has(target.kind);
-  const transcript = target && TRANSCRIPT_TARGETS.has(target.kind);
+  const openLabel = node.target ? OPEN_LABEL[node.target.kind] : undefined;
   return (
     <tr id={id} data-detail={node.id}>
       <td colSpan={COLUMNS} className="pr-3 pb-2 pl-[44px]">
@@ -84,14 +88,9 @@ function Detail({ node, section, id, onOpenNode }: Pick<RowProps, "node" | "sect
             </span>
           ) : null}
           {node.models ? <span>{node.models}</span> : null}
-          {review ? (
+          {openLabel ? (
             <button type="button" onClick={() => onOpenNode?.(node, section)} className={LINK}>
-              Open review
-            </button>
-          ) : null}
-          {transcript ? (
-            <button type="button" onClick={() => onOpenNode?.(node, section)} className={LINK}>
-              Open transcript
+              {openLabel}
             </button>
           ) : null}
         </div>

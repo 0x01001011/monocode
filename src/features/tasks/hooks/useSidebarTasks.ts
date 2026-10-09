@@ -85,6 +85,25 @@ export function buildStatusSessions(input: StatusSessionsInput): StatusSessionIn
 }
 
 /**
+ * Activity time for a loaded session, which has no `updatedAt`: the newest tool time or
+ * user-turn start among the last blocks. Unknown (never quiet) while the newest block is
+ * streaming text, since a long generation writes no tool times.
+ */
+function loadedActivityAt(session: Session): number | undefined {
+  const blocks = session.blocks;
+  const newest = blocks[blocks.length - 1];
+  if (newest?.streaming && newest.role !== "tool") return undefined;
+  let latest = latestToolTime(blocks);
+  for (let i = Math.max(0, blocks.length - RECENT_BLOCKS); i < blocks.length; i++) {
+    if (blocks[i].role !== "user") continue;
+    for (const at of [blocks[i].startedAt, blocks[i].sentAt]) {
+      if (at !== undefined && (latest === undefined || at > latest)) latest = at;
+    }
+  }
+  return latest;
+}
+
+/**
  * Status inputs for a project built from loaded sessions alone, for surfaces that do not
  * receive the sidebar's list. A worker's busy or waiting state also marks its lead.
  */
@@ -105,12 +124,17 @@ export function statusSessionsFromLoaded(
       if (session.orchestrationLeadId) approvalSessionIds.add(session.orchestrationLeadId);
     }
   }
+  const here = sessions.filter((session) => !session.ephemeral && sameProjectPath(session.cwd, projectCwd));
+  const byId = new Map(here.map((session) => [session.id, session]));
   return buildStatusSessions({
-    sessions: sessions.filter((session) => !session.ephemeral && sameProjectPath(session.cwd, projectCwd)),
+    sessions: here.map(({ id, title, sidebarHidden }) => ({ id, title, sidebarHidden })),
     busySessionIds,
     approvalSessionIds,
     activeSessionId,
     activeSession: sessions.find((session) => session.id === activeSessionId),
+  }).map(({ lastActivityAt: _sidebarClock, ...input }) => {
+    const at = loadedActivityAt(byId.get(input.id) as Session);
+    return at === undefined ? input : { ...input, lastActivityAt: at };
   });
 }
 

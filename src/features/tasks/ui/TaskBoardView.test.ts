@@ -258,10 +258,10 @@ describe("TaskBoardView", () => {
     expect(body).toContain("Implementer sonnet, reviewer opus");
     expect(body).toContain("Write the failing test");
     expect(detail?.querySelectorAll("[aria-label=done]")).toHaveLength(2);
-    // The commit button opens the commit; Open review uses the node's own target.
+    // The commit button opens the commit; Open report uses the node's own report target.
     click(buttons("129e9e2..e704fdd")[0]);
     expect(onOpenNode.mock.calls[0][0]).toMatchObject({ id: "task-2", target: { kind: "commit", ref: "129e9e2..e704fdd" } });
-    click(buttons("Open review")[0]);
+    click(buttons("Open report")[0]);
     expect(onOpenNode.mock.calls[1][0]).toMatchObject({ target: { kind: "report", ref: "/w/task-2-report.md" } });
     expect(onOpenNode.mock.calls[1][1]).toMatchObject({ id: "sdd:alpha" });
     expect(buttons("Open transcript")).toHaveLength(0);
@@ -299,13 +299,47 @@ describe("TaskBoardView", () => {
     expect(text()).toContain("Small issues saved for the end");
     expect(text()).toContain("Things the reviewer chose not to block on. The final review decides which to fix.");
     expect(text()).toContain("Memo entries live for the whole process.");
-    expect(buttons("Change this")).toHaveLength(2);
+    expect(container.querySelectorAll("button[aria-label^=\"Change this\"]")).toHaveLength(2);
+  });
+
+  it("each Change this button is named by its decision", () => {
+    const long = "x".repeat(80);
+    const p = plan({ decisions: [{ taskIndex: 1, text: "Short call" }, { taskIndex: 2, text: long }] });
+    hook.board = board({ plan: p, sections: [p] });
+    render();
+    const names = Array.from(container.querySelectorAll("button"))
+      .map((b) => b.getAttribute("aria-label") ?? "")
+      .filter((n) => n.startsWith("Change this"));
+    expect(names).toEqual(["Change this: Short call", `Change this: ${"x".repeat(60)}…`]);
+    expect(new Set(names).size).toBe(2);
+  });
+
+  it("labels the open button by the target kind", () => {
+    const kinds = [
+      ["report", "Open report"],
+      ["brief", "Open brief"],
+      ["review", "Open review"],
+      ["transcript", "Open transcript"],
+      ["session", "Open session"],
+    ] as const;
+    for (const [kind, label] of kinds) {
+      // A distinct node id per kind, so no row keeps the previous kind's expanded state.
+      const p = plan({ nodes: [task(1, { id: `task-${kind}`, target: { kind, ref: "r" } })], total: 1, done: 1 });
+      hook.board = board({ plan: p, sections: [p] });
+      render();
+      click(buttons("Show details for Task 1")[0]);
+      // Read only the detail row: the header's own "Open session" action is a different button.
+      const opens = Array.from(container.querySelectorAll(`tr[data-detail=task-${kind}] button`))
+        .map((b) => (b.textContent ?? "").trim())
+        .filter((t) => t.startsWith("Open "));
+      expect(opens).toEqual([label]);
+    }
   });
 
   it("Change this calls the handler with the decision", () => {
     const onChangeDecision = vi.fn();
     render({ onChangeDecision });
-    click(buttons("Change this")[0]);
+    click(container.querySelector("button[aria-label^=\"Change this\"]") ?? undefined);
     expect(onChangeDecision).toHaveBeenCalledWith(plan().decisions?.[0]);
   });
 

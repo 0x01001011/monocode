@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type { Block, Session } from "../../sessions/model/session";
-import type { StatusCard } from "../model/statusCard";
+import { deriveStatusCard, type StatusCard } from "../model/statusCard";
 import { statusSessionsFromLoaded, useSidebarTasks } from "./useSidebarTasks";
 import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
 
@@ -221,5 +221,45 @@ describe("statusSessionsFromLoaded", () => {
     const [lead, a] = statusSessionsFromLoaded(sessions, "/proj", "lead");
     expect(lead.busy).toBe(true);
     expect(a.lastActivityAt).toBe(T0 - 2_000);
+  });
+
+  describe("quiet detection from loaded sessions", () => {
+    const MIN = 60_000;
+    const user = (patch: Partial<Block>): Block => ({ id: "u", role: "user", text: "go", ...patch }) as Block;
+    const only = (session: Session) => statusSessionsFromLoaded([session], "/proj", session.id);
+    const quiet = (inputs: ReturnType<typeof only>) =>
+      deriveStatusCard({ sessions: inputs, activeSessionId: "a", now: T0, quietAfterMs: 5 * MIN }).kind === "quiet";
+
+    it("a new turn start after an old tool call is activity, so a busy session is not quiet", () => {
+      const blocks = [tool({ toolStartedAt: T0 - 20 * MIN, toolEndedAt: T0 - 19 * MIN }), user({ startedAt: T0 - MIN })];
+      const inputs = only(loaded("a", { busy: true, blocks }));
+      expect(inputs[0].lastActivityAt).toBe(T0 - MIN);
+      expect(quiet(inputs)).toBe(false);
+    });
+
+    it("a message that joined a running turn counts through sentAt", () => {
+      const blocks = [tool({ toolEndedAt: T0 - 20 * MIN }), user({ sentAt: T0 - 2 * MIN })];
+      expect(only(loaded("a", { busy: true, blocks }))[0].lastActivityAt).toBe(T0 - 2 * MIN);
+    });
+
+    it("streaming text as the newest block leaves activity unknown, never quiet", () => {
+      const blocks = [
+        tool({ toolStartedAt: T0 - 20 * MIN, toolEndedAt: T0 - 19 * MIN }),
+        { id: "t", role: "assistant", text: "thinking out loud", streaming: true } as Block,
+      ];
+      const inputs = only(loaded("a", { busy: true, blocks }));
+      expect(inputs[0].lastActivityAt).toBeUndefined();
+      expect(quiet(inputs)).toBe(false);
+    });
+
+    it("an in-progress tool with an old start is quiet after the threshold", () => {
+      const blocks = [
+        tool({ toolStartedAt: T0 - 20 * MIN, toolEndedAt: T0 - 19 * MIN }),
+        tool({ id: "b2", toolStartedAt: T0 - 9 * MIN, streaming: true }),
+      ];
+      const inputs = only(loaded("a", { busy: true, blocks }));
+      expect(inputs[0].lastActivityAt).toBe(T0 - 9 * MIN);
+      expect(quiet(inputs)).toBe(true);
+    });
   });
 });

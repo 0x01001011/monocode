@@ -6,7 +6,7 @@ import { TaskBoardView } from "./TaskBoardView";
 
 type Props = Pick<
   ComponentProps<typeof TaskBoardView>,
-  "onAction" | "onOpenNode" | "onOpenPlan" | "onChangeDecision"
+  "onAction" | "onOpenNode" | "onOpenPlan" | "onChangeDecision" | "visible"
 > & {
   /** The project whose plans the board reads. */
   projectCwd: string;
