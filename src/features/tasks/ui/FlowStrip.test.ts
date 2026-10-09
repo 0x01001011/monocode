@@ -2,7 +2,7 @@
 import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FlowPhase } from "../model/flow";
+import { deriveFlow, type FlowPhase } from "../model/flow";
 import { FlowStrip } from "./FlowStrip";
 
 let container: HTMLDivElement;
@@ -154,9 +154,53 @@ describe("FlowStrip", () => {
     ]);
   });
 
-  it("reads review problems as the issues glyph", () => {
+  it("reads a build that needs a look as struggling, like the task tree", () => {
     render({ phases: [{ id: "build", label: "Build", status: "attention", detail: "4 of 6" }] });
-    expect(nameOf(items()[0])).toBe("Build, review found issues, 4 of 6");
+    expect(nameOf(items()[0])).toBe("Build, struggling, 4 of 6");
+    expect(container.querySelector("[role=img]")?.textContent).toBe("!");
+  });
+
+  it("reads a check with review findings as the issues glyph", () => {
+    render({ phases: [{ id: "check", label: "Check", status: "attention", detail: "final review found issues" }] });
+    expect(nameOf(items()[0])).toBe("Check, review found issues, final review found issues");
+  });
+
+  it("keeps the board vocabulary for the other phases and statuses", () => {
+    const names = (build: FlowPhase["status"]) => {
+      render({ phases: [{ id: "build", label: "Build", status: build }] });
+      return nameOf(items()[0]);
+    };
+    expect(names("running")).toBe("Build, running");
+    expect(names("blocked")).toBe("Build, blocked");
+    expect(names("failed")).toBe("Build, failed");
+    expect(names("done")).toBe("Build, done");
+  });
+
+  it("is a list for assistive technology even where list-style none drops the semantics", () => {
+    render();
+    expect(container.querySelector("ol")?.getAttribute("role")).toBe("list");
+  });
+
+  it("has no current step for a finished plan with a done final review and no test run found", () => {
+    const nodes = [1, 2].map((n) => ({ id: `task-${n}`, title: `Task ${n}`, index: n, status: "done" as const }));
+    const phases = deriveFlow({
+      plan: {
+        source: "sdd",
+        id: "sdd:p",
+        title: "P",
+        done: 2,
+        total: 2,
+        nodes,
+        planPath: "docs/p.md",
+        specPath: "docs/s.md",
+        finalReview: { id: "final-review", title: "Last review", status: "done" },
+      },
+      subagentsRunning: 0,
+      now: 0,
+    });
+    expect(phases.map((p) => p.status)).toEqual(["done", "done", "done", "done"]);
+    render({ phases });
+    expect(current()).toEqual([]);
   });
 
   it("wraps instead of overflowing", () => {

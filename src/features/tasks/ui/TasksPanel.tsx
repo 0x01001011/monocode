@@ -36,7 +36,7 @@ const LEGEND: [GlyphKind, string][] = [
 
 function Legend() {
   return (
-    <ul aria-label="Symbol legend" className="m-0 mx-3 mb-1 list-none rounded-md bg-selection-subtle p-2 text-[11.5px] text-muted">
+    <ul aria-label="Symbol legend" role="list" className="m-0 mx-3 mb-1 list-none rounded-md bg-selection-subtle p-2 text-[11.5px] text-muted">
       {LEGEND.map(([kind, text]) => (
         <li key={kind} className="flex min-h-6 items-center gap-2">
           <TaskGlyph kind={kind} small />

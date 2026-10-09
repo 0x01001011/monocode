@@ -308,6 +308,8 @@ describe("TasksPanel", () => {
     click(legend);
     expect(legend?.getAttribute("aria-expanded")).toBe("true");
     const list = container.querySelector("[aria-label='Symbol legend']");
+    // Safari drops list semantics from a list with list-style none unless the role is explicit.
+    expect(list?.getAttribute("role")).toBe("list");
     for (const label of ["Done", "Not started", "Running", "Needs you", "Struggling", "Quiet", "Failed", "Review found issues"]) {
       expect(list?.textContent).toContain(label);
     }

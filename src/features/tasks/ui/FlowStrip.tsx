@@ -1,5 +1,5 @@
 import type { FlowPhase } from "../model/flow";
-import { glyphForStatus, TaskGlyph } from "./TaskGlyph";
+import { glyphForStatus, TaskGlyph, type GlyphKind } from "./TaskGlyph";
 
 type Props = {
   phases: readonly FlowPhase[];
@@ -16,6 +16,15 @@ function currentIndex(phases: readonly FlowPhase[]): number {
 }
 
 /**
+ * A build that needs a look is struggling (a task the reviewer keeps sending back), the same
+ * mark the task tree gives such a task. Other phases keep the board vocabulary: a final
+ * review with findings is "review found issues".
+ */
+function glyphFor(phase: FlowPhase): GlyphKind {
+  return phase.id === "build" && phase.status === "attention" ? "struggling" : glyphForStatus(phase.status);
+}
+
+/**
  * Where the superpowers flow stands, as one wrapping line: `Spec › Plan › Build › Check`.
  * The glyph comes first on screen but after the label in the document, so a screen reader
  * says "Build, running, 3 of 6" and the glyph's own label is the only status word.
@@ -24,13 +33,13 @@ export function FlowStrip({ phases, onOpenPath }: Props) {
   if (phases.length === 0) return null;
   const current = currentIndex(phases);
   return (
-    <ol aria-label="Superpowers flow" className="m-0 flex list-none flex-wrap items-center gap-x-1.5 p-0 text-[11.5px] text-muted tabular-nums">
+    <ol aria-label="Superpowers flow" role="list" className="m-0 flex list-none flex-wrap items-center gap-x-1.5 p-0 text-[11.5px] text-muted tabular-nums">
       {phases.map((phase, i) => {
         const here = i === current;
         const weight = here ? "font-semibold" : "";
         const glyph = (
           <span className="order-first inline-flex">
-            <TaskGlyph kind={glyphForStatus(phase.status)} small />
+            <TaskGlyph kind={glyphFor(phase)} small />
           </span>
         );
         const path = phase.path;
