@@ -16,7 +16,8 @@ const ALLOWED = new Set(["src/app/shell/WindowControls.tsx"]);
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
+    // Forward slashes everywhere, so the allow-list matches on Windows too.
+    const path = join(dir, name).replace(/\\/g, "/");
     if (statSync(path).isDirectory()) return sources(path);
     return /\.tsx$/.test(name) ? [path] : [];
   });
