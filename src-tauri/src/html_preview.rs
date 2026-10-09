@@ -78,29 +78,46 @@ impl PreviewRegistry {
 }
 
 /// Answer one `preview://localhost/<token>/<path>` request.
+#[cfg(test)]
 pub fn serve(
     registry: &PreviewRegistry,
     path: &str,
     artifact_body: impl Fn(&str) -> Option<String>,
 ) -> http::Response<Vec<u8>> {
+    serve_with_file(registry, path, artifact_body).0
+}
+
+/// Like `serve`, and also reports the token and file read from a folder, so the
+/// watcher can follow exactly the files a page loads.
+pub fn serve_with_file(
+    registry: &PreviewRegistry,
+    path: &str,
+    artifact_body: impl Fn(&str) -> Option<String>,
+) -> (http::Response<Vec<u8>>, Option<(String, PathBuf)>) {
     let path = path.split(['?', '#']).next().unwrap_or_default();
     let path = path.trim_start_matches('/');
     let (token, rel) = path.split_once('/').unwrap_or((path, ""));
     match registry.get(token) {
         Some(PreviewRoot::Dir(root)) => match resolve(&root, rel) {
             Some(file) => match std::fs::read(&file) {
-                Ok(body) => respond(200, mime_type(&file), body),
-                Err(_) => not_found(),
+                Ok(body) => (
+                    respond(200, mime_type(&file), body),
+                    Some((token.to_string(), file)),
+                ),
+                Err(_) => (not_found(), None),
             },
-            None => not_found(),
+            None => (not_found(), None),
         },
         Some(PreviewRoot::Artifact(id)) if rel.is_empty() || rel == "index.html" => {
             match artifact_body(&id) {
-                Some(body) => respond(200, "text/html; charset=utf-8", body.into_bytes()),
-                None => not_found(),
+                Some(body) => (
+                    respond(200, "text/html; charset=utf-8", body.into_bytes()),
+                    None,
+                ),
+                None => (not_found(), None),
             }
         }
-        _ => not_found(),
+        _ => (not_found(), None),
     }
 }
 
@@ -186,40 +203,48 @@ const DEBOUNCE: Duration = Duration::from_millis(150);
 /// A steady stream of writes still reloads after this many windows.
 const MAX_DEBOUNCE_WINDOWS: u32 = 10;
 
-/// Watches the folders behind open previews and reports their tokens once per
+/// Watches the files behind open previews and reports their tokens once per
 /// debounced burst of changes.
+///
+/// A token follows exactly the files its page loaded (`watch_file`). An
+/// `index.html` at a repository root must not put a watch on every directory of
+/// the tree, and saving an unrelated file must not reload the page.
 pub struct PreviewWatcher {
     shared: Arc<WatchShared>,
 }
 
+#[derive(Default)]
+struct WatchState {
+    /// Files each token's page loaded; their folders are watched non-recursively.
+    files: HashMap<String, HashSet<PathBuf>>,
+    /// Folders registered with the OS for `files`.
+    file_dirs: HashSet<PathBuf>,
+}
+
 struct WatchShared {
     watcher: Mutex<RecommendedWatcher>,
-    roots: Arc<Mutex<HashMap<String, PathBuf>>>,
+    state: Arc<Mutex<WatchState>>,
 }
 
 impl PreviewWatcher {
     pub fn new(on_change: impl Fn(&str) + Send + 'static) -> Result<Self, String> {
-        let roots: Arc<Mutex<HashMap<String, PathBuf>>> = Arc::default();
+        let state: Arc<Mutex<WatchState>> = Arc::default();
         let (tx, rx) = channel::<String>();
-        let handler_roots = roots.clone();
+        let handler_state = state.clone();
         let watcher = notify::recommended_watcher(move |res: notify::Result<Event>| {
             let Ok(event) = res else { return };
             if matches!(event.kind, EventKind::Access(_)) {
                 return;
             }
-            let roots = handler_roots.lock().unwrap_or_else(|p| p.into_inner());
-            for (token, root) in roots.iter() {
-                if event
-                    .paths
-                    .iter()
-                    .any(|path| path.starts_with(root) && !is_ignored(root, path))
-                {
+            let state = handler_state.lock().unwrap_or_else(|p| p.into_inner());
+            for (token, files) in state.files.iter() {
+                if event.paths.iter().any(|path| files.contains(path)) {
                     let _ = tx.send(token.clone());
                 }
             }
         })
         .map_err(|err| err.to_string())?;
-        let dispatch_roots = roots.clone();
+        let dispatch_state = state.clone();
         std::thread::Builder::new()
             .name("html-preview-watch".into())
             .spawn(move || {
@@ -238,10 +263,10 @@ impl PreviewWatcher {
                     }
                     for token in tokens {
                         // Late events for a closed preview are dropped here.
-                        let live = dispatch_roots
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner())
-                            .contains_key(&token);
+                        let live = {
+                            let state = dispatch_state.lock().unwrap_or_else(|p| p.into_inner());
+                            state.files.contains_key(&token)
+                        };
                         if live {
                             on_change(&token);
                         }
@@ -252,52 +277,92 @@ impl PreviewWatcher {
         Ok(Self {
             shared: Arc::new(WatchShared {
                 watcher: Mutex::new(watcher),
-                roots,
+                state,
             }),
         })
     }
 
-    pub fn watch(&self, token: &str, dir: &Path) -> Result<(), String> {
-        // Events arrive with resolved paths (`/private/var` on macOS).
-        let dir = dir.canonicalize().map_err(|err| err.to_string())?;
-        let mut roots = self.shared.lock_roots();
-        if !roots.values().any(|root| root == &dir) {
-            self.shared
+    /// Follow one file a page loaded. Registers its folder once, non-recursively.
+    pub fn watch_file(&self, token: &str, file: &Path) -> Result<(), String> {
+        let file = file.canonicalize().map_err(|err| err.to_string())?;
+        let dir = file
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or("File has no folder")?;
+        let needs_watch = {
+            let mut state = self.shared.lock_state();
+            let covered = state.file_dirs.contains(&dir);
+            state
+                .files
+                .entry(token.to_string())
+                .or_default()
+                .insert(file.clone());
+            !covered
+        };
+        if needs_watch {
+            // The state lock is released first: the event handler takes it, and
+            // some backends wait on their event thread while registering.
+            let result = self
+                .shared
                 .lock_watcher()
-                .watch(&dir, RecursiveMode::Recursive)
-                .map_err(|err| err.to_string())?;
+                .watch(&dir, RecursiveMode::NonRecursive);
+            match result {
+                Ok(()) => {
+                    self.shared.lock_state().file_dirs.insert(dir);
+                }
+                Err(err) => {
+                    if let Some(files) = self.shared.lock_state().files.get_mut(token) {
+                        files.remove(&file);
+                    }
+                    return Err(err.to_string());
+                }
+            }
         }
-        roots.insert(token.to_string(), dir);
         Ok(())
     }
 
+    /// Folders currently registered with the OS.
+    #[cfg(test)]
+    pub fn watched_dirs(&self) -> usize {
+        self.shared.lock_state().file_dirs.len()
+    }
+
     pub fn unwatch(&self, token: &str) {
-        let mut roots = self.shared.lock_roots();
-        let Some(dir) = roots.remove(token) else {
-            return;
+        let release: Vec<PathBuf> = {
+            let mut state = self.shared.lock_state();
+            state.files.remove(token);
+            let used: HashSet<PathBuf> = state
+                .files
+                .values()
+                .flatten()
+                .filter_map(|file| file.parent().map(Path::to_path_buf))
+                .collect();
+            let unused: Vec<PathBuf> = state
+                .file_dirs
+                .iter()
+                .filter(|dir| !used.contains(*dir))
+                .cloned()
+                .collect();
+            for dir in &unused {
+                state.file_dirs.remove(dir);
+            }
+            unused
         };
-        if !roots.values().any(|root| root == &dir) {
-            let _ = self.shared.lock_watcher().unwatch(&dir);
+        let mut watcher = self.shared.lock_watcher();
+        for dir in release {
+            let _ = watcher.unwatch(&dir);
         }
     }
 }
 
 impl WatchShared {
-    fn lock_roots(&self) -> std::sync::MutexGuard<'_, HashMap<String, PathBuf>> {
-        self.roots.lock().unwrap_or_else(|p| p.into_inner())
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, WatchState> {
+        self.state.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     fn lock_watcher(&self) -> std::sync::MutexGuard<'_, RecommendedWatcher> {
         self.watcher.lock().unwrap_or_else(|p| p.into_inner())
     }
-}
-
-/// Dependency and VCS churn inside a previewed folder never reloads the page.
-fn is_ignored(root: &Path, path: &Path) -> bool {
-    path.strip_prefix(root).is_ok_and(|rel| {
-        rel.components()
-            .any(|part| matches!(part.as_os_str().to_str(), Some(".git" | "node_modules")))
-    })
 }
 
 /// What a preview frame shows: a folder (sites resolve relative links inside
@@ -340,14 +405,10 @@ pub fn preview_open(
 ) -> Result<String, String> {
     match source {
         PreviewSource::Dir { path } => {
-            let dir = expand_home(&path);
-            let token = state.registry.register(PreviewRoot::Dir(dir.clone()))?;
-            if let Some(watcher) = &state.watcher {
-                if let Err(err) = watcher.watch(&token, &dir) {
-                    eprintln!("monocode: html preview watch failed: {err}");
-                }
-            }
-            Ok(token)
+            // No watch yet: the scheme handler follows each file the page loads.
+            state
+                .registry
+                .register(PreviewRoot::Dir(expand_home(&path)))
         }
         PreviewSource::Artifact { id } => {
             validate_id(&id, "artifact")?;
@@ -375,7 +436,13 @@ pub fn handle_request(
     let path = request.uri().path().to_string();
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<PreviewState>();
-        let response = serve(&state.registry, &path, |id| artifact_html(&app, id));
+        let (response, served) =
+            serve_with_file(&state.registry, &path, |id| artifact_html(&app, id));
+        if let (Some((token, file)), Some(watcher)) = (served, &state.watcher) {
+            if let Err(err) = watcher.watch_file(&token, &file) {
+                eprintln!("monocode: html preview watch failed: {err}");
+            }
+        }
         responder.respond(response);
     });
 }

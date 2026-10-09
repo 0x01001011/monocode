@@ -230,15 +230,18 @@ fn html_preview_register_rejects_missing_or_file_roots() {
 #[test]
 fn html_preview_watcher_reports_changes_for_its_token() {
     let dir = site();
+    let root = dir.path().canonicalize().unwrap();
     let (tx, rx) = mpsc::channel::<String>();
     let watcher = PreviewWatcher::new(move |token: &str| {
         let _ = tx.send(token.to_string());
     })
     .unwrap();
-    watcher.watch("tok-a", dir.path()).unwrap();
+    watcher
+        .watch_file("tok-a", &root.join("assets/site.css"))
+        .unwrap();
     std::thread::sleep(Duration::from_millis(200));
-    fs::write(dir.path().join("assets/site.css"), "h1{color:blue}").unwrap();
-    fs::write(dir.path().join("new.html"), "new").unwrap();
+    fs::write(root.join("assets/site.css"), "h1{color:blue}").unwrap();
+    fs::write(root.join("assets/site.css"), "h1{color:teal}").unwrap();
     let first = rx
         .recv_timeout(Duration::from_secs(5))
         .expect("change event");
@@ -248,7 +251,7 @@ fn html_preview_watcher_reports_changes_for_its_token() {
     assert!(rx.try_iter().count() <= 2);
     watcher.unwatch("tok-a");
     std::thread::sleep(Duration::from_millis(200));
-    fs::write(dir.path().join("index.html"), "changed").unwrap();
+    fs::write(root.join("assets/site.css"), "changed").unwrap();
     assert!(rx.recv_timeout(Duration::from_millis(1200)).is_err());
 }
 
@@ -266,4 +269,83 @@ fn html_preview_artifact_kind_html_round_trips() {
 fn html_preview_agent_help_documents_html_artifacts() {
     let help = crate::control_cli::app_help();
     assert!(help.contains(r#""kind":"html""#), "{help}");
+}
+
+// --- Watch what the page loads (autoresearch P10) ---------------------------
+
+#[test]
+fn html_preview_serve_reports_the_file_it_read() {
+    let dir = site();
+    let registry = PreviewRegistry::default();
+    let token = registry
+        .register(PreviewRoot::Dir(dir.path().into()))
+        .unwrap();
+    let (response, served) = serve_with_file(&registry, &format!("/{token}/"), no_artifacts);
+    assert_eq!(response.status(), 200);
+    let (served_token, file) = served.expect("a served file");
+    assert_eq!(served_token, token);
+    assert_eq!(file, dir.path().canonicalize().unwrap().join("index.html"));
+    assert!(
+        serve_with_file(&registry, &format!("/{token}/missing.js"), no_artifacts)
+            .1
+            .is_none()
+    );
+    let artifact = registry
+        .register(PreviewRoot::Artifact("a".into()))
+        .unwrap();
+    let lookup = |_: &str| Some("<p>x</p>".to_string());
+    assert!(serve_with_file(&registry, &format!("/{artifact}/"), lookup)
+        .1
+        .is_none());
+}
+
+#[test]
+fn html_preview_reloads_only_for_files_the_page_loaded() {
+    let dir = site();
+    fs::write(dir.path().join("README.md"), "notes").unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let (tx, rx) = mpsc::channel::<String>();
+    let watcher = PreviewWatcher::new(move |token: &str| {
+        let _ = tx.send(token.to_string());
+    })
+    .unwrap();
+    watcher
+        .watch_file("tok-a", &root.join("index.html"))
+        .unwrap();
+    watcher
+        .watch_file("tok-a", &root.join("assets/site.css"))
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    // A sibling the page never requested must not reload it.
+    fs::write(root.join("README.md"), "edited").unwrap();
+    fs::write(root.join("assets/unused.txt"), "x").unwrap();
+    assert!(rx.recv_timeout(Duration::from_millis(900)).is_err());
+    // A file it did load must.
+    fs::write(root.join("assets/site.css"), "h1{color:green}").unwrap();
+    assert_eq!(
+        rx.recv_timeout(Duration::from_secs(5))
+            .expect("change event"),
+        "tok-a"
+    );
+}
+
+#[test]
+fn html_preview_a_served_file_does_not_watch_the_tree() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    fs::write(root.join("index.html"), "<p>hi</p>").unwrap();
+    for i in 0..60 {
+        fs::create_dir_all(root.join(format!("packages/p{i}/src"))).unwrap();
+    }
+    let watcher = PreviewWatcher::new(|_: &str| {}).unwrap();
+    watcher
+        .watch_file("tok-a", &root.join("index.html"))
+        .unwrap();
+    watcher
+        .watch_file("tok-a", &root.join("index.html"))
+        .unwrap();
+    // One directory, not one watch per folder in the tree.
+    assert_eq!(watcher.watched_dirs(), 1);
+    watcher.unwatch("tok-a");
+    assert_eq!(watcher.watched_dirs(), 0);
 }
