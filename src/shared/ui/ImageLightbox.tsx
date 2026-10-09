@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { resolveZoomKeybinding } from "../../features/settings/model/zoomKeybinding";
+import { claimTrackpadMagnify } from "../../platform/tauri/trackpadZoom";
 import { LAYER } from "../lib/layers";
 import { X } from "./icons";
 
@@ -14,11 +16,8 @@ type View = { scale: number; x: number; y: number };
 const MIN_SCALE = 1;
 const MAX_SCALE = 8;
 const DOUBLE_CLICK_SCALE = 2.5;
+const KEY_ZOOM_STEP = 1.25;
 const IDENTITY: View = { scale: 1, x: 0, y: 0 };
-
-// WebKit's non-standard pinch event; WKWebView sends these instead of
-// ctrl+wheel for trackpad pinches.
-type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number };
 
 export function ImageLightbox({ src, alt, onClose }: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -74,13 +73,43 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
       });
     };
 
-    let gestureStartScale: number | null = null;
+    // A pinch carries no position, so it zooms toward the last pointer spot.
+    const rect = container.getBoundingClientRect();
+    const pointer = {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+    };
+
+    // macOS pinches arrive from the native side; other platforms' webviews
+    // report a pinch as ctrl+wheel.
+    const releaseMagnify = claimTrackpadMagnify((delta) =>
+      zoomAt(viewRef.current.scale * (1 + delta), pointer.x, pointer.y),
+    );
+
+    // Cmd/Ctrl +, -, and 0 zoom the image instead of the app while it is open.
+    const onKeyDown = (event: KeyboardEvent) => {
+      const zoom = resolveZoomKeybinding(event);
+      if (!zoom) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const box = container.getBoundingClientRect();
+      const centerX = box.left + box.width / 2;
+      const centerY = box.top + box.height / 2;
+      const scale = viewRef.current.scale;
+      if (zoom === "zoom-in") zoomAt(scale * KEY_ZOOM_STEP, centerX, centerY);
+      else if (zoom === "zoom-out")
+        zoomAt(scale / KEY_ZOOM_STEP, centerX, centerY);
+      else setView(IDENTITY);
+    };
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const unit = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
-      if (event.ctrlKey) {
-        if (gestureStartScale !== null) return;
+      if (event.ctrlKey || event.metaKey) {
         const factor = Math.exp(-event.deltaY * unit * 0.01);
         zoomAt(viewRef.current.scale * factor, event.clientX, event.clientY);
         return;
@@ -94,21 +123,6 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
       });
     };
 
-    const onGestureStart = (event: Event) => {
-      event.preventDefault();
-      gestureStartScale = viewRef.current.scale;
-    };
-    const onGestureChange = (event: Event) => {
-      event.preventDefault();
-      if (gestureStartScale === null) return;
-      const gesture = event as GestureEvent;
-      zoomAt(gestureStartScale * gesture.scale, gesture.clientX, gesture.clientY);
-    };
-    const onGestureEnd = (event: Event) => {
-      event.preventDefault();
-      gestureStartScale = null;
-    };
-
     const onDoubleClick = (event: MouseEvent) => {
       if (event.target !== imageRef.current) return;
       if (viewRef.current.scale > MIN_SCALE) setView(IDENTITY);
@@ -118,17 +132,16 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
     const onResize = () => setView(viewRef.current);
 
     container.addEventListener("wheel", onWheel, { passive: false });
-    container.addEventListener("gesturestart", onGestureStart);
-    container.addEventListener("gesturechange", onGestureChange);
-    container.addEventListener("gestureend", onGestureEnd);
+    container.addEventListener("pointermove", onPointerMove);
     container.addEventListener("dblclick", onDoubleClick);
+    window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("resize", onResize);
     return () => {
+      releaseMagnify();
       container.removeEventListener("wheel", onWheel);
-      container.removeEventListener("gesturestart", onGestureStart);
-      container.removeEventListener("gesturechange", onGestureChange);
-      container.removeEventListener("gestureend", onGestureEnd);
+      container.removeEventListener("pointermove", onPointerMove);
       container.removeEventListener("dblclick", onDoubleClick);
+      window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("resize", onResize);
     };
   }, []);
@@ -137,7 +150,11 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
     if (event.button !== 0 || viewRef.current.scale === MIN_SCALE) return;
     const container = containerRef.current;
     if (!container) return;
-    const origin = { ...viewRef.current, pointerX: event.clientX, pointerY: event.clientY };
+    const origin = {
+      ...viewRef.current,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+    };
     event.currentTarget.setPointerCapture(event.pointerId);
     setDragging(true);
 
@@ -173,6 +190,7 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
       ref={containerRef}
       role="dialog"
       aria-modal="true"
+      data-image-zoom
       aria-label={`Image preview: ${alt}`}
       className="fixed inset-0 flex items-center justify-center overflow-hidden bg-black/85 p-6 backdrop-blur-sm"
       style={{ zIndex: LAYER.dialog }}
@@ -189,7 +207,11 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
         draggable={false}
         onPointerDown={startDrag}
         className={`max-h-full max-w-full select-none object-contain shadow-2xl ${
-          zoomed ? (dragging ? "cursor-grabbing" : "cursor-grab") : "cursor-zoom-in"
+          zoomed
+            ? dragging
+              ? "cursor-grabbing"
+              : "cursor-grab"
+            : "cursor-zoom-in"
         }`}
         style={{
           transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
@@ -219,8 +241,14 @@ function clampView(
   image: HTMLElement | null,
 ): View {
   if (!image || view.scale <= MIN_SCALE) return IDENTITY;
-  const maxX = Math.max(0, (image.offsetWidth * view.scale - container.clientWidth) / 2);
-  const maxY = Math.max(0, (image.offsetHeight * view.scale - container.clientHeight) / 2);
+  const maxX = Math.max(
+    0,
+    (image.offsetWidth * view.scale - container.clientWidth) / 2,
+  );
+  const maxY = Math.max(
+    0,
+    (image.offsetHeight * view.scale - container.clientHeight) / 2,
+  );
   return {
     scale: view.scale,
     x: Math.min(maxX, Math.max(-maxX, view.x)),
