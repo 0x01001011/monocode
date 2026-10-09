@@ -56,6 +56,9 @@ import {
   type GitFileDiffKind,
 } from "../../../platform/tauri/fs";
 import { syncWatchedMtime, watchFile } from "../model/fileWatch";
+import { filePreviewKind } from "../model/filePreview";
+import { HtmlFrame } from "../../html-preview/ui/HtmlFrame";
+import { isRemoteProjectPath } from "../../projects/model/recents";
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation } from "../../search/model/search";
 import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
@@ -144,8 +147,11 @@ export function FileEditor({
     lineEnding: LineEnding;
     eolOnly: boolean;
   } | null>(null);
-  const markdown = isMarkdownPath(path);
-  const svg = isSvgPath(path);
+  const previewKind = filePreviewKind(path);
+  const markdown = previewKind === "markdown";
+  const svg = previewKind === "svg";
+  // Remote files have no local folder for the preview scheme to serve.
+  const html = previewKind === "html" && !isRemoteProjectPath(path);
   // Diff tabs open as source: the git gutter only renders in the editor.
   const [mode, setMode] = useMarkdownMode(
     showDiff ? `review:${path}` : path,
@@ -155,13 +161,13 @@ export function FileEditor({
   useEffect(() => {
     if (
       !navigation ||
-      (!markdown && !svg) ||
+      (!markdown && !svg && !html) ||
       sourceNavigationToken.current === navigation.token
     )
       return;
     sourceNavigationToken.current = navigation.token;
     setMode("source");
-  }, [markdown, svg, navigation, setMode]);
+  }, [markdown, svg, html, navigation, setMode]);
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const saveGeneration = useRef(0);
   const loadGeneration = useRef(0);
@@ -458,7 +464,7 @@ export function FileEditor({
           changes. Line breaks are normalized in this view.
         </p>
       )}
-      {markdown || svg ? (
+      {markdown || svg || html ? (
         <MarkdownViewShell
           mode={mode}
           onModeChange={setMode}
@@ -475,6 +481,14 @@ export function FileEditor({
                   onOpenFile={onOpenFile}
                 />
               </FilePreviewSearch>
+            ) : html ? (
+              // Shows the saved file; the folder watcher reloads it on save.
+              mode === "preview" ? (
+                <HtmlFrame
+                  source={{ kind: "file", path }}
+                  title={basename(path)}
+                />
+              ) : null
             ) : (
               <SvgPreview source={draft} />
             )
@@ -1298,14 +1312,4 @@ function SvgPreview({ source }: { source: string }) {
       <img src={url} alt="" className="max-h-full max-w-full object-contain" />
     </div>
   );
-}
-
-function isSvgPath(path: string): boolean {
-  return basename(path).toLowerCase().endsWith(".svg");
-}
-
-function isMarkdownPath(path: string): boolean {
-  const name = basename(path).toLowerCase();
-  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
-  return [".md", ".mdx", ".markdown"].includes(extension);
 }

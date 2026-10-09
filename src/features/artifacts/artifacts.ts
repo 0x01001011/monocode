@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Block, Session } from "../sessions/model/session";
 
 /** Extend this union when a renderer and storage support for a new kind exist. */
-export type ArtifactKind = "document";
+export type ArtifactKind = "document" | "html";
 export type Artifact = {
   id: string;
   kind: ArtifactKind;
@@ -24,6 +24,8 @@ export function artifactLabel(kind: ArtifactKind): string {
   switch (kind) {
     case "document":
       return "Document";
+    case "html":
+      return "Web page";
   }
 }
 

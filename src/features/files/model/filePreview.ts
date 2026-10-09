@@ -11,6 +11,17 @@ const IMAGE_EXTENSIONS = new Set([
   ".ico",
 ]);
 
+export type FilePreviewKind = "markdown" | "svg" | "html";
+
+/** Text files the editor can also show rendered, beside their source. */
+export function filePreviewKind(path: string): FilePreviewKind | null {
+  const name = basename(path).toLowerCase();
+  if (/\.(md|mdx|markdown)$/.test(name)) return "markdown";
+  if (name.endsWith(".svg")) return "svg";
+  if (/\.html?$/.test(name)) return "html";
+  return null;
+}
+
 /**
  * Whether a path belongs to the image viewer, decided before anything is read.
  *
