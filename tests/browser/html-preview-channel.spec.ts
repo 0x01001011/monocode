@@ -233,3 +233,17 @@ test("a reloaded page returns to where the previous one was scrolled", async ({ 
     .toBe(1500);
   expect(await page.evaluate(() => (window as unknown as { restored: number }).restored)).toBe(1);
 });
+
+test("navigator.clipboard.writeText in a page reaches the host instead of failing", async ({ page }) => {
+  const frame = await open(page, {
+    pageScript: `
+      document.getElementById("field").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText("copied text"); document.title = "ok"; }
+        catch (e) { document.title = "failed:" + e.name; }
+      });`,
+  });
+  await frame.locator("#field").click();
+  await expect.poll(async () => (await msgs(page)).find((m) => m.type === "copy")?.text).toBe("copied text");
+  // The page's own promise resolved, so its UI can say 'Copied'.
+  await expect.poll(() => frame.locator("body").evaluate(() => document.title)).toBe("ok");
+});

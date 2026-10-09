@@ -95,6 +95,10 @@ const BOOTSTRAP: &str = concat!(
     "want={x:+d.x||0,y:+d.y||0};apply()});",
     "document.addEventListener(\"DOMContentLoaded\",apply);",
     "window.addEventListener(\"load\",function(){apply();want=null});",
+    // The frame may not use the clipboard itself, so navigator.clipboard.writeText
+    // asks the host, which writes only after a real click or key press.
+    "try{Object.defineProperty(navigator,\"clipboard\",{configurable:true,value:{",
+    "writeText:function(t){send({type:\"copy\",text:String(t).slice(0,100000)});return Promise.resolve()}}})}catch(x){}",
     "send({type:\"ready\"})",
     "})();</script>"
 );

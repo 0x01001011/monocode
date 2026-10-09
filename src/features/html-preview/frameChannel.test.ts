@@ -133,4 +133,19 @@ describe("parseFrameMessage", () => {
       expect(parseFrameMessage(msg({ type: "scroll", ...extra }), name)).toBeNull();
     });
   });
+
+  describe("copy", () => {
+    it("accepts text and clamps it", () => {
+      expect(parseFrameMessage(msg({ type: "copy", text: "hello" }), name)).toEqual({
+        type: "copy",
+        text: "hello",
+      });
+      const long = parseFrameMessage(msg({ type: "copy", text: "x".repeat(500_000) }), name);
+      expect(long?.type === "copy" && long.text.length).toBe(100_000);
+    });
+
+    it.each([undefined, null, 5, {}, ["a"], ""])("rejects text %j", (text) => {
+      expect(parseFrameMessage(msg({ type: "copy", text }), name)).toBeNull();
+    });
+  });
 });

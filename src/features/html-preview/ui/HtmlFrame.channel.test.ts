@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { copyMessage } from "../../../platform/tauri/clipboard";
 import { HtmlFrame } from "./HtmlFrame";
 import { clearPreviewLogs, getPreviewLogs, recordPreviewLog } from "../previewLogs";
 
@@ -13,6 +14,9 @@ const LOG_KEY = "file:/repo/site/index.html";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("../../../platform/tauri/clipboard", () => ({
+  copyMessage: vi.fn().mockResolvedValue(undefined),
+}));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -152,4 +156,31 @@ it("starts a fresh log when a new page loads in the frame", async () => {
   recordPreviewLog(LOG_KEY, "error", "from the previous load");
   await post(framed, { mcp: 1, n: nonce, type: "ready" });
   expect(getPreviewLogs(LOG_KEY)).toEqual([]);
+});
+
+it("copies text a page asked for after a real click", async () => {
+  activation(true);
+  const { iframe, framed } = await mount();
+  const nonce = iframe.getAttribute("name")!;
+  await post(framed, { mcp: 1, n: nonce, type: "copy", text: "npm install thing" });
+  expect(copyMessage).toHaveBeenCalledWith("npm install thing");
+});
+
+it.each([false, undefined] as const)(
+  "does not touch the clipboard without recent user activation (isActive: %s)",
+  async (state) => {
+    activation(state);
+    const { iframe, framed } = await mount();
+    const nonce = iframe.getAttribute("name")!;
+    await post(framed, { mcp: 1, n: nonce, type: "copy", text: "secret-looking" });
+    expect(copyMessage).not.toHaveBeenCalled();
+  },
+);
+
+it("does not let a page spam the clipboard", async () => {
+  activation(true);
+  const { iframe, framed } = await mount();
+  const nonce = iframe.getAttribute("name")!;
+  for (const text of ["a", "b", "c"]) await post(framed, { mcp: 1, n: nonce, type: "copy", text });
+  expect(copyMessage).toHaveBeenCalledTimes(1);
 });

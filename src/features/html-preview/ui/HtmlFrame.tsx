@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { copyMessage } from "../../../platform/tauri/clipboard";
 import { basename } from "../../../platform/tauri/fs";
 import { parentPath } from "../../../shared/lib/paths";
 import { newFrameName, parseFrameMessage } from "../frameChannel";
@@ -28,6 +29,8 @@ export type HtmlFrameSource =
  */
 /** Links from a page open at most this often. */
 const OPEN_COOLDOWN_MS = 750;
+/** Clipboard writes from a page are spaced at least this far apart. */
+const COPY_COOLDOWN_MS = 500;
 /** A reload that never reports loading still replaces the old page after this. */
 const SWAP_FALLBACK_MS = 1500;
 
@@ -67,6 +70,7 @@ export function HtmlFrame({
   const nextId = useRef(0);
   const elements = useRef(new Map<number, HTMLIFrameElement>());
   const lastOpen = useRef(0);
+  const lastCopy = useRef(0);
   // Where the page on screen is scrolled, to hand to the page that replaces it.
   const scrollPos = useRef<{ x: number; y: number } | null>(null);
   const readyCounts = useRef(new Map<number, number>());
@@ -187,6 +191,15 @@ export function HtmlFrame({
             "*",
           );
         }
+        return;
+      }
+      if (message?.type === "copy") {
+        // A page may copy only in answer to a click or key press, like a link.
+        const now = Date.now();
+        if (now - lastCopy.current < COPY_COOLDOWN_MS) return;
+        if (navigator.userActivation?.isActive !== true) return;
+        lastCopy.current = now;
+        void copyMessage(message.text).catch(() => undefined);
         return;
       }
       if (message?.type === "open") {

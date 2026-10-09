@@ -11,7 +11,10 @@ export type FrameMessage =
   | { type: "escape" }
   | { type: "open"; url: string }
   | { type: "console"; level: ConsoleLevel; text: string }
-  | { type: "scroll"; x: number; y: number };
+  | { type: "scroll"; x: number; y: number }
+  | { type: "copy"; text: string };
+
+const MAX_COPY = 100_000;
 
 const MAX_SCROLL = 10_000_000;
 
@@ -76,6 +79,12 @@ export function parseFrameMessage(
       return consoleMessage(own(data, "level"), own(data, "text"));
     case "scroll":
       return scrollMessage(own(data, "x"), own(data, "y"));
+    case "copy": {
+      const text = own(data, "text");
+      return typeof text === "string" && text
+        ? { type: "copy", text: text.slice(0, MAX_COPY) }
+        : null;
+    }
     default:
       return null;
   }
