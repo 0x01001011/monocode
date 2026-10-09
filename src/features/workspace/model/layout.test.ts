@@ -9,6 +9,7 @@ import {
   isReleaseNotesTab,
   isReviewTab,
   isSessionChangesTab,
+  isTaskBoardTab,
   isTerminalTab,
   layoutLeaves,
   layoutSashes,
@@ -20,6 +21,7 @@ import {
   newPlanTab,
   newReleaseNotesWorkspaceTab,
   newSessionChangesTab,
+  newTaskBoardTab,
   newTab,
   newTerminalFile,
   newTerminalWorkspaceTab,
@@ -31,6 +33,7 @@ import {
   openCommitTab,
   openEditorTab,
   openSessionChangesTab,
+  openTaskBoardTab,
   pinEditorFile,
   openWorkspaceFile,
   openTerminalTab,
@@ -238,6 +241,10 @@ describe("editorTabKey", () => {
       ),
     ).toBe(`commit:${cwd}:abc1234deadbeef`);
     expect(editorTabKey(newPlanTab("s", "b", "Plan", cwd))).toBe("plan:b");
+    expect(editorTabKey(newTaskBoardTab(cwd, "s1"))).toBe(
+      `task-board:${cwd}:s1`,
+    );
+    expect(isFilesystemTab(newTaskBoardTab(cwd, "s1"))).toBe(false);
     const terminal = newTerminalFile(cwd);
     expect(editorTabKey(terminal)).toBe(`terminal:${terminal.id}`);
     expect(isTerminalTab(terminal)).toBe(true);
@@ -276,6 +283,42 @@ describe("openSessionChangesTab", () => {
       reviews.find((file) => file.sessionChanges.sessionId === "session-a")
         ?.path,
     ).toBe("/repo/b.ts");
+  });
+});
+
+describe("openTaskBoardTab", () => {
+  it("opens once and refocuses", () => {
+    const cwd = "/repo";
+    const board = newTaskBoardTab(cwd, "session-a", "/project");
+    expect(board.path).toBe(cwd);
+    expect(board.taskBoard).toEqual({ sessionId: "session-a" });
+    expect(board.review).toBeUndefined();
+    expect(board.projectCwd).toBe("/project");
+    expect(isTaskBoardTab(board)).toBe(true);
+    expect(isTaskBoardTab(newFileTab("/repo/a.ts", cwd))).toBe(false);
+
+    const first = openTaskBoardTab(newTab("session-a"), cwd, "session-a");
+    const file = newFileTab("/repo/a.ts", cwd);
+    const withFile = openEditorTab(first, file, { pin: true });
+    expect(withFile.editorPanes[0]?.activeFileId).toBe(file.id);
+    const again = openTaskBoardTab(withFile, cwd, "session-a");
+    const second = openTaskBoardTab(again, cwd, "session-b");
+    const boards = second.editorPanes.flatMap((pane) =>
+      pane.files.filter(isTaskBoardTab),
+    );
+    expect(boards.map((entry) => entry.taskBoard.sessionId)).toEqual([
+      "session-a",
+      "session-b",
+    ]);
+    const refocused = second.editorPanes[0]?.files.find(
+      (entry) => entry.taskBoard?.sessionId === "session-a",
+    );
+    expect(openTaskBoardTab(second, cwd, "session-a").editorPanes[0]?.activeFileId).toBe(
+      refocused?.id,
+    );
+    expect(again.editorPanes[0]?.activeFileId).toBe(refocused?.id);
+    expect(again.editorPanes[0]?.files).toHaveLength(2);
+    expect(boards[0]?.preview).toBeUndefined();
   });
 });
 
