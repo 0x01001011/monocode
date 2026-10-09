@@ -29,7 +29,8 @@ afterEach(() => {
 });
 
 function setup() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "monocode-wscmd-")));
+  // `.native` expands Windows 8.3 short names (RUNNER~1), as the host's promises realpath does.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "monocode-wscmd-")));
   cleanups.push(dir);
   cpSync(fixture, dir, { recursive: true });
   const project = join(dir, "project");
@@ -144,7 +145,9 @@ describe("skill read containment", () => {
   const link = (target: string, path: string) =>
     symlinkSync(target, path, process.platform === "win32" ? "junction" : undefined);
 
-  it("does not read a secret through a symlinked SKILL.md", async () => {
+  // A junction cannot point at a file and unprivileged Windows cannot create file symlinks,
+  // so this case only runs where `symlink` can really link a file.
+  it.skipIf(process.platform === "win32")("does not read a secret through a symlinked SKILL.md", async () => {
     const { dir, project, home, commands } = setup();
     mkdirSync(join(dir, "secret"));
     writeFileSync(join(dir, "secret/id_rsa"), "PRIVATE KEY");
