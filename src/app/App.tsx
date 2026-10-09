@@ -425,8 +425,8 @@ import { requestComposerPrefill } from "../features/sessions/model/composerPrefi
 import {
   TaskActionsContext,
   useTaskActions,
-  type TaskActionHost,
 } from "../features/tasks/hooks/useTaskActions";
+import { buildTaskActionHost } from "../features/tasks/hooks/taskActionHost";
 import { planRootFor } from "../features/tasks/model/planRoot";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
@@ -8647,45 +8647,22 @@ function Workspace({
   );
 
   // The Tasks tab and board tabs act through one host; the hook owns what each button means.
-  const taskActionHost: TaskActionHost = {
+  const taskActionHost = buildTaskActionHost({
     selectSession: (sessionId) => onSelectHistorySession(sessionId),
     isBusy: (sessionId) => busySessionIds.has(sessionId),
-    // The stop request must reach the running turn, so a steerable harness gets it as a
-    // steer; any other harness keeps the user's follow-up setting. It is never an interrupt.
-    queueMessage: async (sessionId, text) => {
+    canSteer: (sessionId) => {
       const target = sessionsRef.current.find((s) => s.id === sessionId);
-      const steerable =
-        !!target && isLiveHarness(target.harness) && canSteerHarness(target.harness);
-      await submitSession(
-        sessionId,
-        text,
-        [],
-        steerable ? { followUpBehavior: "steer" } : undefined,
-      );
+      return !!target && isLiveHarness(target.harness) && canSteerHarness(target.harness);
     },
-    // Recorded for that session's pane, which inserts it (never sends) once it shows.
-    // A Mono has its own composer, so it is only selected.
-    prefillComposer: (sessionId, text) => {
-      if (!isMonoSession(sessionId)) requestComposerPrefill(sessionId, text);
-    },
-    remind: (sessionId, dueAt) => sessionReminders.schedule([sessionId], dueAt),
-    openFile: (path) =>
-      onOpenFile(path, undefined, /^(\/|[A-Za-z]:[\\/])/.test(path) ? { exact: true } : undefined),
-    openCommit: (range) => {
-      const sha = range.split("..").pop() ?? range;
-      onOpenCommit({
-        sha,
-        shortSha: sha.slice(0, 7),
-        parents: [],
-        author: "",
-        timestamp: 0,
-        subject: range,
-        refs: [],
-        head: false,
-      });
-    },
+    submit: (sessionId, text, options) => submitSession(sessionId, text, [], options),
+    isMono: isMonoSession,
+    requestComposerPrefill,
+    scheduleReminder: (sessionIds, dueAt) => sessionReminders.schedule(sessionIds, dueAt),
+    openFile: (path, options) => onOpenFile(path, undefined, options),
+    openCommit: (sha, subject) =>
+      onOpenCommit({ sha, shortSha: sha.slice(0, 7), parents: [], author: "", timestamp: 0, subject, refs: [], head: false }),
     scrollToBlock: requestTranscriptJump,
-  };
+  });
   const taskActions = useTaskActions(taskActionHost, {
     projectCwd: sidebarCwd,
     activeSessionId,
