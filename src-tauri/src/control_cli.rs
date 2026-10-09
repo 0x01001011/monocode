@@ -213,11 +213,17 @@ Actions:
                    "summary":"Merge queue and blockers",
                    "body":"<complete Markdown>"}
                   Save a document and attach its card below your chat reply.
-                  Artifacts are separate from Notes. Currently only kind "document"
-                  (Markdown) is supported. Reply briefly; do not
-                  repeat the document body in chat. Returns metadata only.
-                  To revise, pass {"id":"...","body":"<updated Markdown>"};
+                  Artifacts are separate from Notes. Kinds: "document"
+                  (Markdown) and "html". Reply briefly; do not
+                  repeat the artifact body in chat. Returns metadata only.
+                  To revise, pass {"id":"...","body":"<updated content>"};
                   omitted title stays unchanged. Reuse --request-id on retries.
+  artifacts.write {"kind":"html","title":"Q3 dashboard",
+                   "body":"<!doctype html>..."}
+                  Save one self-contained HTML page (inline CSS and JS; https
+                  CDNs work) shown live in a sandbox. Omit title to use the
+                  page's <title>. For multi-file sites, write .html files in
+                  the project instead: MonoCode previews them automatically.
   soul.read      {}  Mono's own conversation only. Current SOUL.md text and hash.
   soul.update    {"text":"<complete Markdown>","expectedHash":"<hash from soul.read>"}
                   Update your standing instructions only when the user asks.

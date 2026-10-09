@@ -72,10 +72,14 @@ fn command_line(pid: u32) -> Option<String> {
 }
 
 /// What ssh looks like when this app started it; guards against a recycled pid.
+// Platform-independent and tested everywhere; only unix builds reap at runtime.
+#[cfg_attr(not(unix), allow(dead_code))]
 fn is_our_tunnel(command: &str) -> bool {
     command.contains("ssh") && command.contains(" -N") && command.contains(" -L 127.0.0.1:")
 }
 
+// Platform-independent and tested everywhere; only unix builds reap at runtime.
+#[cfg_attr(not(unix), allow(dead_code))]
 fn reap_in(
     dir: &Path,
     alive: impl Fn(u32) -> bool,

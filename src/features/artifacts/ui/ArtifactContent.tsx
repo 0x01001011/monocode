@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import { HtmlFrame } from "../../html-preview/ui/HtmlFrame";
 import {
   ARTIFACTS_CHANGED_EVENT,
   getArtifact,
@@ -62,6 +63,17 @@ export function ArtifactContent({
           onOpenFile={onOpenFile}
           hardBreaks
         />
+      );
+    case "html":
+      // Readers scroll their article, so the page gets a fixed viewport.
+      return (
+        <div className="h-[min(70vh,720px)] overflow-hidden rounded-lg border border-content/10">
+          <HtmlFrame
+            source={{ kind: "artifact", id: artifact.id }}
+            title={artifact.title}
+            version={artifact.updatedAt}
+          />
+        </div>
       );
   }
 }

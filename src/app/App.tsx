@@ -336,6 +336,10 @@ import {
 
 import { isEditTool } from "../integrations/harness/core/preview";
 import {
+  createHtmlAutoOpener,
+  htmlWrittenPaths,
+} from "../features/html-preview/htmlPreview";
+import {
   createEditedResendAttempt,
   createEditedResendCoordinator,
 } from "../features/sessions/model/editLastTurn";
@@ -6460,6 +6464,13 @@ function Workspace({
     },
     [activateTab, insertBesideActive, closeMonoView],
   );
+  const onOpenFileRef = useRef(onOpenFile);
+  onOpenFileRef.current = onOpenFile;
+  // Agent-written HTML opens once per session; later writes only reload it.
+  const autoOpenHtml = useMemo(
+    () => createHtmlAutoOpener((path) => onOpenFileRef.current(path)),
+    [],
+  );
 
   const onOpenPlan = useCallback(
     (sessionId: string, blockId: string) => {
@@ -7707,6 +7718,9 @@ function Workspace({
             revealHandoff(wrap.text);
           }
           nudgeOpenEditors(event, workCwd);
+          // A Mono's work stays in its chat instead of opening editor tabs.
+          if (!isMonoSession(sessionId))
+            autoOpenHtml(sessionId, htmlWrittenPaths(event, workCwd));
           if (!orchestrator.forSession(sessionId))
             trackSessionEdits(sessionId, workCwd, event);
           const routed = routePlanEvent(event);

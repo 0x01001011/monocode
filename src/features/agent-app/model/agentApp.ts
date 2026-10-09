@@ -38,6 +38,7 @@ import type {
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import type { Worktree, Worktrees } from "../../source-control/model/worktrees";
 import { pathKey, projectName } from "../../../shared/lib/paths";
+import { htmlTitle } from "../../html-preview/htmlPreview";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage, type SessionReadOptions } from "./sessionConversation";
@@ -822,7 +823,12 @@ async function handleHabits(
 
 function artifactKind(value: unknown): ArtifactKind {
   if (value === undefined || value === "document") return "document";
-  throw new Error('Unsupported artifact kind; only "document" is supported');
+  if (value === "html") return "html";
+  throw new Error('Unsupported artifact kind; use "document" or "html"');
+}
+
+function artifactTitle(kind: ArtifactKind, body: string): string {
+  return kind === "html" ? (htmlTitle(body) ?? "Web page") : noteTitle(body);
 }
 
 async function handleArtifacts(
@@ -872,7 +878,6 @@ async function handleArtifacts(
   }
   if (!host.saveArtifact || !host.postArtifact)
     throw new Error("Artifacts are unavailable");
-  const kind = artifactKind(input.kind);
   const id = optionalString(input.id, "id", 256);
   if (id && !/^[A-Za-z0-9_-]+$/.test(id))
     throw new Error("Invalid artifact ID");
@@ -891,6 +896,9 @@ async function handleArtifacts(
       throw new Error("Supply title or body to update an artifact");
     const current = await host.artifact(id);
     if (!current) throw new Error("Artifact was not found");
+    // Revisions may omit the kind; it can never change.
+    const kind =
+      input.kind === undefined ? current.kind : artifactKind(input.kind);
     if (current.kind !== kind)
       throw new Error("An artifact's kind cannot be changed");
     artifact = await host.saveArtifact({
@@ -900,6 +908,7 @@ async function handleArtifacts(
       body: body ?? current.body,
     });
   } else {
+    const kind = artifactKind(input.kind);
     if (body === undefined)
       throw new Error("body is required to create an artifact");
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId))
@@ -909,7 +918,7 @@ async function handleArtifacts(
     if (
       existing &&
       (existing.kind !== kind ||
-        existing.title !== (title ?? noteTitle(body)) ||
+        existing.title !== (title ?? artifactTitle(kind, body)) ||
         existing.body !== body)
     )
       throw new Error("Request ID was already used for another artifact");
@@ -918,7 +927,7 @@ async function handleArtifacts(
       (await host.saveArtifact({
         id: createdId,
         kind,
-        title: title ?? noteTitle(body),
+        title: title ?? artifactTitle(kind, body),
         body,
         sourceSessionId: source.id,
         ...(looksLikeProject(source.cwd) ? { sourceCwd: source.cwd } : {}),
