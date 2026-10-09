@@ -7,7 +7,6 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
-  statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -30,8 +29,7 @@ afterEach(() => {
 });
 
 function setup() {
-  // Native: the code under test resolves paths natively, which expands the
-  // 8.3 short names (RUNNER~1) that the JS implementation leaves alone.
+  // `.native` expands Windows 8.3 short names (RUNNER~1), as the host's promises realpath does.
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "monocode-wscmd-")));
   cleanups.push(dir);
   cpSync(fixture, dir, { recursive: true });
@@ -124,35 +122,19 @@ describe("skill root read-only allowance", () => {
 });
 
 describe("skill read containment", () => {
-  // Windows links a directory with a junction but needs a real symlink for a
-  // file, which can require elevation; callers skip when it is refused.
   const link = (target: string, path: string) =>
-    symlinkSync(
-      target,
-      path,
-      process.platform !== "win32"
-        ? undefined
-        : statSync(target).isDirectory()
-          ? "junction"
-          : "file",
-    );
-  const refused = (error: unknown) =>
-    process.platform === "win32" &&
-    (error as NodeJS.ErrnoException).code === "EPERM";
+    symlinkSync(target, path, process.platform === "win32" ? "junction" : undefined);
 
-  it("does not read a secret through a symlinked SKILL.md", async (ctx) => {
+  // A junction cannot point at a file and unprivileged Windows cannot create file symlinks,
+  // so this case only runs where `symlink` can really link a file.
+  it.skipIf(process.platform === "win32")("does not read a secret through a symlinked SKILL.md", async () => {
     const { dir, project, home, commands } = setup();
     mkdirSync(join(dir, "secret"));
     writeFileSync(join(dir, "secret/id_rsa"), "PRIVATE KEY");
     for (const root of [project, home]) {
       const evil = join(root, ".claude/skills/evil");
       mkdirSync(evil);
-      try {
-        link(join(dir, "secret/id_rsa"), join(evil, "SKILL.md"));
-      } catch (error) {
-        if (refused(error)) return ctx.skip();
-        throw error;
-      }
+      link(join(dir, "secret/id_rsa"), join(evil, "SKILL.md"));
       await expect(
         commands.run("read_text_file", { path: join(evil, "SKILL.md") }),
       ).rejects.toThrow("outside");

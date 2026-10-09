@@ -8,6 +8,9 @@ import type {
   HostMetrics,
 } from "../src/features/connections/model/protocol";
 
+/** Linux sysfs paths are POSIX; do not let Windows separators leak into them. */
+const join = posix.join;
+
 const run = promisify(execFile);
 
 /** Readings are reused for this long, so any number of desktops costs one
@@ -125,22 +128,22 @@ export async function readCpuTemperature(
 ): Promise<number | undefined> {
   const readings: number[] = [];
   for (const dir of await sources.listDir("/sys/class/hwmon")) {
-    const base = posix.join("/sys/class/hwmon", dir);
-    const name = (await sources.readText(posix.join(base, "name")))?.trim();
+    const base = join("/sys/class/hwmon", dir);
+    const name = (await sources.readText(join(base, "name")))?.trim();
     if (!name || !CPU_SENSORS.has(name)) continue;
     for (const file of await sources.listDir(base)) {
       if (!/^temp\d+_input$/.test(file)) continue;
-      const value = celsius(await sources.readText(posix.join(base, file)));
+      const value = celsius(await sources.readText(join(base, file)));
       if (value !== undefined) readings.push(value);
     }
   }
   if (readings.length === 0) {
     for (const dir of await sources.listDir("/sys/class/thermal")) {
       if (!dir.startsWith("thermal_zone")) continue;
-      const base = posix.join("/sys/class/thermal", dir);
-      const type = (await sources.readText(posix.join(base, "type")))?.trim();
+      const base = join("/sys/class/thermal", dir);
+      const type = (await sources.readText(join(base, "type")))?.trim();
       if (!type || !CPU_SENSORS.has(type)) continue;
-      const value = celsius(await sources.readText(posix.join(base, "temp")));
+      const value = celsius(await sources.readText(join(base, "temp")));
       if (value !== undefined) readings.push(value);
     }
   }

@@ -199,10 +199,7 @@ describe("symlink containment", () => {
     const found = ok(listSkills({ cwd: project, home })).skills.find(
       (skill) => skill.name === "foo",
     );
-    // Catalog paths use forward slashes on every platform.
-    expect(found?.path).toBe(
-      join(home, ".claude/skills/foo/SKILL.md").replace(/\\/g, "/"),
-    );
+    expect(found?.path).toBe(join(home, ".claude/skills/foo/SKILL.md").replace(/\\/g, "/"));
   });
 
   it("lists skills under a symlinked skills root by the same rule", () => {
