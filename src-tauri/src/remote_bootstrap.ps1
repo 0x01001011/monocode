@@ -4,7 +4,6 @@ $base = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.monocode-host'
 $version = @@VERSION@@
 $release = @@RELEASE@@
 $forceUpgrade = $env:MONOCODE_HOST_FORCE_UPGRADE -eq '1'
-$hostPort = if ($env:MONOCODE_HOST_PORT) { [int] $env:MONOCODE_HOST_PORT } else { 3774 }
 @@ACL@@
 
 function Download-MonoCode([string] $Url, [string] $Destination) {
@@ -101,7 +100,9 @@ try {
     & $node $entry service uninstall | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Could not stop the old host service.' }
   }
-  & $node $entry service install --port $hostPort | Out-Null
+  # Without MONOCODE_HOST_PORT the host picks the first free port from 3774.
+  if ($env:MONOCODE_HOST_PORT) { & $node $entry service install --port ([int] $env:MONOCODE_HOST_PORT) | Out-Null }
+  else { & $node $entry service install | Out-Null }
   if ($LASTEXITCODE -ne 0) { throw 'Host service setup failed. Check the error above and sign in to the Windows desktop as the SSH user.' }
   & $node $entry connection-info
   if ($LASTEXITCODE -ne 0) { throw 'The host did not report a connection.' }

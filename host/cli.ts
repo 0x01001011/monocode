@@ -27,6 +27,7 @@ import {
   REMOTE_PROVIDERS,
   type RemoteProvider,
 } from "../src/features/connections/model/protocol";
+import { firstFreePort } from "./port";
 import { connectionInfo, installService, uninstallService } from "./service";
 import { version } from "../package.json";
 import { protectWindowsDirectory } from "./windows";
@@ -126,7 +127,8 @@ Connect another computer using an SSH forward to the loopback port.`);
       JSON.stringify(
         await installService({
           directory,
-          port,
+          // Another account on this machine may already own the default port.
+          port: args.includes("--port") ? port : await firstFreePort(port),
           executable: process.execPath,
           entry: fileURLToPath(import.meta.url),
         }),
