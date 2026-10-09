@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildSddSection, type SddSnapshot } from "./sddBoard";
+import { deriveStatusCard } from "./statusCard";
+import type { BoardNode } from "./taskBoard";
 
 const FIXTURE = join(process.cwd(), "test-fixtures/sdd/skills-index");
 const read = (name: string) => readFileSync(join(FIXTURE, name), "utf8");
@@ -152,6 +154,93 @@ describe("buildSddSection", () => {
     expect(node(buildSddSection(fixtureSnapshot({ ledgerText: ledger }), NOW), 1).summary).toBe(
       "Review found issues. Fixed in 1 round, then passed.",
     );
+  });
+
+  describe("review in progress before the ledger records it", () => {
+    const kinds = (n: BoardNode) => n.stages?.map((s) => [s.kind, s.label, s.status]);
+    const withReport7 = (status: string, ledgerTail = "") => {
+      const snap = fixtureSnapshot({ ledgerText: `${ledgerThroughTask6()}\n${ledgerTail}` });
+      snap.reports[7] = `# Task 7 report\n\nStatus: ${status}\n`;
+      return snap;
+    };
+
+    it("a DONE report with no ledger line yet shows a running review from the report time", () => {
+      const t7 = node(buildSddSection(withReport7("DONE"), NOW), 7);
+      expect(t7.status).toBe("running");
+      expect(kinds(t7)).toEqual([
+        ["implement", "Implement", "done"],
+        ["review", "Review in progress", "running"],
+      ]);
+      expect(t7.stages![1].startedAt).toBe(reportAt(7));
+    });
+
+    it("the review starts at the newest package written at or after the report", () => {
+      const snap = withReport7("DONE_WITH_CONCERNS");
+      const before = { name: "review-1111111..2222222.diff", mtimeMs: reportAt(7) - MIN };
+      const first = { name: "review-fd0b3b3..3333333.diff", mtimeMs: reportAt(7) + MIN };
+      const newest = { name: "review-fd0b3b3..4444444.diff", mtimeMs: reportAt(7) + 2 * MIN };
+      snap.reviews = [before, newest, first];
+      expect(node(buildSddSection(snap, NOW), 7).stages![1].startedAt).toBe(newest.mtimeMs);
+    });
+
+    it("a `review pending` line runs the review too", () => {
+      const snap = withReport7("DONE", "Task 7: implemented (5555555); review pending");
+      const t7 = node(buildSddSection(snap, NOW), 7);
+      expect(kinds(t7)?.at(-1)).toEqual(["review", "Review in progress", "running"]);
+      expect(t7.stages![1].startedAt).toBe(reportAt(7));
+    });
+
+    it("no review stage for a BLOCKED or NEEDS_CONTEXT report", () => {
+      for (const status of ["BLOCKED", "NEEDS_CONTEXT"]) {
+        const t7 = node(buildSddSection(withReport7(status), NOW), 7);
+        expect(t7.stages?.some((s) => s.kind === "review")).toBe(false);
+      }
+    });
+
+    it("a fix whose code is in shows a running re-review after the fix stage", () => {
+      const tail = [
+        "Task 7: implemented (aaaa111); review: spec ✅, Important x1 (x)",
+        "Task 7: fix round 1/5 dispatched (resume implementer abc); FIX_BASE=aaaa111",
+        "Task 7: fix round 1/5 implemented (bbbb222, by a fresh agent); re-review pending",
+      ].join("\n");
+      const snap = withReport7("DONE", tail);
+      const pkg = { name: "review-aaaa111..bbbb222.diff", mtimeMs: reportAt(7) + 9 * MIN };
+      snap.reviews = [pkg];
+      const t7 = node(buildSddSection(snap, NOW), 7);
+      expect(kinds(t7)).toEqual([
+        ["implement", "Implement", "done"],
+        ["review", "Review", "attention"],
+        ["fix", "R1", "done"],
+        ["review", "Review in progress", "running"],
+      ]);
+      expect(t7.stages![3].startedAt).toBe(pkg.mtimeMs);
+    });
+
+    it("a re-review package from FIX_BASE alone marks the re-review as running", () => {
+      const tail = [
+        "Task 7: implemented (aaaa111); review: spec ❌",
+        "Task 7: fix round 1/5 dispatched; FIX_BASE=aaaa111",
+      ].join("\n");
+      const snap = withReport7("DONE", tail);
+      expect(kinds(node(buildSddSection(snap, NOW), 7))?.at(-1)).toEqual(["fix", "R1", "running"]);
+      snap.reviews = [{ name: "review-aaaa111..cccc333.diff", mtimeMs: reportAt(7) + 5 * MIN }];
+      expect(kinds(node(buildSddSection(snap, NOW), 7))?.slice(-2)).toEqual([
+        ["fix", "R1", "done"],
+        ["review", "Review in progress", "running"],
+      ]);
+    });
+
+    it("the status card says a reviewer is checking the task", () => {
+      const plan = buildSddSection(withReport7("DONE"), NOW);
+      const card = deriveStatusCard({
+        sessions: [{ id: "s1", title: "Run", busy: true, needsInput: false, lastActivityAt: NOW }],
+        activeSessionId: "s1",
+        plan,
+        now: NOW,
+        quietAfterMs: 5 * MIN,
+      });
+      expect(card.headline).toBe("A reviewer is checking Task 7");
+    });
   });
 
   it("running task past round 3 is attention", () => {

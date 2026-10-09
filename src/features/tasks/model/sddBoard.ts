@@ -29,6 +29,7 @@ const BRIEF_FILE = /^task-\d+-brief\.md$/;
 const REVIEW_RANGE = /^review-(.+?)\.\.(.+)\.diff$/;
 const SHA_RANGE = /\b([0-9a-f]{4,40})\.\.([0-9a-f]{4,40})\b/;
 const AUTO_FIX_ROUNDS = 3;
+const REVIEW_RUNNING = "Review in progress";
 
 function sectionTitle(slug: string): string {
   const words = slug.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/-/g, " ");
@@ -80,15 +81,40 @@ function latest(reviews: Review[]): number | undefined {
   return reviews.length ? Math.max(...reviews.map((r) => r.mtimeMs)) : undefined;
 }
 
-function stagesFor(
-  task: LedgerTask | undefined,
-  status: BoardStatus,
-  startedAt: number | undefined,
-  reportAt: number | undefined,
-  reviews: Review[],
-  implementDone: boolean,
-): BoardStage[] {
+/** Packages named `review-<start>..….diff` whose start is `sha`. */
+function packagesFrom(reviews: Review[], sha: string | undefined): Review[] {
+  if (!sha) return [];
+  return reviews.filter((r) => {
+    const start = REVIEW_RANGE.exec(r.name)?.[1];
+    return start !== undefined && sameSha(start, sha);
+  });
+}
+
+/**
+ * When a review that the ledger has not recorded yet started: the task's own
+ * package, else the newest package written at or after the report, else the report.
+ */
+function pendingReviewStart(reviews: Review[], sha: string | undefined, reportAt: number | undefined): number | undefined {
+  const own = latest(packagesFor(reviews, sha));
+  if (own !== undefined) return own;
+  if (reportAt === undefined) return undefined;
+  return latest(reviews.filter((r) => r.mtimeMs >= reportAt)) ?? reportAt;
+}
+
+type StageInput = {
+  task: LedgerTask | undefined;
+  status: BoardStatus;
+  startedAt: number | undefined;
+  reportAt: number | undefined;
+  /** The report says DONE or DONE_WITH_CONCERNS: the code is in and a review follows. */
+  reportDone: boolean;
+  reviews: Review[];
+  implementDone: boolean;
+};
+
+function stagesFor({ task, status, startedAt, reportAt, reportDone, reviews, implementDone }: StageInput): BoardStage[] {
   const done = status === "done";
+  const active = !done && status !== "blocked";
   const stages: BoardStage[] = [
     {
       kind: "implement",
@@ -99,25 +125,43 @@ function stagesFor(
     },
   ];
   const implemented = task?.implemented;
-  if (implemented) {
-    const verdict = implemented.verdict;
+  const fixes = task?.fixes ?? [];
+  const verdict = implemented?.verdict;
+  if (verdict !== undefined || (implemented && (done || fixes.length > 0))) {
+    // A dispatched fix round means the review sent the task back, even with no verdict text.
+    const issues = verdict !== undefined ? reviewFoundIssues(verdict) : fixes.length > 0;
     stages.push({
       kind: "review",
       label: "Review",
-      status: !verdict && !done ? "running" : verdict && reviewFoundIssues(verdict) ? "attention" : "done",
+      status: issues ? "attention" : "done",
       ...(verdict ? { verdict } : {}),
-      startedAt: latest(packagesFor(reviews, implemented.sha)),
+      startedAt: latest(packagesFor(reviews, implemented?.sha)),
+    });
+  } else if (active && fixes.length === 0 && (implemented !== undefined || reportDone)) {
+    // The report landed (or the ledger says `review pending`): a reviewer is on it.
+    stages.push({
+      kind: "review",
+      label: REVIEW_RUNNING,
+      status: "running",
+      startedAt: pendingReviewStart(reviews, implemented?.sha, reportAt),
     });
   }
-  for (const fix of task?.fixes ?? []) {
+  for (const fix of fixes) {
     const finished = fix.state === "done";
+    // The fix's code is in and its re-review runs: the ledger says so, or the
+    // re-review package (starting at FIX_BASE) exists.
+    const open = active && !finished && fix === fixes[fixes.length - 1];
+    const rereview = open ? [...packagesFrom(reviews, fix.base), ...packagesFor(reviews, fix.implementedSha)] : [];
+    const reviewing = open && (rereview.length > 0 || fix.implementedSha !== undefined);
+    const reviewAt = latest(rereview);
     stages.push({
       kind: "fix",
       label: `R${fix.round}`,
-      status: finished ? ((fix.open ?? 0) > 0 ? "attention" : "done") : done ? "done" : "running",
+      status: finished ? ((fix.open ?? 0) > 0 ? "attention" : "done") : done || reviewing ? "done" : "running",
       ...(finished ? { verdict: `${fix.addressed ?? 0} addressed, ${fix.open ?? 0} open` } : {}),
-      endedAt: latest(packagesFor(reviews, fix.commits ? endSha(fix.commits) : undefined)),
+      endedAt: reviewing ? reviewAt : latest(packagesFor(reviews, fix.commits ? endSha(fix.commits) : undefined)),
     });
+    if (reviewing) stages.push({ kind: "review", label: REVIEW_RUNNING, status: "running", startedAt: reviewAt });
   }
   return stages;
 }
@@ -233,6 +277,7 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     const task = ledgerTasks.get(n);
     const brief = briefs.get(n);
     const report = snapshot.reports[n];
+    const reportState = report !== undefined ? reportStatus(report) : undefined;
     // Briefs alone are not evidence (they may all be extracted up front). Once the
     // ledger has any Task line, the first unfinished task is the one in progress.
     const hasSignal = report !== undefined || ledger.tasks.length > 0;
@@ -244,7 +289,7 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     } else if (hasSignal && !runningTaken) {
       runningTaken = true;
       status =
-        report !== undefined && reportStatus(report) === "BLOCKED"
+        reportState === "BLOCKED"
           ? "blocked"
           : maxRound >= AUTO_FIX_ROUNDS
             ? "attention"
@@ -275,7 +320,19 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
       startedAt,
       endedAt,
       ...(status === "done" && summaryFor(task) ? { summary: summaryFor(task) } : {}),
-      ...(started ? { stages: stagesFor(task, status, startedAt, reportAt, reviews, implementDone) } : {}),
+      ...(started
+        ? {
+            stages: stagesFor({
+              task,
+              status,
+              startedAt,
+              reportAt,
+              reportDone: reportState === "DONE" || reportState === "DONE_WITH_CONCERNS",
+              reviews,
+              implementDone,
+            }),
+          }
+        : {}),
       ...(brief
         ? {
             steps: brief.steps.map((text) => ({
