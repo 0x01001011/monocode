@@ -1,6 +1,8 @@
 import { execFile, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 import {
+  chmod,
   copyFile,
   mkdtemp,
   lstat,
@@ -9,12 +11,12 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
-  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
   GitChangedFile,
   GitDiffIndex,
@@ -501,7 +503,30 @@ export async function writeHostFile(
   const current = await readHostFile(root, input);
   if (current !== expected)
     throw new Error("File changed on the host; reload before saving");
-  await writeFile(path, content, "utf8");
+  // Write a sibling temp file and swap it in, so a crash or full disk never
+  // leaves a truncated file, and re-check right before the swap so an edit that
+  // landed after the first read (an agent working in the same folder) wins.
+  const mode = (await stat(path)).mode & 0o7777;
+  const temp = join(
+    dirname(path),
+    `.${basename(path)}.monocode-${randomBytes(6).toString("hex")}`,
+  );
+  try {
+    const handle = await open(temp, "wx", 0o600);
+    try {
+      await handle.writeFile(content, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await chmod(temp, mode);
+    if ((await readHostFile(root, input)) !== expected)
+      throw new Error("File changed on the host; reload before saving");
+    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
+  }
 }
 
 /** Create a new file or folder under an existing workspace directory. */
