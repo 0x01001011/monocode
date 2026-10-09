@@ -51,7 +51,8 @@ const MINUTE_MS = 60_000;
 const STRUGGLING_FROM_ROUND = 3;
 const MAX_FIX_ROUNDS = 5;
 
-const wholeMinutes = (ms: number): string => formatDuration(Math.floor(ms / MINUTE_MS) * MINUTE_MS, false);
+/** Whole minutes, at least one: a quiet or waiting time never reads "<1m". */
+const wholeMinutes = (ms: number): string => formatDuration(Math.max(1, Math.floor(ms / MINUTE_MS)) * MINUTE_MS, false);
 const FINAL_REVIEW_ID = "final-review";
 /** "Task 6", "the final review", else the node's title; capitalize at the start of a sentence. */
 const taskLabel = (node: BoardNode): string =>
@@ -212,7 +213,7 @@ function core(input: StatusCardInput): StatusCard {
 
   const stuck = owner?.busy ? strugglingNode(plan) : undefined;
   if (stuck && owner) {
-    const rounds = stuck.fixRounds ?? STRUGGLING_FROM_ROUND;
+    const rounds = Math.min(stuck.fixRounds ?? STRUGGLING_FROM_ROUND, MAX_FIX_ROUNDS);
     return {
       kind: "struggling",
       sessionId: owner.id,
@@ -225,12 +226,16 @@ function core(input: StatusCardInput): StatusCard {
 
   const quiet = quietest(input.sessions, input);
   if (quiet) {
-    const target = quiet.session.id === owner?.id && current ? taskLabel(current) : quiet.session.title;
+    const node = quiet.session.id === owner?.id ? current : undefined;
+    const stage = node?.stages?.[node.stages.length - 1];
+    const reviewing = stage?.status === "running" && (stage.kind === "review" || stage.kind === "final-review");
+    // The headline is a live region: minutes go in the detail so it is not re-announced each minute.
     return {
       kind: "quiet",
       sessionId: quiet.session.id,
-      headline: `No activity on ${target} for ${wholeMinutes(quiet.idle)}`,
-      actions: ["open-reviewer", "keep-waiting"],
+      headline: `No activity on ${node ? taskLabel(node) : quiet.session.title}`,
+      detail: `Quiet for ${wholeMinutes(quiet.idle)}.`,
+      actions: [reviewing ? "open-reviewer" : "open-session", "keep-waiting"],
       ...(quiet.session.lastActivityAt !== undefined ? { since: quiet.session.lastActivityAt } : {}),
     };
   }

@@ -138,12 +138,37 @@ describe("TasksPanel", () => {
     expect(button("Answer in session")).toBeDefined();
   });
 
-  it("quiet card shows when the session last wrote", () => {
+  it("quiet card: minutes and the last activity time sit outside the live headline", () => {
     const since = new Date(2026, 9, 9, 15, 2).getTime();
-    const card: StatusCard = { kind: "quiet", sessionId: "s1", headline: "No activity on Task 6 for 6m", actions: ["open-reviewer", "keep-waiting"], since };
+    const card: StatusCard = {
+      kind: "quiet",
+      sessionId: "s1",
+      headline: "No activity on Task 6",
+      detail: "Quiet for 6m.",
+      actions: ["open-session", "keep-waiting"],
+      since,
+    };
     render({ board: board({ statusCard: card }) });
-    const at = new Date(since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    expect(text()).toContain(`The reviewer last wrote at ${at}. It may be running a long test.`);
+    expect(text()).toContain("Quiet for 6m. Last activity at 15:02.");
+    const live = container.querySelector('[role="status"]');
+    expect(live?.textContent).toBe("No activity on Task 6");
+    expect(text()).not.toContain("reviewer last wrote");
+  });
+
+  it("the headline remounts when the card's kind changes, so a new state is announced", () => {
+    render({ board: board({ statusCard: runningCard }) });
+    const first = container.querySelector('[role="status"]');
+    render({ board: board({ statusCard: { ...runningCard, kind: "quiet", headline: "No activity on Task 6", actions: [] } }) });
+    expect(container.querySelector('[role="status"]')).not.toBe(first);
+  });
+
+  it("a long session title in Answer in wraps instead of overflowing", () => {
+    const title = "a-very-long-session-title-that-goes-on-and-on-and-on-and-on";
+    const card: StatusCard = { kind: "needs-you", sessionId: "s2", sessionTitle: title, headline: "x", actions: ["answer-in-session"] };
+    render({ board: board({ statusCard: card }) });
+    const answer = button(`Answer in ${title}`);
+    expect(answer?.className).not.toContain("whitespace-nowrap");
+    expect(answer?.className).toContain("break-words");
   });
 
   it("hides Review decisions when the plan has no decisions", () => {

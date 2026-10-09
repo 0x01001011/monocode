@@ -198,8 +198,9 @@ describe("deriveStatusCard", () => {
     expect(quiet).toMatchObject({
       kind: "quiet",
       sessionId: "s1",
-      headline: "No activity on Task 6 for 6m",
-      actions: ["open-reviewer", "keep-waiting"],
+      headline: "No activity on Task 6",
+      detail: "Quiet for 6m.",
+      actions: ["open-session", "keep-waiting"],
       since: NOW - 6 * MIN,
     });
 
@@ -231,7 +232,33 @@ describe("deriveStatusCard", () => {
     });
     expect(card.kind).toBe("quiet");
     expect(card.sessionId).toBe("s2");
-    expect(card.headline).toBe("No activity on ssh-hardening for 8m");
+    expect(card.headline).toBe("No activity on ssh-hardening");
+    expect(card.detail).toBe("Quiet for 8m.");
+    expect(card.actions).toEqual(["open-session", "keep-waiting"]);
+  });
+
+  it("quiet: the headline has no minutes (it is a live region); a quiet reviewer gets Open reviewer", () => {
+    const base = { activeSessionId: "s1", planOwnerIds: ["s1"], now: NOW, quietAfterMs: QUIET };
+    const early = deriveStatusCard({ ...base, plan: runningPlan("review"), sessions: [active({ lastActivityAt: NOW - 6 * MIN })] });
+    const later = deriveStatusCard({ ...base, plan: runningPlan("review"), sessions: [active({ lastActivityAt: NOW - 9 * MIN })] });
+    expect(early.headline).toBe(later.headline);
+    expect(early.actions).toEqual(["open-reviewer", "keep-waiting"]);
+    // A sub-minute threshold still reads in whole minutes, never "<1m".
+    const short = deriveStatusCard({ ...base, quietAfterMs: 20_000, plan: runningPlan(), sessions: [active({ lastActivityAt: NOW - 30_000 })] });
+    expect(short.detail).toBe("Quiet for 1m.");
+  });
+
+  it("a fix round past the limit is clamped in the copy", () => {
+    const card = deriveStatusCard({
+      sessions: [active({ lastActivityAt: NOW - MIN })],
+      activeSessionId: "s1",
+      planOwnerIds: ["s1"],
+      plan: strugglingPlan(6),
+      now: NOW,
+      quietAfterMs: QUIET,
+    });
+    expect(card.headline).toBe("Task 6 is on fix round 5 of 5");
+    expect(card.detail).toBe("The reviewer has sent it back 5 times. If round 5 fails, it stops and asks you.");
   });
 
   it("running names the task, the stage and how long it has run", () => {

@@ -38,7 +38,7 @@ const GLYPH: Partial<Record<StatusKind, GlyphKind>> = {
 };
 
 const BUTTON =
-  "min-h-6 rounded-[7px] px-2.5 py-1 text-[11.5px] whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
+  "min-h-6 rounded-[7px] px-2.5 py-1 text-[11.5px] outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
 
 export function actionLabel(action: StatusAction, card: StatusCardData): string {
   if (action === "answer-in-session" && card.sessionTitle) return `Answer in ${card.sessionTitle}`;
@@ -46,9 +46,10 @@ export function actionLabel(action: StatusAction, card: StatusCardData): string 
 }
 
 function actionClass(action: StatusAction): string {
-  if (PRIMARY.has(action)) return `${BUTTON} bg-diff-del font-semibold text-black/80`;
-  if (SOLID.has(action)) return `${BUTTON} bg-selection text-content`;
-  return `${BUTTON} text-content/66 hover:bg-selection-subtle`;
+  // "Answer in <title>" carries a session title of any length: it wraps inside the card.
+  if (PRIMARY.has(action)) return `${BUTTON} max-w-full text-left break-words bg-diff-del font-semibold text-black/80`;
+  if (SOLID.has(action)) return `${BUTTON} whitespace-nowrap bg-selection text-content`;
+  return `${BUTTON} whitespace-nowrap text-content/66 hover:bg-selection-subtle`;
 }
 
 // The card's dot is the only moving thing in the panel; reduced motion keeps it still.
@@ -75,8 +76,8 @@ const OTHERS_GLYPH: Partial<Record<StatusKind, GlyphKind>> = {
   quiet: "quiet",
 };
 
-function lastWroteAt(since: number): string {
-  return new Date(since).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function clockTime(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }
 
 export function StatusCard({ card, onAction }: Props) {
@@ -92,18 +93,19 @@ export function StatusCard({ card, onAction }: Props) {
         <div className="flex items-start gap-2">
           <CardGlyph kind={card.kind} />
           <div className="min-w-0 flex-1">
+            {/* Remounted per kind, so a change of state is announced as new. */}
             <div
+              key={card.kind}
               role={card.kind === "needs-you" ? "alert" : "status"}
               className="text-[14px] leading-[1.3] font-semibold text-content"
             >
               {card.headline}
             </div>
-            {card.detail ? (
-              <div className="mt-0.5 text-[12.5px] leading-[1.4] text-content/66 tabular-nums">{card.detail}</div>
-            ) : null}
-            {card.kind === "quiet" && card.since !== undefined ? (
-              <div className="mt-0.5 text-[12.5px] leading-[1.4] text-content/66">
-                The reviewer last wrote at {lastWroteAt(card.since)}. It may be running a long test.
+            {card.detail || (card.kind === "quiet" && card.since !== undefined) ? (
+              <div className="mt-0.5 text-[12.5px] leading-[1.4] text-content/66 tabular-nums">
+                {[card.detail, card.kind === "quiet" && card.since !== undefined ? `Last activity at ${clockTime(card.since)}.` : undefined]
+                  .filter(Boolean)
+                  .join(" ")}
               </div>
             ) : null}
             {card.reassurance ? (

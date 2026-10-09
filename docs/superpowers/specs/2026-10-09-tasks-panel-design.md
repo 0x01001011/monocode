@@ -138,7 +138,7 @@ that session. Exactly one state shows, by priority:
 |---|---|---|---|---|
 | Needs you (run is stopped) | red · "?" square | a session has `pendingQuestion` set (plus any pending tool approval the harness exposes; confirm the field at plan time), or an SDD controller stopped to ask (round 5 failed, BLOCKED) | "ssh-hardening is waiting for your answer" / "Task 3 asks: “Keep password login as a fallback?” · 3m ago" | **Answer in ssh-hardening** (Enter when the card is focused), Remind me in 10m |
 | Struggling (still self-correcting) | amber · "!" | an SDD task in fix round ≥ 3, or an orchestration worker failed and is retrying | "Task 6 is on fix round 3 of 5" / "The reviewer has sent it back 3 times. If round 5 fails, it stops and asks you." | See the N open issues |
-| Quiet too long | amber · hollow ring | session `busy` with no harness event for `quietAfterMs` (default 5 min, setting) | "No activity on Task 6 for 6m" / "The reviewer last wrote at 15:02. It may be running a long test." | Open reviewer, Keep waiting |
+| Quiet too long | amber · hollow ring | session `busy` with no harness event for `quietAfterMs` (default 5 min, setting) | "No activity on Task 6" (headline: the running task, else the session title; no minutes, since it is the live region) / "Quiet for 6m. Last activity at 15:02." | Open reviewer (when a review stage is the quiet part) or Open session, Keep waiting |
 | Running | blue · dot (pulses on the card only) | anything running | "A reviewer is checking Task 6" / "Desktop remote wiring · 2m 14s so far" / "✓ Nothing needs you" | Stop after this task, Open session |
 | Done | green · check | everything finished | "Plan finished in 1h 52m" / "9 decisions to look over" | Review decisions |
 
