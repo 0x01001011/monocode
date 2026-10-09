@@ -5,6 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { HtmlPreview } from "./HtmlPreview";
+import { clearPreviewLogs, recordPreviewLog } from "../previewLogs";
+import { copyMessage } from "../../../platform/tauri/clipboard";
+
+vi.mock("../../../platform/tauri/clipboard", () => ({
+  copyMessage: vi.fn().mockResolvedValue(undefined),
+}));
+
+const LOG_KEY = "artifact:artifact-1";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -23,6 +31,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  clearPreviewLogs(LOG_KEY);
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
@@ -90,4 +99,50 @@ it("leaves Escape alone while the preview is not expanded", async () => {
   await mount();
   const event = press("Escape");
   expect(event.defaultPrevented).toBe(false);
+});
+
+const text = (selector: string) => container.querySelector(selector)?.textContent ?? "";
+
+it("shows no error count until the page reports an error", async () => {
+  await mount();
+  expect(button("Console")).not.toBeNull();
+  recordPreviewLog(LOG_KEY, "log", "just a note");
+  await act(async () => {});
+  expect(button("Console")).not.toBeNull();
+  expect(container.querySelector("[data-console-errors]")).toBeNull();
+});
+
+it("counts errors on the Console button and lists the output in a drawer", async () => {
+  await mount();
+  await act(async () => {
+    recordPreviewLog(LOG_KEY, "log", "loaded");
+    recordPreviewLog(LOG_KEY, "error", "Uncaught ReferenceError: chart is not defined");
+    recordPreviewLog(LOG_KEY, "error", "Unhandled rejection: 404");
+  });
+  const toggle = button("Console, 2 errors")!;
+  expect(toggle).not.toBeNull();
+  expect(text("[data-console-errors]")).toBe("2");
+  expect(container.querySelector("[data-preview-console]")).toBeNull();
+  act(() => toggle.click());
+  const drawer = container.querySelector("[data-preview-console]")!;
+  expect(drawer.getAttribute("role")).toBe("log");
+  expect(drawer.textContent).toContain("loaded");
+  expect(drawer.textContent).toContain("chart is not defined");
+  expect(drawer.querySelectorAll("[data-level=error]")).toHaveLength(2);
+});
+
+it("clears the output and copies it as text", async () => {
+  await mount();
+  await act(async () => {
+    recordPreviewLog(LOG_KEY, "warn", "slow image");
+    recordPreviewLog(LOG_KEY, "error", "boom");
+  });
+  act(() => button("Console, 1 error")!.click());
+  await act(async () => button("Copy console")!.click());
+  expect(copyMessage).toHaveBeenCalledWith("[warn] slow image\n[error] boom");
+  act(() => button("Clear console")!.click());
+  expect(container.querySelector("[data-preview-console]")?.textContent).toContain(
+    "No console output",
+  );
+  expect(container.querySelector("[data-console-errors]")).toBeNull();
 });

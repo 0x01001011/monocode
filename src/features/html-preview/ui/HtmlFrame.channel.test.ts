@@ -6,6 +6,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { HtmlFrame } from "./HtmlFrame";
+import { clearPreviewLogs, getPreviewLogs, recordPreviewLog } from "../previewLogs";
+
+const LOG_KEY = "file:/repo/site/index.html";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -25,6 +28,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  clearPreviewLogs(LOG_KEY);
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
@@ -120,4 +124,32 @@ it("does not open dangerous schemes or a burst of links", async () => {
   await post(framed, { mcp: 1, n: nonce, type: "open", url: "https://b.example/" });
   await post(framed, { mcp: 1, n: nonce, type: "open", url: "https://c.example/" });
   expect(openUrl).toHaveBeenCalledTimes(1);
+});
+
+it("records console output and errors the page sends, per preview", async () => {
+  const { iframe, framed } = await mount();
+  const nonce = iframe.getAttribute("name")!;
+  await post(framed, { mcp: 1, n: nonce, type: "console", level: "log", text: "hello" });
+  await post(framed, { mcp: 1, n: nonce, type: "console", level: "error", text: "Uncaught TypeError" });
+  expect(getPreviewLogs(LOG_KEY).map((e) => [e.level, e.text])).toEqual([
+    ["log", "hello"],
+    ["error", "Uncaught TypeError"],
+  ]);
+});
+
+it("ignores console messages from another window, a wrong nonce or a bad level", async () => {
+  const { iframe, framed } = await mount();
+  const nonce = iframe.getAttribute("name")!;
+  await post({} as Window, { mcp: 1, n: nonce, type: "console", level: "log", text: "x" });
+  await post(framed, { mcp: 1, n: "mc:guess", type: "console", level: "log", text: "x" });
+  await post(framed, { mcp: 1, n: nonce, type: "console", level: "fatal", text: "x" });
+  expect(getPreviewLogs(LOG_KEY)).toEqual([]);
+});
+
+it("starts a fresh log when a new page loads in the frame", async () => {
+  const { iframe, framed } = await mount();
+  const nonce = iframe.getAttribute("name")!;
+  recordPreviewLog(LOG_KEY, "error", "from the previous load");
+  await post(framed, { mcp: 1, n: nonce, type: "ready" });
+  expect(getPreviewLogs(LOG_KEY)).toEqual([]);
 });

@@ -4,10 +4,26 @@
  * untrusted: only own properties are read, only allowlisted types pass, and a
  * fresh object is returned instead of the page's own.
  */
+export type ConsoleLevel = "log" | "info" | "warn" | "error" | "debug";
+
 export type FrameMessage =
   | { type: "ready" }
   | { type: "escape" }
-  | { type: "open"; url: string };
+  | { type: "open"; url: string }
+  | { type: "console"; level: ConsoleLevel; text: string };
+
+const CONSOLE_LEVELS = new Set<string>(["log", "info", "warn", "error", "debug"]);
+const MAX_CONSOLE_TEXT = 2000;
+
+function consoleMessage(level: unknown, text: unknown): FrameMessage | null {
+  if (typeof level !== "string" || !CONSOLE_LEVELS.has(level)) return null;
+  if (typeof text !== "string") return null;
+  return {
+    type: "console",
+    level: level as ConsoleLevel,
+    text: text.slice(0, MAX_CONSOLE_TEXT),
+  };
+}
 
 /** Links a page may ask the app to open; everything else (javascript:, file:, app schemes) is dropped. */
 const OPEN_PROTOCOLS = new Set(["https:", "http:", "mailto:"]);
@@ -46,6 +62,8 @@ export function parseFrameMessage(
       return { type: "escape" };
     case "open":
       return openMessage(own(data, "url"));
+    case "console":
+      return consoleMessage(own(data, "level"), own(data, "text"));
     default:
       return null;
   }

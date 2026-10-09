@@ -73,4 +73,34 @@ describe("parseFrameMessage", () => {
       },
     );
   });
+
+  describe("console", () => {
+    it("accepts a level and text, clamped to a sane size", () => {
+      expect(
+        parseFrameMessage(msg({ type: "console", level: "warn", text: "careful" }), name),
+      ).toEqual({ type: "console", level: "warn", text: "careful" });
+      const long = parseFrameMessage(
+        msg({ type: "console", level: "error", text: "x".repeat(10_000) }),
+        name,
+      );
+      expect(long?.type === "console" && long.text.length).toBe(2000);
+    });
+
+    it.each(["log", "info", "warn", "error", "debug"])("allows level %s", (level) => {
+      expect(parseFrameMessage(msg({ type: "console", level, text: "t" }), name)).toEqual({
+        type: "console",
+        level,
+        text: "t",
+      });
+    });
+
+    it.each([
+      ["an unknown level", { level: "fatal", text: "t" }],
+      ["a missing level", { text: "t" }],
+      ["a non-string text", { level: "log", text: { toString: "x" } }],
+      ["a missing text", { level: "log" }],
+    ])("rejects %s", (_label, extra) => {
+      expect(parseFrameMessage(msg({ type: "console", ...extra }), name)).toBeNull();
+    });
+  });
 });

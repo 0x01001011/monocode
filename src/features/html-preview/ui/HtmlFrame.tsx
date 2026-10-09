@@ -5,6 +5,11 @@ import { basename } from "../../../platform/tauri/fs";
 import { parentPath } from "../../../shared/lib/paths";
 import { newFrameName, parseFrameMessage } from "../frameChannel";
 import {
+  clearPreviewLogs,
+  previewLogKey,
+  recordPreviewLog,
+} from "../previewLogs";
+import {
   closePreview,
   openPreview,
   PREVIEW_CHANGED_EVENT,
@@ -39,8 +44,8 @@ export function HtmlFrame({
   /** Bumped by a Reload control; reloads the page without reopening the preview. */
   reloadKey?: number;
 }) {
-  const sourceKey =
-    source.kind === "file" ? `file:${source.path}` : `artifact:${source.id}`;
+  const sourceKey = previewLogKey(source);
+  const logKey = sourceKey;
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState(false);
   const [reload, setReload] = useState(0);
@@ -106,6 +111,15 @@ export function HtmlFrame({
       // The frame's origin is "null", so the window is the only identity check.
       if (!frame || event.source !== frame.contentWindow) return;
       const message = parseFrameMessage(event.data, frameName);
+      if (message?.type === "console") {
+        recordPreviewLog(logKey, message.level, message.text);
+        return;
+      }
+      if (message?.type === "ready") {
+        // A new document loaded in the frame; its console starts empty.
+        clearPreviewLogs(logKey);
+        return;
+      }
       if (message?.type === "open") {
         // Only on the heels of a real click or key press, and not in bursts: a
         // page's own script can post this message too.
@@ -130,7 +144,7 @@ export function HtmlFrame({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [frameName]);
+  }, [frameName, logKey]);
 
   if (error)
     return (

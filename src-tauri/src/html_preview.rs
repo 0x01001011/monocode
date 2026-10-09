@@ -62,6 +62,27 @@ const BOOTSTRAP: &str = concat!(
     "if(u.protocol!==\"https:\"&&u.protocol!==\"http:\"&&u.protocol!==\"mailto:\")return;",
     "if(u.origin===location.origin)return;",
     "e.preventDefault();send({type:\"open\",url:u.href})});",
+    // Console output, uncaught errors and rejections, so the app can show the
+    // page's problems and an agent can read them. Capped per page load; the
+    // page's own console still gets every call.
+    "var cap=0;",
+    "function say(l,t){cap++;if(cap>301)return;",
+    "if(cap===301){send({type:\"console\",level:\"warn\",text:\"(console output truncated)\"});return}",
+    "send({type:\"console\",level:l,text:String(t).slice(0,2000)})}",
+    "function fmt(v){if(typeof v===\"string\")return v;",
+    "if(v instanceof Error)return(v.name||\"Error\")+\": \"+v.message;",
+    "try{var j=JSON.stringify(v);if(j!==undefined)return j}catch(x){}",
+    "try{return String(v)}catch(x){return\"[unprintable]\"}}",
+    "[\"log\",\"info\",\"warn\",\"error\",\"debug\"].forEach(function(k){var o=console[k];",
+    "if(typeof o!==\"function\")return;",
+    "console[k]=function(){try{say(k,Array.prototype.map.call(arguments,fmt).join(\" \"))}catch(x){}",
+    "return o.apply(console,arguments)}});",
+    // Some engines (WebKit) hide the details of uncaught errors in sandboxed
+    // pages and report only "Script error."; say so instead of leaving a riddle.
+    "window.addEventListener(\"error\",function(e){var m=e.message||\"Error\";",
+    "if(m===\"Script error.\")m+=\" (this browser hides the details of uncaught errors in sandboxed pages)\";",
+    "say(\"error\",m+(e.filename?\" (\"+String(e.filename).split(\"/\").pop()+\":\"+e.lineno+\")\":\"\"))});",
+    "window.addEventListener(\"unhandledrejection\",function(e){say(\"error\",\"Unhandled rejection: \"+fmt(e.reason))});",
     "send({type:\"ready\"})",
     "})();</script>"
 );

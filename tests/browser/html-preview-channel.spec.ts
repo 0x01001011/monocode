@@ -6,7 +6,12 @@ function bootstrap(): string {
   const source = readFileSync("src-tauri/src/html_preview.rs", "utf8");
   const block = source.match(/const BOOTSTRAP: &str = concat!\(([\s\S]*?)\n\);/)?.[1];
   if (!block) throw new Error("BOOTSTRAP not found in html_preview.rs");
-  return [...block.matchAll(/"((?:[^"\\]|\\.)*)"/g)]
+  // Comments may quote things; only the string literals are the script.
+  const code = block
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+  return [...code.matchAll(/"((?:[^"\\]|\\.)*)"/g)]
     .map((m) => m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\"))
     .join("");
 }
@@ -61,7 +66,7 @@ async function open(page: Page, { name = NONCE, pageScript = "" } = {}) {
 
 const got = (page: Page) => page.evaluate(() => (window as unknown as { got: string[] }).got);
 const msgs = (page: Page) =>
-  page.evaluate(() => (window as unknown as { msgs: { type: string; url?: string }[] }).msgs);
+  page.evaluate(() => (window as unknown as { msgs: { type: string; url?: string; level?: string; text?: string }[] }).msgs);
 const hostKeys = (page: Page) =>
   page.evaluate(() => (window as unknown as { hostKeys: number }).hostKeys);
 
@@ -128,4 +133,50 @@ test("a page whose own script handles the click is left alone", async ({ page })
   await page.waitForTimeout(300);
   expect((await msgs(page)).some((m) => m.type === "open")).toBe(false);
   await expect(frame.locator("#external")).toHaveCount(0);
+});
+
+const consoleLines = async (page: Page) =>
+  (await msgs(page)).filter((m) => m.type === "console");
+
+test("console output, uncaught errors and rejections reach the host with their level", async ({ page }) => {
+  const seen: string[] = [];
+  page.on("console", (m) => seen.push(m.text()));
+  await open(page, {
+    pageScript: `
+      console.log("hello", { a: 1 });
+      console.warn("careful");
+      console.error(new Error("boom"));
+      setTimeout(() => { throw new TypeError("late failure"); }, 0);
+      Promise.reject(new Error("nope"));`,
+  });
+  await expect.poll(async () => (await consoleLines(page)).length).toBeGreaterThanOrEqual(5);
+  const lines = await consoleLines(page);
+  expect(lines.find((m) => m.level === "log")?.text).toBe('hello {"a":1}');
+  expect(lines.find((m) => m.level === "warn")?.text).toBe("careful");
+  const errors = lines.filter((m) => m.level === "error").map((m) => m.text ?? "");
+  expect(errors.some((t) => t.includes("boom"))).toBe(true);
+  // Chromium reports the message; WebKit hides it for sandboxed pages and we
+  // say so rather than leave a bare "Script error.".
+  expect(
+    errors.some((t) => t.includes("late failure") || /Script error\..*hides the details/.test(t)),
+  ).toBe(true);
+  expect(errors.some((t) => t.includes("Unhandled rejection") && t.includes("nope"))).toBe(true);
+  // The page's own console keeps working.
+  expect(seen.some((t) => t.includes("hello"))).toBe(true);
+});
+
+test("a console flood is capped on the page side", async ({ page }) => {
+  await open(page, { pageScript: `for (let i = 0; i < 1000; i++) console.log("line " + i);` });
+  await expect.poll(async () => (await consoleLines(page)).length).toBeGreaterThanOrEqual(300);
+  await page.waitForTimeout(400);
+  const lines = await consoleLines(page);
+  expect(lines.length).toBeLessThanOrEqual(302);
+  expect(lines[lines.length - 1].text).toMatch(/truncated/i);
+});
+
+test("a console call that cannot be serialized does not break the page", async ({ page }) => {
+  await open(page, {
+    pageScript: `const o = {}; o.self = o; console.log(o); console.log("after");`,
+  });
+  await expect.poll(async () => (await consoleLines(page)).some((m) => m.text === "after")).toBe(true);
 });
