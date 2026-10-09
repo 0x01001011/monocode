@@ -4102,13 +4102,21 @@ fn gh_checked(root: &Path, args: &[&str]) -> Result<String, String> {
     gh_run(root, args, false)
 }
 
-struct GitHubRateLimitBackoff {
+pub(crate) struct GitHubRateLimitBackoff {
     until: SystemTime,
     error: String,
 }
 
 // Shared by all webviews, including background Inbox and PR checks requests.
-static GITHUB_RATE_LIMIT_BACKOFF: Mutex<Option<GitHubRateLimitBackoff>> = Mutex::new(None);
+pub(crate) static GITHUB_RATE_LIMIT_BACKOFF: Mutex<Option<GitHubRateLimitBackoff>> =
+    Mutex::new(None);
+
+/// When the shared GitHub rate-limit backoff ends, if one is active.
+pub(crate) fn github_rate_limit_until() -> Option<SystemTime> {
+    let mut slot = GITHUB_RATE_LIMIT_BACKOFF.lock().ok()?;
+    github_rate_limit_error(&mut slot, SystemTime::now())?;
+    slot.as_ref().map(|active| active.until)
+}
 
 fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, String> {
     gh_with_backoff(
@@ -4130,7 +4138,7 @@ fn github_rate_limit_error(
     None
 }
 
-fn gh_with_backoff(
+pub(crate) fn gh_with_backoff(
     backoff: &Mutex<Option<GitHubRateLimitBackoff>>,
     args: &[&str],
     allow_empty: bool,

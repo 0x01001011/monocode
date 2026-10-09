@@ -37,6 +37,7 @@ mod pi_usage;
 mod pr_attribution;
 mod pr_store;
 mod pr_trace;
+mod pr_tracker;
 mod project_logo;
 mod pty;
 #[cfg(target_os = "macos")]
@@ -257,6 +258,7 @@ pub fn run() {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
             pr_trace::start(app.handle());
+            pr_tracker::start(app.handle());
             control::init(app.handle())?;
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
@@ -512,6 +514,8 @@ pub fn run() {
             pr_attribution::pr_record_url,
             pr_attribution::pr_record_hints,
             pr_attribution::pr_dismiss,
+            pr_tracker::pr_set_interest,
+            pr_tracker::pr_refresh,
             session_store::skill_usage_record,
             session_store::skill_usage_snapshot,
             session_store::skill_usage_backfill,

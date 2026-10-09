@@ -398,6 +398,33 @@ pub fn owners_of(conn: &Connection, repo: &str, number: u32) -> rusqlite::Result
     rows.collect()
 }
 
+/// `(ref_name, at)` rows recorded for a PR, oldest first.
+pub fn base_history(
+    conn: &Connection,
+    repo: &str,
+    number: u32,
+) -> rusqlite::Result<Vec<(String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT ref_name, at FROM pr_base_history
+         WHERE repo = ?1 AND number = ?2 ORDER BY at, rowid",
+    )?;
+    let rows = stmt.query_map(params![repo, number], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect()
+}
+
+/// Chats that still exist, are not archived and have a branch or PR on record.
+pub fn tracked_sessions(conn: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT id FROM sessions
+         WHERE archived = 0
+           AND (id IN (SELECT session_id FROM session_branches)
+                OR id IN (SELECT session_id FROM session_prs))
+         ORDER BY id",
+    )?;
+    let rows = stmt.query_map([], |row| row.get(0))?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
