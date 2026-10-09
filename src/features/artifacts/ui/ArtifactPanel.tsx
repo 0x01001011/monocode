@@ -3,7 +3,8 @@ import { Copy, Trash2 } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { IconButton } from "../../../app/shell/TitleBar";
 import { MonoSidebar, MonoSidebarHeader } from "../../monos/ui/MonoSidebar";
-import { artifactLabel, deleteArtifact } from "../artifacts";
+import { deleteArtifact } from "../artifacts";
+import { artifactWording } from "../artifactWording";
 import { ArtifactContent, useArtifact } from "./ArtifactContent";
 
 export function ArtifactPanel({
@@ -41,8 +42,7 @@ export function ArtifactPanel({
     return () => window.removeEventListener("keydown", escape);
   }, [onClose]);
 
-  const label = artifact ? artifactLabel(artifact.kind) : "Document";
-  const noun = label.toLowerCase();
+  const { label, noun, loading, missing } = artifactWording(artifact?.kind);
   const onDelete = async () => {
     if (!artifact || deleting || !window.confirm(`Delete “${artifact.title}”?`))
       return;
@@ -96,7 +96,7 @@ export function ArtifactPanel({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none px-7 py-6">
         {!loaded ? (
           <p role="status" className="text-[13px] text-content/50">
-            Loading document…
+            {loading}
           </p>
         ) : error && !artifact ? (
           <p role="alert" className="text-[13px] text-content/65">
@@ -104,7 +104,7 @@ export function ArtifactPanel({
           </p>
         ) : !artifact ? (
           <p role="status" className="text-[13px] text-content/50">
-            This document is no longer available.
+            {missing}
           </p>
         ) : (
           <article data-artifact-reader={artifact.id}>

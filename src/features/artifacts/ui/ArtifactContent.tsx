@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import { artifactWording } from "../artifactWording";
 import { HtmlPreview } from "../../html-preview/ui/HtmlPreview";
 import {
   ARTIFACTS_CHANGED_EVENT,
@@ -29,7 +30,7 @@ export function useArtifact(id: string) {
         },
         () => {
           if (!live || token !== request) return;
-          setError("Could not load this document.");
+          setError(artifactWording().loadFailed);
           setLoaded(true);
         },
       );

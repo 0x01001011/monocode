@@ -8,7 +8,7 @@ import {
   ArtifactContent,
   useArtifact,
 } from "../../artifacts/ui/ArtifactContent";
-import { artifactLabel } from "../../artifacts/artifacts";
+import { artifactWording } from "../../artifacts/artifactWording";
 import { PixelMascot } from "../../projects/ui/PixelMascot";
 import { AgentTranscript } from "../../sessions/ui/AgentTranscript";
 import { QuestionForm } from "../../sessions/ui/QuestionForm";
@@ -551,7 +551,8 @@ function ArtifactSheet({
     return () => window.removeEventListener("keydown", escape, true);
   }, [close]);
 
-  const label = artifact ? artifactLabel(artifact.kind) : "Document";
+  const wording = artifactWording(artifact?.kind);
+  const label = wording.label;
   return (
     <div
       data-artifact-sheet={id}
@@ -588,7 +589,7 @@ function ArtifactSheet({
               onClick={() =>
                 void copyMessage(artifact.body).then(
                   () => setCopied(true),
-                  () => setError("Could not copy this document."),
+                  () => setError(wording.copyFailed),
                 )
               }
             >
@@ -606,7 +607,7 @@ function ArtifactSheet({
           </button>
           <button
             type="button"
-            aria-label="Close document"
+            aria-label={wording.close}
             title="Close (Escape)"
             className={BUTTON}
             onClick={close}
@@ -617,11 +618,11 @@ function ArtifactSheet({
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-2 pb-8">
           {!loaded ? (
             <p role="status" className="text-[13px] text-muted">
-              Loading document…
+              {wording.loading}
             </p>
           ) : !artifact ? (
             <p role="alert" className="text-[13px] text-content/60">
-              {error ?? "This document is no longer available."}
+              {error ?? wording.missing}
             </p>
           ) : (
             <article data-artifact-reader={artifact.id}>
