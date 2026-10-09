@@ -227,6 +227,9 @@ export function TasksPanel({ board, now, onAction, onOpenNode, onOpenAsTab }: Pr
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto pt-0.5 pb-3.5">
       <StatusCard card={card} onAction={handleAction} />
+      {board.planFilesUnavailable ? (
+        <div className="px-4 pt-1 text-[11.5px] text-content/66">Plan files are not available for remote projects yet.</div>
+      ) : null}
       {plan ? <PlanBlock board={board} plan={plan} now={now} onOpenNode={onOpenNode} onOpenAsTab={onOpenAsTab} /> : null}
       {agents.map((section) => (
         <SectionBlock key={section.id} section={section} label="Other agents here" now={now} onOpenNode={onOpenNode} />

@@ -233,11 +233,12 @@ describe("Sidebar Tasks tab", () => {
     expect(labels).toEqual(["Changes", "Explorer", "Sessions", "Tasks"]);
   });
 
-  it("keeps remote projects off the board", () => {
+  it("keeps remote projects' plan files off the board, but shows the transcript sections", () => {
     props = { ...props, cwd: remotePath("env-1", "/home/dev/project"), busySessionIds: new Set(["session-1"]), tab: "tasks" };
     render();
     const input = vi.mocked(useTaskBoard).mock.calls.at(-1)![0];
-    expect(input.visible).toBe(false);
+    expect(input.readPlan).toBe(false);
+    expect(input.visible).toBe(true);
     expect(input.sessions).toEqual([]);
   });
 

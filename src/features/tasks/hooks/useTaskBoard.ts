@@ -31,6 +31,8 @@ export type TaskBoard = {
   loading: boolean;
   /** The plan for this project has been read at least once, so the status card is trustworthy. */
   loaded: boolean;
+  /** Plan files cannot be read here (a remote project); the transcript sections still show. */
+  planFilesUnavailable?: boolean;
 };
 
 type Input = {
@@ -53,6 +55,8 @@ type Input = {
    * sessions keep the slow hidden poll going. Default true; a board tab passes false.
    */
   needsStatusWhenHidden?: boolean;
+  /** False when the plan files are out of reach (a remote project): no fs reads at all. */
+  readPlan?: boolean;
 };
 
 type Loaded = { cwd: string; workspaces: SddWorkspaceRef[]; selected?: string; plan?: BoardSection };
@@ -108,7 +112,8 @@ export function useTaskBoard(input: Input): TaskBoard {
   // A completed tool call reloads at once, only for a panel on screen; a hidden one keeps its cadence.
   const toolsDone = visible ? completedTools(blocks) : 0;
   const anyBusy = sessions.some((s) => s.busy);
-  const polling = visible || (anyBusy && (input.needsStatusWhenHidden ?? true));
+  const readPlan = input.readPlan ?? true;
+  const polling = readPlan && (visible || (anyBusy && (input.needsStatusWhenHidden ?? true)));
   const interval = visible ? pollVisible : pollHidden;
   const intervalRef = useRef(interval);
   intervalRef.current = interval;
@@ -252,5 +257,6 @@ export function useTaskBoard(input: Input): TaskBoard {
     selectWorkspace,
     loading: polling && data === undefined,
     loaded: data !== undefined,
+    ...(readPlan ? {} : { planFilesUnavailable: true }),
   };
 }

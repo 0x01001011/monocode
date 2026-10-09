@@ -263,6 +263,17 @@ describe("useTaskBoard", () => {
     expect(loads()).toBe(3);
   });
 
+  it("without plan files (a remote project) reads nothing but builds the transcript sections", async () => {
+    const { fs, lists } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+    await mount(base(fs, { readPlan: false, activeSession: session("lead", [todoBlock]) }));
+    await advance(10_000);
+    expect(lists()).toBe(0);
+    expect(latest?.plan).toBeUndefined();
+    expect(latest?.sections.map((x) => x.source)).toEqual(["todos"]);
+    expect(latest?.planFilesUnavailable).toBe(true);
+    expect(latest?.loading).toBe(false);
+  });
+
   it("section load failure renders nothing and keeps the rest", async () => {
     const throwing: SddFs = {
       listDir: () => Promise.reject(new Error("boom")),

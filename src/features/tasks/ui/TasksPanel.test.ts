@@ -314,6 +314,15 @@ describe("TasksPanel", () => {
   });
 });
 
+describe("TasksPanel remote project", () => {
+  it("says in one line that plan files are not available, and still shows other sections", () => {
+    const todos: BoardSection = { source: "todos", id: "todos", title: "To-do list", done: 0, total: 1, nodes: [task(1, { status: "pending" })] };
+    render({ board: board({ sections: [todos], statusCard: idleCard, planFilesUnavailable: true }) });
+    expect(text()).toContain("Plan files are not available for remote projects yet");
+    expect(text()).toContain("To-do list");
+  });
+});
+
 describe("TasksPanel running task", () => {
   const stages = (n: number): Partial<BoardNode> => ({
     status: "running",

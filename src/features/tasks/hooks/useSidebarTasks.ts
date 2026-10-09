@@ -18,7 +18,7 @@ type Input = {
   loadedSessions?: readonly Session[];
   /** True while the Tasks tab is the one on screen. */
   visible: boolean;
-  /** A remote project: its path is not on this machine, so the board stays idle. */
+  /** A remote project: its path is not on this machine, so no plan files are read. */
   remote?: boolean;
 };
 
@@ -180,7 +180,9 @@ export function useSidebarTasks(input: Input): { board: TaskBoard; running: bool
     ...(activeSession ? { activeSession } : {}),
     sessions: statusSessions,
     quietAfterMs: quietAfterMinutes * 60_000,
-    visible: visible && !remote,
+    visible,
+    // A remote project's files are not on this machine: skip only the plan read.
+    readPlan: !remote,
   });
 
   const running =

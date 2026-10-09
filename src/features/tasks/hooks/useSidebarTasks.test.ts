@@ -217,7 +217,7 @@ describe("useSidebarTasks", () => {
   });
 
   describe("remote project", () => {
-    it("keeps the board hidden and sends no sessions, so nothing polls", () => {
+    it("reads no plan files and sends no sessions, but still builds the transcript sections", () => {
       render(
         base({
           remote: true,
@@ -228,7 +228,8 @@ describe("useSidebarTasks", () => {
         }),
       );
       const input = lastInput();
-      expect(input.visible).toBe(false);
+      expect(input.visible).toBe(true);
+      expect(input.readPlan).toBe(false);
       expect(input.sessions).toEqual([]);
       expect(result?.running).toBe(false);
     });
