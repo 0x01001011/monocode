@@ -144,7 +144,7 @@ function AccountPicker({
       >
         <span>Choose another account</span>
         <ChevronDown
-          className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}`}
+          className={`size-3 shrink-0 text-muted ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
       </button>
@@ -179,7 +179,7 @@ function AccountPicker({
             >
               <HarnessIcon
                 harness={harness}
-                className="size-3.5 shrink-0 text-content/55"
+                className="size-3.5 shrink-0 text-muted"
               />
               <span className="min-w-0 flex-1 truncate">{account.label}</span>
             </button>

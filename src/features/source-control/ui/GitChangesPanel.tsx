@@ -1,4 +1,3 @@
-import { ask } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Check,
@@ -78,17 +77,10 @@ import { invalidateWatchedFiles } from "../../files/model/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
 import { applyProjectDiffStats } from "../hooks/useProjectDiffStats";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { confirmNative, reportError } from "../../../shared/lib/confirm";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 
 const GIT_POLL_MS = 2000;
-
-function confirmNative(message: string, okLabel?: string): Promise<boolean> {
-  return ask(message, {
-    title: "MonoCode",
-    kind: "warning",
-    ...(okLabel ? { okLabel } : {}),
-  });
-}
 
 let stagedOpen = true;
 let changesOpen = true;
@@ -166,7 +158,7 @@ export function GitChangesPanel({
       invalidateWatchedFiles();
       setStatus("Pull complete");
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error));
+      void reportError("pull", error, "Check your connection and try again.");
     } finally {
       setBusy(null);
       setBranchMenuOpen(false);
@@ -185,7 +177,7 @@ export function GitChangesPanel({
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="px-3 py-2 text-[12px] text-content/50">No project folder</p>
+      <p className="px-3 py-2 text-[12px] text-muted">No project folder</p>
     );
   }
 
@@ -197,7 +189,7 @@ export function GitChangesPanel({
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-stroke px-3">
         <span className="text-[12px] font-medium text-content">Changes</span>
         {status ? (
-          <span role="status" className="text-[11px] text-content/50">
+          <span role="status" className="text-[11px] text-muted">
             {status}
           </span>
         ) : null}
@@ -206,16 +198,16 @@ export function GitChangesPanel({
             ref={branchMenuRef}
             className="relative ml-auto flex min-w-0 items-center gap-1"
           >
-            <span className="flex min-w-0 items-center gap-1 text-[11px] text-content/50">
+            <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted">
               <GitBranch className="size-3 shrink-0" strokeWidth={1.75} />
               <span className="min-w-0 truncate">{index.branch}</span>
               {index.ahead > 0 ? (
-                <span className="shrink-0 tabular-nums text-content/40">
+                <span className="shrink-0 tabular-nums text-muted">
                   ↑{index.ahead}
                 </span>
               ) : null}
               {index.behind > 0 ? (
-                <span className="shrink-0 tabular-nums text-content/40">
+                <span className="shrink-0 tabular-nums text-muted">
                   ↓{index.behind}
                 </span>
               ) : null}
@@ -227,7 +219,7 @@ export function GitChangesPanel({
               aria-expanded={branchMenuOpen}
               disabled={busy !== null}
               onClick={() => setBranchMenuOpen((open) => !open)}
-              className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content disabled:opacity-40 aria-expanded:bg-content/10 aria-expanded:text-content"
+              className="grid size-5 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content disabled:opacity-40 aria-expanded:bg-content/10 aria-expanded:text-content"
             >
               {busy === "pull" ? (
                 <Loader className="size-3.5 animate-spin" strokeWidth={1.75} />
@@ -451,8 +443,8 @@ function ChangedFiles({
     setView(changesView);
   };
 
-  const fail = (error: unknown) => {
-    window.alert(error instanceof Error ? error.message : String(error));
+  const fail = (action: string, error: unknown) => {
+    void reportError(action, error);
   };
 
   const recordPrActivity = (number = pr?.number) => {
@@ -472,6 +464,7 @@ function ChangedFiles({
       kind === "pr"
         ? `Create a pull request from default branch "${branch}"?`
         : `Push to default branch "${branch}"?`,
+      kind === "pr" ? "Create pull request" : "Push",
     );
   };
 
@@ -498,7 +491,7 @@ function ChangedFiles({
       else await gitDiscardFile(cwd, file.relative);
       onMutated([file.path]);
     } catch (error) {
-      fail(error);
+      fail(`${action} ${basename(file.relative)}`, error);
     } finally {
       setBusy(null);
     }
@@ -530,7 +523,7 @@ function ChangedFiles({
         action === "discard" ? unstaged.map((file) => file.path) : undefined,
       );
     } catch (error) {
-      fail(error);
+      fail(`${action} all changes`, error);
     } finally {
       setBusy(null);
     }
@@ -548,7 +541,7 @@ function ChangedFiles({
           .map((file) => file.path),
       );
     } catch (error) {
-      fail(error);
+      fail(`${action} ${basename(relative)}`, error);
     } finally {
       setBusy(null);
     }
@@ -567,7 +560,7 @@ function ChangedFiles({
       );
       if (!controller.signal.aborted) setMessage(generated);
     } catch (error) {
-      if (!controller.signal.aborted) fail(error);
+      if (!controller.signal.aborted) fail("generate a commit message", error);
     } finally {
       if (generateAbortRef.current === controller) {
         generateAbortRef.current = null;
@@ -596,7 +589,7 @@ function ChangedFiles({
         head: index?.head ?? null,
       });
     } catch (error) {
-      fail(error);
+      fail("load the last commit message", error);
     }
   };
 
@@ -633,7 +626,7 @@ function ChangedFiles({
         reloadPr();
       }
     } catch (error) {
-      fail(error);
+      fail("commit", error);
       onMutated();
     } finally {
       setBusy(null);
@@ -650,7 +643,7 @@ function ChangedFiles({
       onMutated();
       reloadPr();
     } catch (error) {
-      fail(error);
+      fail("sync", error);
       onMutated();
     } finally {
       setBusy(null);
@@ -684,7 +677,7 @@ function ChangedFiles({
       onMutated();
       reloadPr();
     } catch (error) {
-      fail(error);
+      fail("create the pull request", error);
       onMutated();
     } finally {
       setBusy(null);
@@ -701,6 +694,7 @@ function ChangedFiles({
             ref={messageRef}
             rows={1}
             value={message}
+            aria-label={amend ? "Amend message" : "Commit message"}
             placeholder={
               amend
                 ? `Amend message (${MOD}↩ to amend)`
@@ -718,7 +712,7 @@ function ChangedFiles({
                 void commit(false);
               }
             }}
-            className="max-h-40 w-full resize-none overflow-y-auto rounded-md bg-content/10 py-1 pr-8 pl-2 text-[13px] leading-5 text-content outline-none placeholder:text-content/35 disabled:opacity-40"
+            className="max-h-40 w-full resize-none overflow-y-auto rounded-md bg-content/10 py-1 pr-8 pl-2 text-[13px] leading-5 text-content outline-none placeholder:text-muted focus-visible:focus-ring-inset disabled:opacity-40"
           />
           <button
             type="button"
@@ -851,7 +845,7 @@ function ChangedFiles({
         className="min-h-0 flex-1 overflow-y-auto overscroll-none py-1"
       >
         {files.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/45">
+          <p className="px-3 py-2 text-[12px] text-muted">
             {index
               ? index.ahead > 0 || index.behind > 0
                 ? syncStatusLabel(index)
@@ -1101,14 +1095,10 @@ export function GitSyncActions({
           />
           <span className="min-w-0 truncate">Sync Changes</span>
           {behind > 0 ? (
-            <span className="shrink-0 tabular-nums text-content/55">
-              ↓{behind}
-            </span>
+            <span className="shrink-0 tabular-nums text-muted">↓{behind}</span>
           ) : null}
           {ahead > 0 ? (
-            <span className="shrink-0 tabular-nums text-content/55">
-              ↑{ahead}
-            </span>
+            <span className="shrink-0 tabular-nums text-muted">↑{ahead}</span>
           ) : null}
         </button>
       ) : null}
@@ -1178,19 +1168,19 @@ export function FileSection({
         >
           {open ? (
             <ChevronDown
-              className="size-3.5 shrink-0 text-content/50"
+              className="size-3.5 shrink-0 text-muted"
               strokeWidth={1.75}
             />
           ) : (
             <ChevronRight
-              className="size-3.5 shrink-0 text-content/50"
+              className="size-3.5 shrink-0 text-muted"
               strokeWidth={1.75}
             />
           )}
-          <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-content/55 uppercase">
+          <span className="min-w-0 truncate text-[10px] font-semibold tracking-[0.04em] text-muted uppercase">
             {title}
           </span>
-          <span className="ml-1 grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent/80 px-1 text-[8px] text-white">
+          <span className="ml-1 grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent px-1 text-micro text-accent-foreground">
             {count}
           </span>
         </button>
@@ -1358,7 +1348,7 @@ function ChangeDirRow({
           onClick={toggle}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
-          <span className="grid size-4 shrink-0 place-items-center text-content/50">
+          <span className="grid size-4 shrink-0 place-items-center text-muted">
             {open ? (
               <ChevronDown className="size-3.5" strokeWidth={1.75} />
             ) : (
@@ -1390,7 +1380,7 @@ function ChangeDirRow({
         </div>
         <span
           className={`grid w-3.5 shrink-0 place-items-center ${
-            dir.status ? statusColor(dir.status) : "text-content/40"
+            dir.status ? statusColor(dir.status) : "text-muted"
           }`}
           aria-hidden
         >
@@ -1519,7 +1509,7 @@ function ChangeRow({
           <span className="min-w-0 flex-1 truncate">
             <span className="text-[13px] font-medium">{name}</span>
             {dir ? (
-              <span className="ml-1.5 text-[11px] text-content/40">{dir}</span>
+              <span className="ml-1.5 text-[11px] text-muted">{dir}</span>
             ) : null}
           </span>
         </button>
@@ -1583,7 +1573,7 @@ function IconAction({
       aria-label={title}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-5 place-items-center rounded text-content/55 hover:bg-content/10 hover:text-content disabled:opacity-40"
+      className="grid size-5 place-items-center rounded text-muted hover:bg-content/10 hover:text-content disabled:opacity-40"
     >
       {children}
     </button>
@@ -1606,7 +1596,7 @@ function statusColor(status: string): string {
   if (status === "untracked") return "text-sky-400";
   if (status === "added") return "text-diff-add-fg";
   if (status === "deleted") return "text-diff-del-fg";
-  return "text-amber-400";
+  return "text-warning";
 }
 
 function useDiffIndex(

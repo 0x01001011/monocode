@@ -76,6 +76,11 @@ function watchedPaths(paths?: string[]): string[] {
   return watched;
 }
 
+/** Last disk modified time seen for a watched file; undefined until sampled or missing. */
+export function watchedMtime(path: string): number | undefined {
+  return mtimes.get(path) ?? undefined;
+}
+
 /** Update the mtime baseline after our own save so we do not reload it. */
 export async function syncWatchedMtime(path: string): Promise<void> {
   if (!listeners.has(path)) return;

@@ -1294,7 +1294,7 @@ function ConnectedRemoteSession({
             <span className="min-w-0 flex-1 truncate" title={notice.detail}>
               {notice.text}
               {notice.detail ? (
-                <span className="text-content/40"> {notice.detail}</span>
+                <span className="text-muted"> {notice.detail}</span>
               ) : null}
             </span>
             {notice.action ? (
@@ -1313,7 +1313,7 @@ function ConnectedRemoteSession({
           <div
             role="status"
             aria-label="Connection problem"
-            className="flex shrink-0 flex-wrap items-center gap-3 border-b border-amber-400/30 bg-amber-400/5 px-4 py-2 text-[12px] text-content/70"
+            className="flex shrink-0 flex-wrap items-center gap-3 border-b border-warning/30 bg-warning/5 px-4 py-2 text-[12px] text-content/70"
           >
             <span className="min-w-0 flex-1">
               <span className="font-medium text-content">

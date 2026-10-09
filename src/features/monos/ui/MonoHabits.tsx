@@ -126,12 +126,12 @@ export function HabitRow({
         <span className="flex min-w-0 flex-1 flex-col">
           <span
             className={`truncate text-[12px] leading-5 ${
-              habit.enabled || running ? "text-content/85" : "text-content/45"
+              habit.enabled || running ? "text-content/85" : "text-muted"
             }`}
           >
             {habit.name}
           </span>
-          <span className="truncate text-[11px] leading-4 text-content/40">
+          <span className="truncate text-[11px] leading-4 text-muted">
             {running ? (
               <>
                 Running now · <RunningFor since={runningSince} />
@@ -192,7 +192,7 @@ export function HabitButton({
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-6 place-items-center rounded text-content/50 enabled:hover:bg-content/8 enabled:hover:text-content disabled:opacity-35"
+      className="grid size-6 place-items-center rounded text-muted enabled:hover:bg-content/8 enabled:hover:text-content disabled:opacity-35"
     >
       {children}
     </button>
@@ -332,7 +332,7 @@ export function HabitsEmpty() {
         <path d={CLOCK_GLOW_PATH} opacity={0.4} />
         <path d={CLOCK_PATH} />
       </svg>
-      <p className="text-[12px] text-content/45">No habits yet</p>
+      <p className="text-[12px] text-muted">No habits yet</p>
     </div>
   );
 }

@@ -255,7 +255,7 @@ export function NotesView({
             aria-label="Filter notes"
             spellCheck={false}
             autoComplete="off"
-            className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-content/40"
+            className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-muted"
           />
         </div>
         <button
@@ -264,7 +264,7 @@ export function NotesView({
           aria-label="New note"
           disabled={creating}
           onClick={() => void onCreate()}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
+          className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content disabled:opacity-40"
         >
           {creating ? (
             <LoaderCircle
@@ -281,13 +281,13 @@ export function NotesView({
         className="min-h-0 flex-1 overflow-y-auto overscroll-none"
       >
         {error && notes.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/50">{error}</p>
+          <p className="px-3 py-2 text-[12px] text-muted">{error}</p>
         ) : loading && notes.length === 0 ? (
-          <div className="flex justify-center py-10 text-content/40">
+          <div className="flex justify-center py-10 text-muted">
             <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
           </div>
         ) : visible.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/50">
+          <p className="px-3 py-2 text-[12px] text-muted">
             {query.trim()
               ? "No matching notes"
               : "No notes yet. Save a turn from the transcript, or create one here."}
@@ -341,7 +341,7 @@ export function NotesView({
         )}
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
           <File
-            className="size-3.5 shrink-0 text-content/45"
+            className="size-3.5 shrink-0 text-muted"
             strokeWidth={1.75}
           />
           <span className="min-w-0 truncate text-content">Notes</span>
@@ -419,7 +419,7 @@ function NoteDetailTab({
       aria-selected={selected}
       onClick={onSelect}
       className={`relative flex h-9 items-center text-[12px] leading-none ${
-        selected ? "text-content" : "text-content/50 hover:text-content"
+        selected ? "text-content" : "text-muted hover:text-content"
       }`}
     >
       {label}
@@ -461,7 +461,7 @@ function NoteCard({
     >
       <span className="flex items-center gap-2">
         {project && note.sourceCwd ? (
-          <span className="min-w-0 flex-1 text-[11px] text-content/50">
+          <span className="min-w-0 flex-1 text-[11px] text-muted">
             <NoteProjectMark
               cwd={note.sourceCwd}
               logos={logos}
@@ -474,7 +474,7 @@ function NoteCard({
           <span className="min-w-0 flex-1" />
         )}
         {time ? (
-          <span className="shrink-0 text-[11px] tabular-nums text-content/45">
+          <span className="shrink-0 text-[11px] tabular-nums text-muted">
             {time}
           </span>
         ) : null}
@@ -483,7 +483,7 @@ function NoteCard({
         {note.title}
       </span>
       {preview ? (
-        <span className="mt-1 line-clamp-1 text-[12px] leading-snug text-content/45">
+        <span className="mt-1 line-clamp-1 text-[12px] leading-snug text-muted">
           {preview}
         </span>
       ) : null}
@@ -492,13 +492,13 @@ function NoteCard({
           {note.tags.slice(0, 3).map((tag) => (
             <span
               key={tag}
-              className="max-w-24 truncate rounded bg-content/8 px-1.5 py-0.5 text-[10px] leading-none text-content/55"
+              className="max-w-24 truncate rounded bg-content/8 px-1.5 py-0.5 text-[10px] leading-none text-muted"
             >
               #{tag}
             </span>
           ))}
           {note.tags.length > 3 ? (
-            <span className="shrink-0 text-[10px] text-content/40">
+            <span className="shrink-0 text-[10px] text-muted">
               +{note.tags.length - 3}
             </span>
           ) : null}
@@ -527,7 +527,7 @@ function NoteDetail({
     return (
       <div className="flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6 text-center">
         <File className="mb-3 size-6 text-content/30" strokeWidth={1.75} />
-        <p className="text-[13px] text-content/45">Select a note</p>
+        <p className="text-[13px] text-muted">Select a note</p>
       </div>
     );
   }
@@ -830,7 +830,7 @@ function NoteEditor({
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-8 py-8">
         <header className="flex flex-col gap-3">
-          <div className="flex min-w-0 items-center gap-2 text-[12px] text-content/50">
+          <div className="flex min-w-0 items-center gap-2 text-[12px] text-muted">
             <File className="size-3.5 shrink-0" strokeWidth={1.75} />
             <span>Note</span>
             {note.slug ? (
@@ -868,11 +868,11 @@ function NoteEditor({
             }}
             onKeyDown={onTitleKeyDown}
             aria-label="Note title"
-            className="w-full border-0 bg-transparent p-0 text-[20px] font-semibold leading-tight text-content outline-none placeholder:text-content/35"
+            className="w-full border-0 bg-transparent p-0 text-[20px] font-semibold leading-tight text-content outline-none placeholder:text-muted"
             placeholder="Untitled"
           />
           {time ? (
-            <div className="text-[12px] text-content/50">Updated {time}</div>
+            <div className="text-[12px] text-muted">Updated {time}</div>
           ) : null}
           <NoteTagsEditor
             tags={tags}
@@ -898,7 +898,7 @@ function NoteEditor({
                   window.clearTimeout(saveTimer.current);
                 void enqueueNoteSave(note.id, () => onDelete(note.id));
               }}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 h-7 text-[12px] text-content/70 hover:bg-content/10 hover:text-red-400"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 h-7 text-[12px] text-content/70 hover:bg-content/10 hover:text-danger"
             >
               <Trash2 className="size-3.5" strokeWidth={1.75} />
               Delete
@@ -907,7 +907,7 @@ function NoteEditor({
           {saveError ? (
             <div
               role="alert"
-              className="flex items-center gap-2 text-[12px] text-red-400/90"
+              className="flex items-center gap-2 text-[12px] text-danger"
             >
               <span>Could not save note: {saveError}</span>
               <button
@@ -989,7 +989,7 @@ function NoteEditor({
           ) : body.trim() ? (
             <AgentMarkdown text={body} cwd={sourceCwd} hardBreaks />
           ) : (
-            <p className="text-[13px] text-content/45">No description</p>
+            <p className="text-[13px] text-muted">No description</p>
           )}
         </div>
       </div>
@@ -1017,7 +1017,7 @@ function NoteTagsEditor({
       className="flex min-w-0 flex-wrap items-center gap-1.5"
       aria-label="Tags"
     >
-      <span className="mr-0.5 text-[11px] text-content/45">Tags</span>
+      <span className="mr-0.5 text-[11px] text-muted">Tags</span>
       {tags.map((tag) => (
         <span
           key={tag}
@@ -1029,7 +1029,7 @@ function NoteTagsEditor({
             title={`Remove #${tag}`}
             aria-label={`Remove #${tag}`}
             onClick={() => onChange(tags.filter((item) => item !== tag))}
-            className="grid size-4 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
+            className="grid size-4 shrink-0 place-items-center rounded text-muted hover:bg-content/10 hover:text-content"
           >
             <X className="size-2.5" strokeWidth={1.75} />
           </button>
@@ -1060,7 +1060,7 @@ function NoteTagsEditor({
           placeholder="Add tag…"
           spellCheck={false}
           autoComplete="off"
-          className="h-6 min-w-20 flex-1 border-0 bg-transparent px-1 text-[11px] text-content outline-none placeholder:text-content/35"
+          className="h-6 min-w-20 flex-1 border-0 bg-transparent px-1 text-[11px] text-content outline-none placeholder:text-muted"
         />
       ) : null}
     </div>

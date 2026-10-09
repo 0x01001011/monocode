@@ -18,7 +18,7 @@ export function UpdateRailCard({ update, onOpen, onDismiss }: Props) {
       <button
         type="button"
         onClick={() => onOpen(update.version)}
-        className="flex w-full items-start gap-2 rounded-lg px-2 py-2 pr-8 text-left hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+        className="flex w-full items-start gap-2 rounded-lg px-2 py-2 pr-8 text-left hover:bg-accent/10 focus-visible:focus-ring-inset"
       >
         <span className="mt-0.5 grid size-[18px] shrink-0 place-items-center">
           <img
@@ -32,7 +32,7 @@ export function UpdateRailCard({ update, onOpen, onDismiss }: Props) {
           <span className="block truncate text-[12px] font-medium leading-tight text-content">
             Updated to {update.version}
           </span>
-          <span className="mt-0.5 block truncate text-[11px] leading-tight text-content/50">
+          <span className="mt-0.5 block truncate text-[11px] leading-tight text-muted">
             What's new
           </span>
         </span>
@@ -41,7 +41,7 @@ export function UpdateRailCard({ update, onOpen, onDismiss }: Props) {
         type="button"
         aria-label="Dismiss update notification"
         onClick={onDismiss}
-        className="absolute right-1 top-1 grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/8 hover:text-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="absolute right-1 top-1 grid size-6 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content focus-visible:focus-ring"
       >
         <X className="size-3.5" strokeWidth={1.75} />
       </button>

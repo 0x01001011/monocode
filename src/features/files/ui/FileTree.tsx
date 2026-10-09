@@ -45,7 +45,9 @@ import {
   saveSelected,
   subscribeDirsChanged,
 } from "../model/fileTree";
+import { treeTabStop } from "../model/treeKeyboard";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { confirmNative } from "../../../shared/lib/confirm";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { dragPointToClient } from "../../../shared/lib/dragPoint";
 import {
@@ -79,7 +81,7 @@ import { openInEditor, rememberEditor } from "../model/openInEditor";
 import { FileTypeIcon } from "./FileTypeIcon";
 
 const GIT_STATUS_COLOR: Record<string, string> = {
-  modified: "text-amber-400",
+  modified: "text-warning",
   added: "text-diff-add-fg",
   untracked: "text-diff-add-fg",
   deleted: "text-diff-del-fg",
@@ -111,6 +113,8 @@ const REVEAL_LABEL = IS_MAC
 type TreeCtxValue = {
   expanded: Set<string>;
   selectedPath: string | null;
+  /** The treeitem that holds the roving tabindex. */
+  tabStopPath: string | null;
   creating: Creating | null;
   renaming: string | null;
   cutPath: string | null;
@@ -293,6 +297,17 @@ export const FileTree = memo(function FileTree({
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const name = rootLabel?.trim() || basename(cwd);
   const rootOpen = expanded.has(cwd);
+  const rootEntries = showExcludedFiles
+    ? children
+    : children?.filter((entry) => !entry.ignored);
+  const tabStopPath = treeTabStop(
+    cwd,
+    selectedPath,
+    expanded,
+    showExcludedFiles,
+    (rootEntries?.find((entry) => entry.isDir) ?? rootEntries?.[0])?.path ??
+      null,
+  );
 
   const toggle = (path: string) => {
     setExpanded((prev) => {
@@ -554,10 +569,11 @@ export const FileTree = memo(function FileTree({
     if (path === cwd) return;
     const isDir = isDirAt(cwd, path);
     const label = basename(path);
-    const ok = window.confirm(
+    const ok = await confirmNative(
       isDir
         ? `Delete folder “${label}” and everything inside it?`
         : `Delete “${label}”?`,
+      isDir ? "Delete folder" : "Delete file",
     );
     if (!ok) return;
     await deletePath(path);
@@ -1005,6 +1021,7 @@ export const FileTree = memo(function FileTree({
       value={{
         expanded,
         selectedPath,
+        tabStopPath,
         creating,
         renaming,
         cutPath: clip?.mode === "cut" ? clip.path : null,
@@ -1081,18 +1098,18 @@ export const FileTree = memo(function FileTree({
                 e.clientY,
               );
             }}
-            className={`flex min-w-0 flex-1 items-center gap-1 h-full pl-2 text-left outline-none focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent/40 ${
+            className={`flex min-w-0 flex-1 items-center gap-1 h-full pl-2 text-left focus-visible:focus-ring-inset ${
               dragOverPath === cwd ? "bg-selection" : ""
             }`}
           >
-            <span className="grid size-4 shrink-0 place-items-center text-content/50">
+            <span className="grid size-4 shrink-0 place-items-center text-muted">
               {rootOpen ? (
                 <ChevronDown className="size-3.5" strokeWidth={1.75} />
               ) : (
                 <ChevronRight className="size-3.5" strokeWidth={1.75} />
               )}
             </span>
-            <span className="min-w-0 truncate text-[11px] font-semibold tracking-[0.08em] text-content/50 uppercase">
+            <span className="min-w-0 truncate text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
               {name}
             </span>
           </button>
@@ -1102,7 +1119,7 @@ export const FileTree = memo(function FileTree({
           className="min-h-0 flex-1 overflow-y-auto overscroll-none"
         >
           {opError ? (
-            <p className="px-3 py-1 text-[12px] leading-4 text-red-400">
+            <p className="px-3 py-1 text-[12px] leading-4 text-danger">
               {opError}
             </p>
           ) : null}
@@ -1158,7 +1175,7 @@ function HeaderIcon({
       className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md ${
         active
           ? "bg-selection text-content"
-          : "text-content/50 hover:bg-content/5 hover:text-content"
+          : "text-muted hover:bg-content/5 hover:text-content"
       }`}
     >
       {children}
@@ -1203,13 +1220,13 @@ function TreeChildren({
   return (
     <>
       {error ? (
-        <p className="truncate pr-2 text-[12px] text-content/50" style={pad}>
+        <p className="truncate pr-2 text-[12px] text-muted" style={pad}>
           {error}
         </p>
       ) : null}
       {show && ctx.creating?.isDir ? row : null}
       {loading && !error ? (
-        <p className="pr-2 text-[12px] text-content/50" style={pad}>
+        <p className="pr-2 text-[12px] text-muted" style={pad}>
           …
         </p>
       ) : null}
@@ -1228,6 +1245,7 @@ function TreeNode({ entry, depth }: { entry: FsEntry; depth: number }) {
   const {
     expanded,
     selectedPath,
+    tabStopPath,
     renaming,
     cutPath,
     dragOverPath,
@@ -1309,7 +1327,10 @@ function TreeNode({ entry, depth }: { entry: FsEntry; depth: number }) {
           type="button"
           role="treeitem"
           title={entry.path}
+          aria-level={depth + 1}
+          aria-selected={selected}
           aria-expanded={entry.isDir ? open : undefined}
+          tabIndex={tabStopPath === entry.path ? 0 : -1}
           onClick={onClick}
           onDoubleClick={() => {
             if (!entry.isDir) {
@@ -1321,7 +1342,7 @@ function TreeNode({ entry, depth }: { entry: FsEntry; depth: number }) {
           }}
           onContextMenu={(e) => onItemContextMenu(entry, e)}
           style={{ paddingLeft: 8 + depth * 12 }}
-          className={`flex h-7.5 w-full cursor-default items-center gap-1 pr-2 text-left text-[14px] outline-none focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-accent/40 leading-none data-[explorer-dragging]:opacity-50 ${
+          className={`flex h-7.5 w-full cursor-default items-center gap-1 pr-2 text-left text-[14px] leading-none focus-visible:focus-ring-inset data-[explorer-dragging]:opacity-50 ${
             selected
               ? "bg-selection text-content"
               : "text-content hover:bg-content/5"
@@ -1329,7 +1350,7 @@ function TreeNode({ entry, depth }: { entry: FsEntry; depth: number }) {
             dragOverPath === entry.path ? "bg-selection" : ""
           }`}
         >
-          <span className="grid size-4 shrink-0 place-items-center text-content/50">
+          <span className="grid size-4 shrink-0 place-items-center text-muted">
             {entry.isDir ? (
               open ? (
                 <ChevronDown className="size-3.5" strokeWidth={1.75} />
@@ -1343,7 +1364,7 @@ function TreeNode({ entry, depth }: { entry: FsEntry; depth: number }) {
           </span>
           <span
             className={`min-w-0 truncate leading-label ${
-              entry.ignored ? "italic text-content/50" : (gitColor ?? "")
+              entry.ignored ? "italic text-muted" : (gitColor ?? "")
             }`}
           >
             {entry.name}
@@ -1435,7 +1456,7 @@ export function NameRow({
         style={{ paddingLeft: 8 + depth * 12 }}
         className="flex h-7.5 w-full items-center gap-1 bg-content/10 pr-2"
       >
-        <span className="grid size-4 shrink-0 place-items-center text-content/50">
+        <span className="grid size-4 shrink-0 place-items-center text-muted">
           {isDir ? (
             <ChevronRight className="size-3.5" strokeWidth={1.75} />
           ) : null}
@@ -1469,7 +1490,7 @@ export function NameRow({
             }
           }}
           onBlur={() => finish(issue === null || issue.severity !== "error")}
-          className="h-5 min-w-0 flex-1 rounded-sm bg-content/10 px-1 text-[14px] leading-none text-content outline-none ring-1 ring-accent"
+          className="h-5 min-w-0 flex-1 rounded-sm bg-content/10 px-1 text-[14px] leading-none text-content focus-visible:focus-ring-inset"
         />
       </div>
       {showIssue ? (
@@ -1526,7 +1547,7 @@ function NameIssueView({
   return (
     <p
       className={`pr-2 pb-1 text-[12px] leading-4 ${
-        error ? "text-red-400" : "text-amber-400"
+        error ? "text-danger" : "text-warning"
       }`}
       style={{ paddingLeft: 28 + depth * 12 }}
     >

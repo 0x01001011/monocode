@@ -269,14 +269,29 @@ describe("loadProjectFiles", () => {
   });
 
   it("bounds retained worktrees and keeps recently revisited ones", async () => {
-    for (let index = 0; index < 8; index++) {
+    for (let index = 0; index < 32; index++) {
       await loadProjectFiles(`/repo/tree-${index}`);
     }
     await loadProjectFiles("/repo/tree-0");
-    await loadProjectFiles("/repo/tree-8");
+    await loadProjectFiles("/repo/tree-32");
     expect(peekProjectFiles("/repo/tree-0")).toBe(files);
     expect(peekProjectFiles("/repo/tree-1")).toBeNull();
-    expect(list).toHaveBeenCalledTimes(9);
+    expect(list).toHaveBeenCalledTimes(33);
+  });
+
+  it("evicts older worktrees sooner when listings are huge, but keeps a floor", async () => {
+    const huge = Array.from({ length: 60_000 }, (_, index) => ({
+      ...files[0]!,
+      relative: `f${index}.ts`,
+    }));
+    list.mockResolvedValue(huge);
+    for (let index = 0; index < 9; index++) {
+      await loadProjectFiles(`/repo/big-${index}`);
+    }
+    expect(peekProjectFiles("/repo/big-0")).toBeNull();
+    for (let index = 1; index < 9; index++) {
+      expect(peekProjectFiles(`/repo/big-${index}`)).toBe(huge);
+    }
   });
 
   it("notifies subscribers when the listing changes", async () => {

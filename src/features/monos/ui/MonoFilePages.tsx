@@ -146,7 +146,7 @@ export function MemoryPage({
         ) : null}
       </PageHeader>
       {saveError ? (
-        <p role="alert" className="px-4 py-2 text-[12px] text-red-400">
+        <p role="alert" className="px-4 py-2 text-[12px] text-danger">
           {saveError}
         </p>
       ) : null}
@@ -266,13 +266,13 @@ function FactRow({
       <span className="flex min-w-0 flex-1 flex-col">
         <span
           className={`truncate text-[12px] leading-5 ${
-            struck ? "text-content/35 line-through" : "text-content/85"
+            struck ? "text-faint line-through" : "text-content/85"
           }`}
         >
           {text}
         </span>
         {date ? (
-          <span className="text-[11px] leading-4 text-content/40">
+          <span className="text-[11px] leading-4 text-muted">
             {shortDate(date)}
           </span>
         ) : null}
@@ -386,7 +386,7 @@ function FactEditor({
         onBlur={() => {
           void commit(true);
         }}
-        className="block min-h-7 min-w-0 flex-1 resize-none bg-transparent py-[5px] text-[12px] leading-[18px] text-content/90 outline-none placeholder:text-content/35"
+        className="block min-h-7 min-w-0 flex-1 resize-none bg-transparent py-[5px] text-[12px] leading-[18px] text-content/90 outline-none placeholder:text-muted"
       />
     </div>
   );

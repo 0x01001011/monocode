@@ -4,7 +4,11 @@ import {
   Terminal,
   X,
 } from "../../../shared/ui/icons";
-import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
 import {
@@ -48,6 +52,7 @@ import { openInEditor, rememberEditor } from "../../files/model/openInEditor";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { TabLabel } from "../../../shared/ui/TabLabel";
+import { nextRovingIndex } from "./rovingFocus";
 
 type Props = {
   files: FilePaneTab[];
@@ -285,6 +290,33 @@ export function SurfaceTabs({
     });
   };
 
+  // One tab stop for the whole strip: the active tab, or the first tab when
+  // the active id is not in this strip.
+  const tabStopId = files.some((file) => file.id === activeFileId)
+    ? activeFileId
+    : files[0]?.id;
+
+  const onTabListKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+      return;
+    const target = event.target as HTMLElement;
+    if (target.getAttribute("role") !== "tab") return;
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>(
+        '[data-tab-slot-id] [role="tab"]',
+      ),
+    );
+    const next = nextRovingIndex(event.key, tabs.indexOf(target), tabs.length);
+    if (next === null) return;
+    event.preventDefault();
+    const nextTab = tabs[next];
+    const fileId =
+      nextTab?.closest<HTMLElement>("[data-tab-slot-id]")?.dataset.tabSlotId;
+    if (!nextTab || !fileId) return;
+    nextTab.focus();
+    onSelectFile(fileId);
+  };
+
   useLayoutEffect(() => {
     if (sortable.draggingId) return;
     activeTabRef.current?.scrollIntoView({
@@ -299,15 +331,15 @@ export function SurfaceTabs({
         ref={lockOverscroll}
         role="tablist"
         aria-label={label}
+        aria-orientation="horizontal"
+        onKeyDown={onTabListKeyDown}
         className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pl-1.5 pr-2.5"
       >
         {onPaneDragStart ? (
           <div
-            role="button"
+            role="presentation"
             title="Drag to reorder pane"
-            aria-label="Drag to reorder pane"
-            tabIndex={-1}
-            className="grid h-7.5 w-5 shrink-0 cursor-grab place-items-center rounded-md text-content/35 hover:bg-content/5 hover:text-content/70 active:cursor-grabbing touch-none"
+            className="grid h-7.5 w-5 shrink-0 cursor-grab place-items-center rounded-md text-muted hover:bg-content/5 hover:text-content/70 active:cursor-grabbing touch-none"
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
@@ -333,6 +365,7 @@ export function SurfaceTabs({
           const { label, iconName, tooltip } = surfaceTabPresentation(file);
           const tab = (
             <div
+              role="presentation"
               ref={(el) => {
                 if (closing) return;
                 setTabNode(file.id, el);
@@ -384,16 +417,17 @@ export function SurfaceTabs({
                 type="button"
                 role="tab"
                 aria-selected={active}
+                tabIndex={!closing && file.id === tabStopId ? 0 : -1}
                 title={appendProblems(tooltip, errors)}
                 onClick={() => {
                   if (sortable.consumeClick()) return;
                   onSelectFile(file.id);
                 }}
                 onDoubleClick={() => onPinFile?.(file.id)}
-                className={`relative flex h-7.5 min-w-0 flex-1 cursor-default items-center gap-1.5 self-center rounded-md px-2 pr-7 text-left text-[13px] ${
+                className={`relative flex h-7.5 min-w-0 flex-1 cursor-default items-center gap-1.5 self-center rounded-md px-2 pr-7 text-left text-[13px] focus-visible:focus-ring-inset ${
                   active
                     ? "bg-selection text-content"
-                    : "text-content/50 hover:bg-content/5 hover:text-content"
+                    : "text-muted hover:bg-content/5 hover:text-content"
                 }`}
               >
                 {terminal ? (
@@ -413,21 +447,20 @@ export function SurfaceTabs({
                 )}
                 <TabLabel
                   className={`flex-1 ${file.preview ? "italic" : ""} ${
-                    errors
-                      ? active
-                        ? "text-red-400"
-                        : "text-red-400/75 group-hover:text-red-400"
-                      : ""
+                    errors ? "text-danger" : ""
                   }`}
                 >
                   {label}
                 </TabLabel>
                 {dirty ? (
-                  <span
-                    className="size-1.5 shrink-0 rounded-full bg-content/70"
-                    title="Unsaved changes"
-                    aria-label="Unsaved changes"
-                  />
+                  <>
+                    <span
+                      className="size-1.5 shrink-0 rounded-full bg-content/70"
+                      title="Unsaved changes"
+                      aria-hidden="true"
+                    />
+                    <span className="sr-only">, unsaved changes</span>
+                  </>
                 ) : null}
               </button>
               <button
@@ -440,7 +473,7 @@ export function SurfaceTabs({
                   event.stopPropagation();
                   onCloseFile(file.id);
                 }}
-                className={`absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-content/50 hover:bg-content/10 hover:text-content ${
+                className={`hit-area absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted hover:bg-content/10 hover:text-content focus-visible:opacity-100 group-has-[:focus-visible]:opacity-100 ${
                   active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                 }`}
               >

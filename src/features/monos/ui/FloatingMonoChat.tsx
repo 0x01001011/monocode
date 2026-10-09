@@ -38,7 +38,7 @@ const EMPTY: FloatingMonoView = {
   error: null,
 };
 const BUTTON =
-  "grid size-7 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/8 hover:text-content disabled:opacity-30";
+  "grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content disabled:opacity-30";
 const SURFACE =
   "sidebar-glass flex h-full min-h-0 overflow-hidden rounded-2xl font-sans text-content";
 /**
@@ -191,7 +191,7 @@ export function FloatingMonoChat({ onShown }: { onShown: () => void }) {
                 <MonoStatus
                   state={state}
                   color={mono.color}
-                  className="pointer-events-none text-[11px] leading-3.5 text-content/45"
+                  className="pointer-events-none text-[11px] leading-3.5 text-muted"
                 />
               </>
             ) : null}
@@ -246,7 +246,7 @@ export function FloatingMonoChat({ onShown }: { onShown: () => void }) {
                 className="size-18 object-contain"
               />
             )}
-            <p className="text-[13px] text-content/50">
+            <p className="text-[13px] text-muted">
               {failure ?? "Loading conversation…"}
             </p>
           </div>
@@ -255,7 +255,7 @@ export function FloatingMonoChat({ onShown }: { onShown: () => void }) {
             {failure ? (
               <p
                 role="alert"
-                className="shrink-0 border-b border-content/8 px-3 py-2 text-[12px] text-red-400"
+                className="shrink-0 border-b border-content/8 px-3 py-2 text-[12px] text-danger"
               >
                 {failure}
               </p>
@@ -399,7 +399,7 @@ function FloatingConversation({
               color={mono.color}
               className="size-12"
             />
-            <p className="text-[13px] leading-6 text-content/45">
+            <p className="text-[13px] leading-6 text-muted">
               Say hello to {mono.name}, ask a question, or hand over some work.
             </p>
           </div>
@@ -570,7 +570,7 @@ function ArtifactSheet({
           <span className="h-1 w-9 rounded-full bg-content/20" />
         </div>
         <header className="flex shrink-0 items-center gap-1 px-3 pt-1 pb-2">
-          <span className="min-w-0 flex-1 truncate px-1 text-[12px] text-content/50">
+          <span className="min-w-0 flex-1 truncate px-1 text-[12px] text-muted">
             {label}
           </span>
           {artifact ? (
@@ -610,7 +610,7 @@ function ArtifactSheet({
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-2 pb-8">
           {!loaded ? (
-            <p role="status" className="text-[13px] text-content/50">
+            <p role="status" className="text-[13px] text-muted">
               Loading document…
             </p>
           ) : !artifact ? (
@@ -619,10 +619,10 @@ function ArtifactSheet({
             </p>
           ) : (
             <article data-artifact-reader={artifact.id}>
-              <h1 className="mb-1 text-[20px] leading-snug font-medium text-content">
+              <h1 className="mb-1 text-[20px] leading-snug font-medium text-balance text-content">
                 {artifact.title}
               </h1>
-              <p className="mb-5 text-[11px] text-content/45">
+              <p className="mb-5 text-[11px] text-muted">
                 Updated {new Date(artifact.updatedAt).toLocaleString()}
               </p>
               <ArtifactContent

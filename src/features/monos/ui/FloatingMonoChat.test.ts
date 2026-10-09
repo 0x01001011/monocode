@@ -314,6 +314,7 @@ it("reads a Mono's document in a sheet over the chat and slides it away", async 
   const sheet = container.querySelector('[data-artifact-sheet="doc-1"]');
   expect(sheet?.textContent).toContain("Menu plan");
   expect(sheet?.textContent).toContain("Soup first.");
+  expect(sheet?.querySelector("h1")?.className).toContain("text-balance");
   // Reading in place never asks the main window to take over.
   expect(native.invoke).not.toHaveBeenCalledWith(
     "mono_chat_action",

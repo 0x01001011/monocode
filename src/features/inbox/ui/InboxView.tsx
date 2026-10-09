@@ -41,6 +41,7 @@ import { InboxProviderMark } from "./InboxProviderMark";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { Popover } from "../../../shared/ui/Popover";
+import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { IconButton, OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
@@ -82,6 +83,7 @@ import {
 import {
   applyInboxFilters,
   connectableInboxSources,
+  DEFAULT_INBOX_FILTERS,
   hasActiveInboxFilters,
   loadInboxConnections,
   linearProjectOptions,
@@ -126,6 +128,7 @@ import {
   useInboxSeenTick,
 } from "../model/inboxSeen";
 import { LIST_PAGE_SIZE, listWindowSize } from "../../../shared/lib/listWindow";
+import { prefersReducedMotion } from "../../../shared/lib/motion";
 import {
   LINEAR_CHANGE_EVENT,
   linearConnected,
@@ -312,7 +315,7 @@ function InboxSourceTab({
       className={`flex h-6 min-w-0 flex-1 items-center justify-center rounded-md px-2 text-[12px] leading-none ${
         selected
           ? "bg-selection text-content"
-          : "text-content/50 hover:bg-content/5 hover:text-content"
+          : "text-muted hover:bg-content/5 hover:text-content"
       }`}
     >
       <span className="flex items-center gap-1.5">
@@ -344,7 +347,7 @@ function InboxDetailTab({
       aria-selected={selected}
       onClick={onSelect}
       className={`relative flex h-9 items-center text-[12px] leading-none ${
-        selected ? "text-content" : "text-content/50 hover:text-content"
+        selected ? "text-content" : "text-muted hover:text-content"
       }`}
     >
       {label}
@@ -885,6 +888,11 @@ export function InboxView({
     saveInboxFilters(pruned);
   };
 
+  const onClearFilters = () => {
+    setSearchInput("");
+    onFiltersChange(DEFAULT_INBOX_FILTERS);
+  };
+
   const onSourceChange = (next: InboxSource) => {
     setSource(next);
     saveInboxSource(next);
@@ -937,7 +945,7 @@ export function InboxView({
             className={`flex h-6 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-[12px] leading-none ${
               connectMenuOpen
                 ? "bg-selection text-content"
-                : "text-content/40 hover:bg-content/5 hover:text-content"
+                : "text-muted hover:bg-content/5 hover:text-content"
             }`}
           >
             <Plus className="size-3.5 shrink-0" strokeWidth={1.75} />
@@ -956,7 +964,7 @@ export function InboxView({
               aria-label="Filter inbox"
               spellCheck={false}
               autoComplete="off"
-              className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-content/40"
+              className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-muted"
             />
           </div>
           <button
@@ -966,7 +974,7 @@ export function InboxView({
             aria-expanded={!!filterMenu}
             aria-haspopup="menu"
             onClick={onFilterButtonClick}
-            className={`grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content ${
+            className={`grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content ${
               filterMenu || filtersActive ? "bg-selection text-content" : ""
             }`}
           >
@@ -984,7 +992,7 @@ export function InboxView({
                   : "Could not save read status. Please try again.",
               )
             }
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-content/45"
+            className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted"
           >
             <CheckCheck className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -992,7 +1000,7 @@ export function InboxView({
             type="button"
             aria-label="Refresh"
             onClick={() => setRefresh((value) => value + 1)}
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+            className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
           >
             {loading || revalidating ? (
               <LoaderCircle
@@ -1006,7 +1014,7 @@ export function InboxView({
         </div>
       )}
       {readStatusError ? (
-        <p role="alert" className="px-3 py-2 text-xs text-red-400">
+        <p role="alert" className="px-3 py-2 text-xs text-danger">
           {readStatusError}
         </p>
       ) : null}
@@ -1015,43 +1023,70 @@ export function InboxView({
         className="min-h-0 flex-1 overflow-y-auto overscroll-none"
       >
         {noSourcesConnected ? (
-          <p className="px-3 py-3 text-[12px] text-content/50">
-            Add a connection to start using the Inbox.
-          </p>
+          <div className="flex flex-col items-start gap-2 px-3 py-3">
+            <p className="text-[12px] text-pretty text-muted">
+              Add a connection to start using the Inbox.
+            </p>
+            {connectableSources.length > 0 ? (
+              <SecondaryButton
+                onClick={() => onOpenIntegrations(connectableSources[0])}
+              >
+                Connect an account
+              </SecondaryButton>
+            ) : null}
+          </div>
         ) : sourceError && visibleItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/50">{sourceError}</p>
+          <div className="flex flex-col items-start gap-2 px-3 py-2">
+            <p role="alert" className="text-[12px] text-danger" data-selectable>
+              {sourceError}
+            </p>
+            <SecondaryButton onClick={() => setRefresh((value) => value + 1)}>
+              Try again
+            </SecondaryButton>
+          </div>
         ) : loading && items.length === 0 ? (
-          <div className="flex justify-center py-10 text-content/40">
+          <div
+            role="status"
+            aria-label="Loading inbox"
+            className="flex justify-center py-10 text-muted"
+          >
             <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
           </div>
         ) : visibleItems.length === 0 ? (
-          <p className="px-3 py-2 text-[12px] text-content/50">
-            {narrowedByUser
-              ? searchNarrowed
-                ? isTrackerSource(source)
-                  ? `No matching ${INBOX_SOURCE_LABELS[source]} issues`
-                  : source === "gitlab"
-                    ? "No matching issues or merge requests"
-                    : "No matching issues or pull requests"
+          <div className="flex flex-col items-start gap-2 px-3 py-2">
+            <p className="text-[12px] text-pretty text-muted">
+              {narrowedByUser
+                ? searchNarrowed
+                  ? isTrackerSource(source)
+                    ? `No matching ${INBOX_SOURCE_LABELS[source]} issues`
+                    : source === "gitlab"
+                      ? "No matching issues or merge requests"
+                      : "No matching issues or pull requests"
+                  : isTrackerSource(source)
+                    ? `No ${INBOX_SOURCE_LABELS[source]} issues match these filters`
+                    : source === "gitlab" || source === "azuredevops"
+                      ? activeFilters.assignedToMe
+                        ? "Nothing needs your attention"
+                        : source === "gitlab"
+                          ? "No GitLab items match these filters"
+                          : "No Azure DevOps items match these filters"
+                      : "No issues or pull requests match these filters"
                 : isTrackerSource(source)
-                  ? `No ${INBOX_SOURCE_LABELS[source]} issues match these filters`
-                  : source === "gitlab" || source === "azuredevops"
-                    ? activeFilters.assignedToMe
-                      ? "Nothing needs your attention"
-                      : source === "gitlab"
-                        ? "No GitLab items match these filters"
-                        : "No ADO items match these filters"
-                    : "No issues or pull requests match these filters"
-              : isTrackerSource(source)
-                ? `No ${INBOX_SOURCE_LABELS[source]} issues`
-                : source === "gitlab"
-                  ? projects.length === 0
-                    ? "Open a project to fill the inbox"
-                    : "No matching issues or merge requests"
-                  : projects.length === 0
-                    ? "Open a project to fill the inbox"
-                    : "No matching issues or pull requests"}
-          </p>
+                  ? `No ${INBOX_SOURCE_LABELS[source]} issues`
+                  : source === "gitlab"
+                    ? projects.length === 0
+                      ? "Open a project to fill the inbox"
+                      : "No matching issues or merge requests"
+                    : projects.length === 0
+                      ? "Open a project to fill the inbox"
+                      : "No matching issues or pull requests"}
+            </p>
+            {narrowedByUser ? (
+              <SecondaryButton onClick={onClearFilters}>
+                Clear filters
+              </SecondaryButton>
+            ) : null}
+          </div>
         ) : (
           <ul className="flex flex-col gap-0.5 p-1.5">
             {shownItems.map((item) => {
@@ -1151,10 +1186,7 @@ export function InboxView({
           <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
         )}
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-          <Inbox
-            className="size-3.5 shrink-0 text-content/45"
-            strokeWidth={1.75}
-          />
+          <Inbox className="size-3.5 shrink-0 text-muted" strokeWidth={1.75} />
           <span className="min-w-0 truncate text-content">Inbox</span>
         </div>
         {IS_MAC ? null : <WindowControls />}
@@ -1298,12 +1330,7 @@ export function LinkedWorkItemPanel({
   // the sheet slides in on a transform. Animating the width instead would
   // rewrap the transcript and resize terminals on every frame.
   const [opening, setOpening] = useState(
-    () =>
-      visible &&
-      !(
-        typeof window !== "undefined" &&
-        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-      ),
+    () => visible && !prefersReducedMotion(),
   );
   useEffect(() => {
     if (!visible) setOpening(false);
@@ -1378,8 +1405,8 @@ export function LinkedWorkItemPanel({
             />
           ) : error ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-              <CircleX className="size-5 text-rose-400/90" strokeWidth={1.75} />
-              <p role="alert" className="max-w-sm text-[12px] text-content/55">
+              <CircleX className="size-5 text-danger" strokeWidth={1.75} />
+              <p role="alert" className="max-w-sm text-[12px] text-muted">
                 {error}
               </p>
               <button
@@ -1392,7 +1419,7 @@ export function LinkedWorkItemPanel({
               </button>
             </div>
           ) : (
-            <div className="flex h-full items-center justify-center text-content/40">
+            <div className="flex h-full items-center justify-center text-muted">
               <LoaderCircle
                 className="size-4 animate-spin"
                 strokeWidth={1.75}
@@ -1434,7 +1461,7 @@ function InboxDetailBody({
     return (
       <div className="flex h-full flex-col items-center justify-center px-6 text-center">
         <Inbox className="mb-3 size-6 text-content/30" strokeWidth={1.75} />
-        <p className="text-[13px] text-content/45">Select an inbox item</p>
+        <p className="text-[13px] text-muted">Select an inbox item</p>
       </div>
     );
   }
@@ -1469,7 +1496,7 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
   if (label === "Draft") {
     return {
       Icon: GitPullRequestDraft,
-      className: "text-content/50",
+      className: "text-muted",
       label,
     };
   }
@@ -1486,13 +1513,13 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
     }
     return {
       Icon: pr ? GitPullRequestClosed : CircleX,
-      className: "text-rose-400/90",
+      className: "text-danger",
       label,
     };
   }
   return {
     Icon: pr ? GitPullRequest : CircleDot,
-    className: "text-emerald-400/90",
+    className: "text-success",
     label,
   };
 }
@@ -1560,7 +1587,7 @@ function InboxCard({
             className={`size-3 shrink-0 ${status.className}`}
             strokeWidth={1.75}
           />
-          <span className="min-w-0 truncate text-[11px] text-content/50">
+          <span className="min-w-0 truncate text-[11px] text-muted">
             {kindLabel} · {inboxItemRef(item)}
             {attentionLabel ? ` · ${attentionLabel}` : ""}
           </span>
@@ -1577,7 +1604,7 @@ function InboxCard({
               </span>
             ) : null}
             {time ? (
-              <span className="text-[11px] tabular-nums text-content/45">
+              <span className="text-[11px] tabular-nums text-muted">
                 {time}
               </span>
             ) : null}
@@ -1591,7 +1618,7 @@ function InboxCard({
         {item.title}
       </span>
       <span className="mt-1 flex min-w-0 items-center gap-2">
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-content/45">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-muted">
           {tracker || !item.projectPath ? null : logoPath ? (
             <ProjectLogoIcon
               path={logoPath}
@@ -1854,7 +1881,7 @@ export function GithubPrActions({
           type="button"
           disabled={busy}
           onClick={(event) => askToRun("close", event.currentTarget)}
-          className={`${stateButton} hover:text-rose-400`}
+          className={`${stateButton} hover:text-danger`}
         >
           <GitPullRequestClosed className="size-3.5" strokeWidth={1.75} />
           Close pull request
@@ -1872,7 +1899,7 @@ export function GithubPrActions({
         </button>
       ) : null}
       {notice ? (
-        <span role="status" className="text-[11px] text-content/55">
+        <span role="status" className="text-[11px] text-muted">
           {notice}
         </span>
       ) : null}
@@ -1917,7 +1944,7 @@ export function GithubPrActions({
                 <span className="block text-[12px] font-medium leading-tight">
                   {option.label}
                 </span>
-                <span className="mt-0.5 block text-[11px] leading-snug text-content/45">
+                <span className="mt-0.5 block text-[11px] leading-snug text-muted">
                   {option.description}
                 </span>
               </span>
@@ -1941,14 +1968,14 @@ export function GithubPrActions({
             <h2 className="text-[13px] font-medium text-content">
               {confirmCopy.title}
             </h2>
-            <p className="text-[12px] leading-snug text-content/55">
+            <p className="text-[12px] leading-snug text-muted">
               {confirmCopy.detail}
             </p>
           </div>
           {actionError ? (
             <p
               role="alert"
-              className="mt-2 break-words text-[11px] leading-snug text-rose-400"
+              className="mt-2 break-words text-[11px] leading-snug text-danger"
             >
               {actionError}
             </p>
@@ -1968,11 +1995,11 @@ export function GithubPrActions({
               onClick={() => void runAction()}
               className={`inline-flex h-7 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium disabled:cursor-default disabled:opacity-60 ${
                 confirmation.action === "close"
-                  ? "bg-rose-500/20 text-rose-700 hover:bg-rose-500/30 dark:text-rose-300"
+                  ? "bg-danger/10 text-danger hover:bg-danger/20"
                   : confirmation.action === "merge" ||
                       confirmation.action === "squash" ||
                       confirmation.action === "rebase"
-                    ? "bg-emerald-500/20 text-emerald-700 hover:bg-emerald-500/30 dark:text-emerald-300"
+                    ? "bg-success/10 text-success hover:bg-success/20"
                     : "bg-content text-background-base hover:bg-content/80"
               } ${PR_ACTION_PRESS}`}
             >
@@ -2157,10 +2184,10 @@ export function InboxDetail({
   const reviewLabel = githubReviewDecisionLabel(reviewDecision);
   const reviewClass =
     reviewDecision.toUpperCase() === "APPROVED"
-      ? "text-emerald-400/90"
+      ? "text-success"
       : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
-        ? "text-rose-400/90"
-        : "text-content/50";
+        ? "text-danger"
+        : "text-muted";
   const baseRef =
     details?.baseRefName?.trim() || thread?.baseRefName?.trim() || "";
   const headRef =
@@ -2609,7 +2636,7 @@ export function InboxDetail({
     <div
       data-inbox-detail-identity
       data-inbox-detail-fixed-header={panel ? "" : undefined}
-      className={`flex min-w-0 items-center gap-2 text-[12px] text-content/50 ${
+      className={`flex min-w-0 items-center gap-2 text-[12px] text-muted ${
         panel ? "h-9 shrink-0 border-b border-stroke px-4 pr-[34px]" : ""
       }`}
     >
@@ -2686,7 +2713,7 @@ export function InboxDetail({
               >
                 {item.title}
               </h1>
-              <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-content/50">
+              <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-muted">
                 {authorName ? (
                   <InboxPerson
                     name={authorName}
@@ -2762,7 +2789,7 @@ export function InboxDetail({
               </div>
               {!panel && relatedSessions.length > 0 ? (
                 <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-                  <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-[11px] text-content/45">
+                  <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-[11px] text-muted">
                     <MessageMultiple className="size-3.5" strokeWidth={1.75} />
                     Related{" "}
                     {relatedSessions.length === 1 ? "thread" : "threads"}
@@ -2782,9 +2809,7 @@ export function InboxDetail({
                       >
                         <span className="truncate">{title}</span>
                         {session.archived ? (
-                          <span className="shrink-0 text-content/40">
-                            Archived
-                          </span>
+                          <span className="shrink-0 text-muted">Archived</span>
                         ) : null}
                       </button>
                     );
@@ -2866,7 +2891,7 @@ export function InboxDetail({
                 )}
               </div>
               {startError ? (
-                <p className="text-[12px] text-red-400/90">{startError}</p>
+                <p className="text-[12px] text-danger">{startError}</p>
               ) : null}
             </header>
             {isPr ? (
@@ -2913,7 +2938,7 @@ export function InboxDetail({
                       className={`rounded px-2.5 py-1 text-[11px] leading-none ${
                         diffMode === "hunks"
                           ? "bg-selection text-content"
-                          : "text-content/45 hover:text-content/70"
+                          : "text-muted hover:text-content/70"
                       }`}
                     >
                       Hunks
@@ -2925,7 +2950,7 @@ export function InboxDetail({
                       className={`rounded px-2.5 py-1 text-[11px] leading-none ${
                         diffMode === "full"
                           ? "bg-selection text-content"
-                          : "text-content/45 hover:text-content/70"
+                          : "text-muted hover:text-content/70"
                       }`}
                     >
                       Full file
@@ -2959,14 +2984,14 @@ export function InboxDetail({
             ) : null}
             {isPr && tab === "code" ? (
               diffLoading ? (
-                <div className="flex justify-center py-10 text-content/40">
+                <div className="flex justify-center py-10 text-muted">
                   <LoaderCircle
                     className="size-4 animate-spin"
                     strokeWidth={1.75}
                   />
                 </div>
               ) : diffError ? (
-                <p className="text-[13px] text-content/50">{diffError}</p>
+                <p className="text-[13px] text-muted">{diffError}</p>
               ) : prDiff ? (
                 <InboxPrDiff
                   key={`${item.projectPath}:${item.number}:${revision}:${diffMode}`}
@@ -2975,7 +3000,7 @@ export function InboxDetail({
                   focusPath={diffFocusPath}
                 />
               ) : (
-                <p className="text-[13px] text-content/45">No file changes</p>
+                <p className="text-[13px] text-muted">No file changes</p>
               )
             ) : isPr && tab === "checks" ? (
               <InboxPrChecks
@@ -3003,14 +3028,14 @@ export function InboxDetail({
                 }
               />
             ) : loading || overviewSettling ? (
-              <div className="flex justify-center py-10 text-content/40">
+              <div className="flex justify-center py-10 text-muted">
                 <LoaderCircle
                   className="size-4 animate-spin"
                   strokeWidth={1.75}
                 />
               </div>
             ) : error ? (
-              <p className="text-[13px] text-content/50">{error}</p>
+              <p className="text-[13px] text-muted">{error}</p>
             ) : (
               <>
                 {panel ? (
@@ -3025,7 +3050,7 @@ export function InboxDetail({
                     allowRemoteMedia
                   />
                 ) : (
-                  <p className="text-[13px] text-content/45">No description</p>
+                  <p className="text-[13px] text-muted">No description</p>
                 )}
                 {panel && isPr ? (
                   <InboxPrChangesGlance
@@ -3088,7 +3113,7 @@ function CopyBranchNameButton({ branch }: { branch: string }) {
       type="button"
       title={copied ? "Copied" : "Copy branch name"}
       aria-label={copied ? "Copied" : "Copy branch name"}
-      className="shrink-0 rounded p-0.5 text-content/40 hover:bg-content/8 hover:text-content/70"
+      className="shrink-0 rounded p-0.5 text-muted hover:bg-content/8 hover:text-content/70"
       onClick={() => {
         void copyText(branch).then(
           () => {
@@ -3145,7 +3170,7 @@ function InboxPerson({
       ) : (
         <span
           aria-hidden
-          className="grid shrink-0 place-items-center rounded-full bg-content/12 font-medium text-content/55"
+          className="grid shrink-0 place-items-center rounded-full bg-content/12 font-medium text-muted"
           style={{
             width: size,
             height: size,
@@ -3213,7 +3238,7 @@ function InboxProjectPicker({
           {selected?.name ?? "Choose project"}
         </span>
         <ChevronDown
-          className="size-3 shrink-0 text-content/45"
+          className="size-3 shrink-0 text-muted"
           strokeWidth={1.75}
         />
       </button>
@@ -3264,7 +3289,7 @@ function InboxLabel({
   const color = labelColor(label.color);
   return (
     <span
-      className={`inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-px text-content/50 bg-content/8 ${
+      className={`inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-px text-muted bg-content/8 ${
         compact ? "max-w-20 text-[10px]" : "text-[11px]"
       }`}
     >

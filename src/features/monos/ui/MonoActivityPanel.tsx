@@ -28,7 +28,7 @@ export function MonoActivityPanel({
       <MonoSidebarHeader title="Activity" onClose={onClose} />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         <div className="px-3 pb-3 pt-3">
-          <p className="flex min-w-0 items-center gap-1.5 px-1 text-[11px] leading-4 text-content/45">
+          <p className="flex min-w-0 items-center gap-1.5 px-1 text-[11px] leading-4 text-muted">
             <span
               aria-hidden
               className={`size-1.5 shrink-0 rounded-full ${

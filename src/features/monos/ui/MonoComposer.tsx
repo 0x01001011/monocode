@@ -27,7 +27,7 @@ const DROP_STATE = { current: { attachmentsSupported: true, remote: false } };
 const MAX_HEIGHT = 160;
 const INPUT_COLUMNS = "grid-cols-[1.625rem_minmax(0,1fr)_1.625rem]";
 const FIELD_CLASSES =
-  "scrollbar-none block min-w-0 w-full resize-none bg-transparent py-1 text-[13px] leading-4.5 text-content outline-none placeholder:text-content/35";
+  "scrollbar-none block min-w-0 w-full resize-none bg-transparent py-1 text-[13px] leading-4.5 text-content outline-none placeholder:text-muted";
 
 type Props = {
   sessionId: string;
@@ -257,7 +257,7 @@ export function MonoComposer({
           </div>
         ) : null}
         {dropError ? (
-          <p role="alert" className="px-3 pt-2 text-xs text-red-400">
+          <p role="alert" className="px-3 pt-2 text-xs text-danger">
             {dropError}
           </p>
         ) : null}
@@ -303,7 +303,7 @@ export function MonoComposer({
             aria-label="Attach files"
             disabled={!enabled || submitting}
             onClick={() => readAttachments(pickAttachments)}
-            className={`col-start-1 grid size-6.5 place-items-center rounded-md bg-content/8 text-content/55 hover:bg-content/12 hover:text-content ${stacked ? "row-start-2" : "row-start-1"}`}
+            className={`col-start-1 grid size-6.5 place-items-center rounded-md bg-content/8 text-muted hover:bg-content/12 hover:text-content ${stacked ? "row-start-2" : "row-start-1"}`}
           >
             <Plus className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -340,7 +340,7 @@ export function MonoComposer({
             aria-label="Send"
             title={pendingReads ? "Reading attachments…" : "Send"}
             disabled={!ready}
-            className={`primary-action col-start-3 grid size-6.5 place-items-center rounded-md transition-[background-color,color,transform] duration-150 active:scale-90 disabled:cursor-default ${stacked ? "row-start-2" : "row-start-1"}`}
+            className={`primary-action col-start-3 grid size-6.5 place-items-center rounded-md disabled:cursor-default ${stacked ? "row-start-2" : "row-start-1"}`}
           >
             <ArrowUp className="size-3.5" strokeWidth={2} />
           </button>

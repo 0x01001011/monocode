@@ -85,6 +85,8 @@ export type WorkspaceCommand = (typeof WORKSPACE_COMMANDS)[number];
 // Remote RPC has bounded request and response bodies. Keep file operations
 // within those bounds even after JSON escaping or base64 encoding.
 const MAX_TEXT_FILE = 1024 * 1024;
+/** Stable prefix the webview matches to offer "overwrite"; keep equal to fs.rs. */
+const SAVE_CONFLICT = "[save-conflict]";
 const MAX_PREVIEW_FILE = 10 * 1024 * 1024;
 const MAX_STAT_FILES = 64;
 const ROOTS_TTL_MS = 5_000;
@@ -131,7 +133,7 @@ export class WorkspaceCommands {
       case "read_file_preview":
         return this.preview(input.path, input.maxLines, input.startLine);
       case "write_text_file":
-        return this.writeText(input.path, input.content);
+        return this.writeText(input.path, input.content, input.expectedMtimeMs);
       case "stat_files":
         return this.statFiles(input.paths);
       case "create_path":
@@ -390,7 +392,11 @@ export class WorkspaceCommands {
       .map((line) => (line.length > 200 ? `${line.slice(0, 199)}…` : line));
   }
 
-  private async writeText(input: unknown, content: unknown): Promise<void> {
+  private async writeText(
+    input: unknown,
+    content: unknown,
+    expectedMtimeMs?: unknown,
+  ): Promise<void> {
     if (typeof content !== "string")
       throw new Error("Invalid file content");
     if (Buffer.byteLength(content, "utf8") > MAX_TEXT_FILE)
@@ -401,6 +407,14 @@ export class WorkspaceCommands {
     const path = workspacePath(root, rel);
     if (await stat(path).then((info) => info.isDirectory(), () => false))
       throw new Error("Cannot save text to a directory.");
+    if (typeof expectedMtimeMs === "number") {
+      const current = await stat(path).then(
+        (info) => Math.floor(info.mtimeMs),
+        () => null,
+      );
+      if (current !== null && current !== expectedMtimeMs)
+        throw new Error(`${SAVE_CONFLICT} This file changed on disk after it was opened.`);
+    }
     // Replace atomically, as the local command does.
     const temporary = `${path}.monocode-${process.pid}-${Date.now()}`;
     await writeFile(temporary, content, "utf8");

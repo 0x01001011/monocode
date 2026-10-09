@@ -29,7 +29,7 @@ export function PrivateEmail({ email }: { email: string }) {
       aria-label={action}
       aria-pressed={revealed}
       title={action}
-      className="pointer-events-auto relative min-w-0 truncate rounded-sm text-left focus-visible:outline-2 focus-visible:outline-accent"
+      className="pointer-events-auto relative min-w-0 truncate rounded-sm text-left focus-visible:focus-ring"
       onClick={(event) => {
         event.stopPropagation();
         setRevealed((value) => !value);

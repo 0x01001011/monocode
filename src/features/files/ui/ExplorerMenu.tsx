@@ -236,8 +236,8 @@ export function ExplorerMenu({
             ? "text-content/30"
             : item.danger
               ? highlighted
-                ? "bg-red-500/20 text-red-300"
-                : "text-red-300/90 hover:bg-red-500/15"
+                ? "bg-danger/10 text-danger"
+                : "text-danger hover:bg-danger/15"
               : highlighted
                 ? "bg-selection text-content"
                 : "text-content hover:bg-content/5"
@@ -246,20 +246,20 @@ export function ExplorerMenu({
         <span className="min-w-0 flex-1">
           <span className="block truncate">{item.label}</span>
           {item.description ? (
-            <span className="mt-1 block text-[11px] leading-snug text-content/50">
+            <span className="mt-1 block text-[11px] leading-snug text-muted">
               {item.description}
             </span>
           ) : null}
         </span>
         {hasSubmenu ? (
           <ChevronRight
-            className="size-3.5 shrink-0 text-content/50"
+            className="size-3.5 shrink-0 text-muted"
             strokeWidth={1.75}
           />
         ) : item.checked ? (
           <Check className="size-3.5 shrink-0" strokeWidth={2.25} />
         ) : item.shortcut ? (
-          <span className="shrink-0 text-[11px] text-content/40">
+          <span className="shrink-0 text-[11px] text-muted">
             {item.shortcut}
           </span>
         ) : null}

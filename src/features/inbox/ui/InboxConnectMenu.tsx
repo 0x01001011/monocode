@@ -29,7 +29,7 @@ export function InboxConnectMenu({
       onContextMenu={(event) => event.preventDefault()}
       className="p-1"
     >
-      <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-content/40">
+      <div className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
         Not connected
       </div>
       {sources.map((source) => (

@@ -137,7 +137,7 @@ export function InboxComments({
   }
   if (!thread) {
     if (error) {
-      return <p className="text-[12px] text-content/45">{error}</p>;
+      return <p className="text-[12px] text-muted">{error}</p>;
     }
     if (loading) return <CommentsPending />;
     return null;
@@ -165,7 +165,7 @@ export function InboxComments({
 
   return (
     <section className="flex flex-col gap-3 border-t border-stroke pt-5">
-      <div className="flex items-center gap-2 text-[12px] text-content/50">
+      <div className="flex items-center gap-2 text-[12px] text-muted">
         {thread.commits ? (
           <>
             <h2 className="text-content/70">Activity</h2>
@@ -182,12 +182,12 @@ export function InboxComments({
         ) : null}
         {loading ? (
           <LoaderCircle
-            className="size-3 animate-spin text-content/35"
+            className="size-3 animate-spin text-faint"
             strokeWidth={1.75}
           />
         ) : null}
       </div>
-      {error ? <p className="text-[12px] text-content/45">{error}</p> : null}
+      {error ? <p className="text-[12px] text-muted">{error}</p> : null}
       {thread.commits ? (
         <ol className="flex flex-col">
           {timelineItems(activityTimeline(thread)).map((item, index, items) =>
@@ -290,7 +290,7 @@ export function InboxCommentForm({
       className="flex flex-col gap-2 border-t border-stroke pt-5"
     >
       {replyTo ? (
-        <div className="flex items-center gap-2 text-[12px] text-content/50">
+        <div className="flex items-center gap-2 text-[12px] text-muted">
           <span className="min-w-0 truncate">
             Replying to {replyTo.author || "comment"}
           </span>
@@ -299,7 +299,7 @@ export function InboxCommentForm({
             title="Cancel reply"
             aria-label="Cancel reply"
             onClick={onCancelReply}
-            className="grid size-5 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+            className="hit-area grid size-5 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
           >
             <X className="size-3" strokeWidth={1.75} />
           </button>
@@ -316,7 +316,7 @@ export function InboxCommentForm({
           }
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
-          className="max-h-40 w-full resize-none overflow-y-auto bg-transparent px-3 py-2 text-[13px] leading-5 text-content outline-none placeholder:text-content/35 disabled:opacity-40"
+          className="max-h-40 w-full resize-none overflow-y-auto bg-transparent px-3 py-2 text-[13px] leading-5 text-content outline-none placeholder:text-muted disabled:opacity-40"
         />
         <div className="flex items-center justify-end px-2 pb-2">
           <button
@@ -328,14 +328,14 @@ export function InboxCommentForm({
           </button>
         </div>
       </div>
-      {error ? <p className="text-[12px] text-red-400/90">{error}</p> : null}
+      {error ? <p className="text-[12px] text-danger">{error}</p> : null}
     </form>
   );
 }
 
 function CommentsPending() {
   return (
-    <div className="flex items-center gap-2 border-t border-stroke pt-5 text-[12px] text-content/45">
+    <div className="flex items-center gap-2 border-t border-stroke pt-5 text-[12px] text-muted">
       <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
       Loading comments
     </div>
@@ -379,7 +379,7 @@ function InboxComment({
   const inner = (
     <>
       <header
-        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-content/50 ${
+        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted ${
           nested ? "" : timeline ? "min-h-9 px-3 py-1.5" : "px-3 py-2"
         } ${!nested && (hasBody || hasReplies) ? "border-b border-stroke" : ""}`}
       >
@@ -421,11 +421,11 @@ function InboxComment({
               <span
                 className={
                   comment.state === "APPROVED"
-                    ? "text-emerald-400/90"
+                    ? "text-success"
                     : comment.state === "CHANGES_REQUESTED"
-                      ? "text-rose-400/90"
+                      ? "text-danger"
                       : comment.resolved && part === "Resolved"
-                        ? "text-emerald-400/80"
+                        ? "text-success"
                         : "min-w-0 truncate"
                 }
               >
@@ -542,7 +542,7 @@ function CollapsibleBody({ children }: { children: ReactNode }) {
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded((current) => !current)}
-          className="mt-1.5 text-[12px] text-content/50 hover:text-content"
+          className="mt-1.5 text-[12px] text-muted hover:text-content"
         >
           {expanded ? "Show less" : "Show more"}
         </button>
@@ -661,10 +661,10 @@ function InboxTimelineComment({
           <Icon
             className={`size-4 ${
               state === "APPROVED"
-                ? "text-emerald-400/90"
+                ? "text-success"
                 : state === "CHANGES_REQUESTED"
-                  ? "text-rose-400/90"
-                  : "text-content/45"
+                  ? "text-danger"
+                  : "text-muted"
             }`}
             strokeWidth={1.75}
           />
@@ -760,7 +760,7 @@ function TimelineEventLine({
   time: string;
 }) {
   return (
-    <p className="flex h-5 min-w-0 items-center gap-1.5 text-[12px] text-content/50">
+    <p className="flex h-5 min-w-0 items-center gap-1.5 text-[12px] text-muted">
       <span className="min-w-0 truncate font-medium text-content">{name}</span>
       <span className="shrink-0">{action}</span>
       {time ? (
@@ -799,7 +799,7 @@ function InboxCommitStop({
           <span className="min-w-0 flex-1 truncate text-content/70 group-hover:text-content group-disabled:text-content/70">
             {commit.messageHeadline}
           </span>
-          <span className="shrink-0 font-mono text-[11px] text-content/35 group-hover:text-content/60">
+          <span className="shrink-0 font-mono text-[11px] text-muted group-hover:text-content/60">
             {commit.oid.slice(0, 7)}
           </span>
         </button>
@@ -859,7 +859,7 @@ function InboxAvatar({ name, avatarUrl }: { name: string; avatarUrl: string }) {
   ) : (
     <span
       aria-hidden
-      className="grid size-5 shrink-0 place-items-center rounded-full bg-content/12 text-[10px] font-medium text-content/55"
+      className="grid size-5 shrink-0 place-items-center rounded-full bg-content/12 text-[10px] font-medium text-muted"
     >
       {initial}
     </span>

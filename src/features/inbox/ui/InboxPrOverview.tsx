@@ -73,7 +73,7 @@ export function InboxDescriptionSummary({
   const [expanded, setExpanded] = useState(false);
 
   if (!body.trim()) {
-    return <p className="text-[13px] text-content/45">No description</p>;
+    return <p className="text-[13px] text-muted">No description</p>;
   }
   if (!excerpt.truncated) {
     return <AgentMarkdown text={body} cwd={cwd} allowRemoteMedia />;
@@ -90,13 +90,13 @@ export function InboxDescriptionSummary({
           {excerpt.text}
         </p>
       ) : (
-        <p className="text-[13px] text-content/45">Description is media only</p>
+        <p className="text-[13px] text-muted">Description is media only</p>
       )}
       <button
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
-        className="inline-flex items-center gap-1 self-start text-[12px] text-content/50 hover:text-content"
+        className="inline-flex items-center gap-1 self-start text-[12px] text-muted hover:text-content"
       >
         <ChevronDown
           className={`size-3.5 transition-transform ${
@@ -106,7 +106,7 @@ export function InboxDescriptionSummary({
         />
         {expanded ? "Show less" : "Show full description"}
         {!expanded && excerpt.images > 0 ? (
-          <span className="text-content/35">
+          <span className="text-muted">
             · {excerpt.images} {excerpt.images === 1 ? "image" : "images"}
           </span>
         ) : null}
@@ -135,7 +135,7 @@ export function InboxPrChangesGlance({
 
   return (
     <section data-inbox-pr-glance className="flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-[12px] text-content/50">
+      <div className="flex items-center gap-2 text-[12px] text-muted">
         <h2 className="text-content/70">Changed files</h2>
         {diff ? (
           <>
@@ -154,7 +154,7 @@ export function InboxPrChangesGlance({
         ) : null}
         {loading ? (
           <LoaderCircle
-            className="size-3 animate-spin text-content/35"
+            className="size-3 animate-spin text-faint"
             strokeWidth={1.75}
           />
         ) : null}
@@ -172,9 +172,9 @@ export function InboxPrChangesGlance({
         ) : null}
       </div>
       {error && !diff ? (
-        <p className="text-[12px] text-content/45">{error}</p>
+        <p className="text-[12px] text-muted">{error}</p>
       ) : diff && files.length === 0 ? (
-        <p className="text-[12px] text-content/45">No file changes</p>
+        <p className="text-[12px] text-muted">No file changes</p>
       ) : shown.length > 0 ? (
         <ul className="flex flex-col overflow-hidden rounded-lg border border-stroke">
           {shown.map((file) => {
@@ -197,9 +197,7 @@ export function InboxPrChangesGlance({
                 >
                   <FileTypeIcon name={name} isDir={false} size={16} />
                   <span className="flex min-w-0 flex-1 font-mono text-[12px]">
-                    <span className="min-w-0 truncate text-content/40">
-                      {dir}
-                    </span>
+                    <span className="min-w-0 truncate text-muted">{dir}</span>
                     <span className="shrink-0 text-content/85">{name}</span>
                   </span>
                   <span

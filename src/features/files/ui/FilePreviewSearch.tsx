@@ -356,7 +356,7 @@ export function FilePreviewSearch({
           <div
             className={`flex h-[26px] min-w-0 flex-1 items-center rounded-md border bg-content/[0.06] px-2 ${
               (query && total === 0) || result.invalid
-                ? "border-red-400/55"
+                ? "border-danger/55"
                 : "border-content/10"
             }`}
           >
@@ -377,8 +377,8 @@ export function FilePreviewSearch({
               aria-live="polite"
               className={`w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono text-[11px] tabular-nums text-ellipsis whitespace-nowrap ${
                 (query && total === 0) || result.invalid
-                  ? "text-red-400"
-                  : "text-content/45"
+                  ? "text-danger"
+                  : "text-muted"
               }`}
             >
               {count}

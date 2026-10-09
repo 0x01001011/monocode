@@ -87,6 +87,7 @@ import {
 import { gitBranches } from "../../../platform/tauri/fs";
 import { formatRelativeTime, githubStatus } from "../../inbox/model/githubTasks";
 import { GITLAB_CHANGE_EVENT, gitlabConnected } from "../../inbox/model/gitlab";
+import { confirmNative } from "../../../shared/lib/confirm";
 import { LAYER } from "../../../shared/lib/layers";
 import { LINEAR_CHANGE_EVENT, linearConnected } from "../../inbox/model/linear";
 import { JIRA_CHANGE_EVENT, jiraConnected } from "../../inbox/model/jira";
@@ -159,7 +160,7 @@ export function AutomationsView({
         )}
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
           <Zap
-            className="size-3.5 shrink-0 text-content/45"
+            className="size-3.5 shrink-0 text-muted"
             strokeWidth={1.75}
           />
           <span className="min-w-0 truncate text-content">Automations</span>
@@ -324,8 +325,11 @@ function AutomationsContent({
   };
 
   const onDelete = async (automation: Automation) => {
-    if (!window.confirm(`Delete “${automation.name}” and its run history?`))
-      return;
+    const ok = await confirmNative(
+      `Delete “${automation.name}” and its run history?`,
+      "Delete automation",
+    );
+    if (!ok) return;
     try {
       await deleteAutomation(automation.id);
       setSelectedId(null);
@@ -354,7 +358,7 @@ function AutomationsContent({
       <aside className="flex w-[280px] shrink-0 flex-col border-r border-stroke">
         <div className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2">
           <label className="relative flex h-7 min-w-0 flex-1 items-center">
-            <Search className="pointer-events-none absolute left-2 size-3 shrink-0 text-content/40" />
+            <Search className="pointer-events-none absolute left-2 size-3 shrink-0 text-muted" />
             <span className="sr-only">Filter automations</span>
             <input
               value={query}
@@ -362,7 +366,7 @@ function AutomationsContent({
               placeholder="Filter automations"
               spellCheck={false}
               autoComplete="off"
-              className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] outline-none placeholder:text-content/40"
+              className="h-7 w-full rounded-md bg-transparent pl-7 pr-2 text-[12px] outline-none placeholder:text-muted"
             />
           </label>
           <button
@@ -370,7 +374,7 @@ function AutomationsContent({
             title="New automation"
             aria-label="New automation"
             onClick={beginCreate}
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+            className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
           >
             <Plus className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -380,7 +384,7 @@ function AutomationsContent({
           className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5"
         >
           {loading ? (
-            <div className="grid place-items-center py-12 text-content/35">
+            <div className="grid place-items-center py-12 text-muted">
               <LoaderCircle className="size-4 animate-spin" />
             </div>
           ) : visible.length > 0 ? (
@@ -410,7 +414,7 @@ function AutomationsContent({
               ))}
             </ul>
           ) : (
-            <p className="px-3 py-8 text-center text-[12px] text-content/45">
+            <p className="px-3 py-8 text-center text-[12px] text-muted">
               {query.trim() ? "No matching automations" : "No automations yet"}
             </p>
           )}
@@ -419,13 +423,13 @@ function AutomationsContent({
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         {error ? (
-          <div className="m-4 flex shrink-0 items-start gap-2 rounded-lg border border-red-400/20 bg-red-400/8 px-3 py-2 text-[12px] text-red-300">
+          <div className="m-4 flex shrink-0 items-start gap-2 rounded-lg border border-danger/20 bg-danger/8 px-3 py-2 text-[12px] text-danger">
             <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
             <span>{error}</span>
           </div>
         ) : null}
         {loading && !editorDraft ? (
-          <div className="grid min-h-0 flex-1 place-items-center text-content/35">
+          <div className="grid min-h-0 flex-1 place-items-center text-muted">
             <LoaderCircle className="size-4 animate-spin" />
           </div>
         ) : editorDraft ? (
@@ -517,7 +521,7 @@ function AutomationCard({
         onClick={onSelect}
         className="block w-full rounded-md px-2.5 py-2 text-left"
       >
-        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-[10px] text-content/45">
+        <span className="flex min-w-0 items-center gap-1.5 pr-8 text-[10px] text-muted">
           <TriggerMark
             kind={
               automationTriggers(automation)[0]?.kind ?? automation.triggerKind
@@ -529,7 +533,7 @@ function AutomationCard({
         <span className="mt-1 block truncate text-[13px] font-semibold text-content">
           {automation.name}
         </span>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-content/45">
+        <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted">
           {logoPath ? (
             <ProjectLogoIcon
               path={logoPath}
@@ -553,7 +557,7 @@ function AutomationCard({
           ) : null}
           <span
             title={model.name}
-            className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-content/50"
+            className="ml-auto flex min-w-0 max-w-28 items-center gap-1 text-muted"
           >
             <HarnessIcon
               harness={automation.harness}
@@ -596,7 +600,7 @@ function AutomationPicker({
         <h1 className="text-[20px] font-semibold leading-tight text-content">
           New automation
         </h1>
-        <p className="mt-1.5 text-[13px] text-content/50">
+        <p className="mt-1.5 text-[13px] text-muted">
           Pick an example or start from scratch.
         </p>
         <div className="mt-4 flex flex-wrap gap-1.5">
@@ -610,7 +614,7 @@ function AutomationPicker({
                 className={`h-7 rounded-full px-3 text-[12px] font-medium ${
                   selected
                     ? "bg-content text-background-base"
-                    : "text-content/55 hover:bg-content/8 hover:text-content"
+                    : "text-muted hover:bg-content/8 hover:text-content"
                 }`}
               >
                 {option.label}
@@ -632,7 +636,7 @@ function AutomationPicker({
                 <span className="block text-[13px] font-medium text-content">
                   Start from scratch
                 </span>
-                <span className="mt-1 block text-[12px] leading-snug text-content/50">
+                <span className="mt-1 block text-[12px] leading-snug text-muted">
                   Write your own instructions and choose a trigger.
                 </span>
               </span>
@@ -655,12 +659,12 @@ function AutomationPicker({
                     <span className="block text-[13px] font-medium text-content">
                       {template.name}
                     </span>
-                    <span className="mt-1 block text-[12px] leading-snug text-content/50">
+                    <span className="mt-1 block text-[12px] leading-snug text-muted">
                       {template.description}
                     </span>
                   </span>
                 </div>
-                <span className="mt-auto flex min-w-0 items-center gap-1.5 pt-3 text-[11px] text-content/45">
+                <span className="mt-auto flex min-w-0 items-center gap-1.5 pt-3 text-[11px] text-muted">
                   <TriggerMark
                     kind={template.trigger.kind}
                     className="size-3"
@@ -713,7 +717,7 @@ function RunRow({
         <span className="flex min-w-0 items-center gap-2 text-content">
           <TriggerMark
             kind={trigger.kind}
-            className="size-3.5 shrink-0 text-content/40"
+            className="size-3.5 shrink-0 text-muted"
           />
           <span className="min-w-0 truncate">{trigger.label}</span>
         </span>
@@ -723,7 +727,7 @@ function RunRow({
         <span>
           <RunStatusPill status={run.status} />
         </span>
-        <span className="text-right tabular-nums text-content/55">
+        <span className="text-right tabular-nums text-muted">
           {formatAutomationRunDuration(run)}
         </span>
       </button>
@@ -755,10 +759,10 @@ function runStatusLabel(status: AutomationRun["status"]): string {
 }
 
 function runStatusTone(status: AutomationRun["status"]): string {
-  if (status === "succeeded") return "bg-emerald-500/12 text-emerald-400";
-  if (status === "failed") return "bg-rose-500/12 text-rose-400";
-  if (status === "skipped") return "bg-amber-500/12 text-amber-400";
-  if (status === "cancelled") return "bg-content/8 text-content/50";
+  if (status === "succeeded") return "bg-success/12 text-success";
+  if (status === "failed") return "bg-danger/12 text-danger";
+  if (status === "skipped") return "bg-warning/12 text-warning";
+  if (status === "cancelled") return "bg-content/8 text-muted";
   return "bg-blue-500/12 text-blue-400";
 }
 
@@ -978,7 +982,7 @@ function AutomationEditor({
                 value={draft.name}
                 onChange={(event) => update("name", event.target.value)}
                 placeholder="Untitled"
-                className="min-w-0 flex-1 bg-transparent text-[20px] font-semibold leading-tight text-content outline-none placeholder:text-content/35"
+                className="min-w-0 flex-1 bg-transparent text-[20px] font-semibold leading-tight text-content outline-none placeholder:text-muted"
               />
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                 {!draft.id || dirty ? (
@@ -1017,7 +1021,7 @@ function AutomationEditor({
                 </button>
               </div>
             </div>
-            <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-content/50">
+            <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[12px] text-muted">
               <ToggleSwitch
                 label={draft.enabled ? "Pause automation" : "Enable automation"}
                 on={draft.enabled}
@@ -1055,7 +1059,7 @@ function AutomationEditor({
                     className={`grid size-6.5 shrink-0 place-items-center rounded-md ${
                       menuOpen
                         ? "bg-selection text-content"
-                        : "text-content/50 hover:bg-content/5 hover:text-content"
+                        : "text-muted hover:bg-content/5 hover:text-content"
                     }`}
                   >
                     <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
@@ -1080,7 +1084,7 @@ function AutomationEditor({
                           setMenuOpen(false);
                           onDelete();
                         }}
-                        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-red-300/90 hover:bg-red-500/15"
+                        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-danger hover:bg-danger/15"
                       >
                         <Trash2 className="size-3.5" strokeWidth={1.75} />
                         Delete automation
@@ -1170,7 +1174,7 @@ function AutomationEditor({
                     setTriggerCategory(null);
                     setTriggerOpen((open) => !open);
                   }}
-                  className={`flex h-12 w-full items-center gap-2 px-3 text-left text-[13px] text-content/55 transition-colors duration-150 ease-out hover:bg-content/4 hover:text-content disabled:pointer-events-none disabled:opacity-40 ${
+                  className={`flex h-12 w-full items-center gap-2 px-3 text-left text-[13px] text-muted transition-colors duration-150 ease-out hover:bg-content/4 hover:text-content disabled:pointer-events-none disabled:opacity-40 ${
                     draft.triggers.length > 0 ? "rounded-b-md" : "rounded-md"
                   }`}
                 >
@@ -1195,7 +1199,7 @@ function AutomationEditor({
                   }}
                   className="overflow-hidden"
                 >
-                  <label className="flex h-11 items-center gap-2.5 border-b border-stroke px-3 text-content/45 focus-within:text-content/70">
+                  <label className="flex h-11 items-center gap-2.5 border-b border-stroke px-3 text-muted focus-within:text-content/70">
                     <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
                     <span className="sr-only">Search triggers</span>
                     <input
@@ -1203,7 +1207,7 @@ function AutomationEditor({
                       value={triggerQuery}
                       onChange={(event) => setTriggerQuery(event.target.value)}
                       placeholder="Search triggers"
-                      className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
+                      className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-muted"
                     />
                   </label>
                   <div className="p-1">
@@ -1243,7 +1247,7 @@ function AutomationEditor({
                           }}
                           className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] ${
                             !ready
-                              ? "cursor-default text-content/35"
+                              ? "cursor-default text-muted"
                               : triggerCategory === option.value
                                 ? "bg-selection text-content"
                                 : "text-content/70 hover:bg-content/5 hover:text-content"
@@ -1257,9 +1261,9 @@ function AutomationEditor({
                             {option.label}
                           </span>
                           {ready ? (
-                            <ChevronRight className="size-3.5 text-content/45" />
+                            <ChevronRight className="size-3.5 text-muted" />
                           ) : (
-                            <span className="shrink-0 text-[11px] text-content/35">
+                            <span className="shrink-0 text-[11px] text-muted">
                               Not connected
                             </span>
                           )}
@@ -1267,7 +1271,7 @@ function AutomationEditor({
                       );
                     })}
                     {triggerCategories.length === 0 ? (
-                      <p className="px-2 py-5 text-center text-[12px] text-content/40">
+                      <p className="px-2 py-5 text-center text-[12px] text-muted">
                         No matching triggers
                       </p>
                     ) : null}
@@ -1360,7 +1364,7 @@ function AutomationEditor({
                   </div>
                 </div>
               </div>
-              <p className="mt-2 px-1 text-[11px] text-content/35">
+              <p className="mt-2 px-1 text-[11px] text-muted">
                 Skills, @file references, and built-in commands work here.
               </p>
             </section>
@@ -1427,11 +1431,11 @@ function AutomationEditor({
                   <span className="block text-[13px] font-medium text-content/75">
                     Advanced
                   </span>
-                  <span className="mt-0.5 block text-[11px] text-content/40">
+                  <span className="mt-0.5 block text-[11px] text-muted">
                     Catch-up window for missed runs
                   </span>
                 </span>
-                <ChevronDown className="size-3.5 text-content/40" />
+                <ChevronDown className="size-3.5 text-muted" />
               </summary>
               <div className="divide-y divide-content/7 border-t border-content/8">
                 <SettingsRow
@@ -1455,7 +1459,7 @@ function AutomationEditor({
             <SectionTitle>Run history</SectionTitle>
             {runs.length > 0 ? (
               <div className="mt-3 overflow-hidden rounded-md border border-content/10">
-                <div className={`${RUN_GRID} h-10 text-[11px] text-content/40`}>
+                <div className={`${RUN_GRID} h-10 text-[11px] text-muted`}>
                   <span>Trigger</span>
                   <span>Triggered</span>
                   <span>Status</span>
@@ -1473,7 +1477,7 @@ function AutomationEditor({
                 </ul>
               </div>
             ) : (
-              <div className="mt-3 rounded-md border border-dashed border-content/10 px-4 py-16 text-center text-[12px] text-content/40">
+              <div className="mt-3 rounded-md border border-dashed border-content/10 px-4 py-16 text-center text-[12px] text-muted">
                 This automation has not run yet.
               </div>
             )}
@@ -1507,7 +1511,7 @@ function PromptField({
 
 function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <h2 className="px-1 text-[12px] font-medium text-content/50">{children}</h2>
+    <h2 className="px-1 text-[12px] font-medium text-muted">{children}</h2>
   );
 }
 
@@ -1525,7 +1529,7 @@ function SettingsRow({
       <span className="min-w-0">
         <span className="block text-[12px] text-content/75">{label}</span>
         {hint ? (
-          <span className="mt-0.5 block text-[11px] leading-snug text-content/40">
+          <span className="mt-0.5 block text-[11px] leading-snug text-muted">
             {hint}
           </span>
         ) : null}
@@ -1584,7 +1588,7 @@ function PageTab({
       aria-controls={controls}
       onClick={onSelect}
       className={`relative flex h-9 items-center text-[12px] leading-none ${
-        selected ? "text-content" : "text-content/50 hover:text-content"
+        selected ? "text-content" : "text-muted hover:text-content"
       }`}
     >
       {label}
@@ -1783,7 +1787,7 @@ function TriggerRow({
     <div className="group flex min-h-10 items-center gap-2.5 py-1">
       <TriggerMark
         kind={trigger.kind}
-        className="size-3.5 shrink-0 text-content/45"
+        className="size-3.5 shrink-0 text-muted"
       />
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] text-content/70">
         {trigger.kind === "time" ? (
@@ -1805,7 +1809,7 @@ function TriggerRow({
         type="button"
         aria-label="Remove trigger"
         onClick={onRemove}
-        className="grid size-7 shrink-0 place-items-center rounded-md text-content/35 opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-content/8 hover:text-content focus-visible:opacity-100"
+        className="grid size-7 shrink-0 place-items-center rounded-md text-muted opacity-0 transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-content/8 hover:text-content focus-visible:opacity-100"
       >
         <X className="size-3.5" />
       </button>
@@ -1869,8 +1873,8 @@ function TimeTriggerSentence({
           onChange={(value) => onChange({ ...trigger, time: value })}
         />
       )}
-      <span className="text-content/45">{gmtOffsetLabel()}</span>
-      <span className="ml-1 text-content/35">{nextRunPreview(nextAt)}</span>
+      <span className="text-muted">{gmtOffsetLabel()}</span>
+      <span className="ml-1 text-muted">{nextRunPreview(nextAt)}</span>
     </>
   );
 }

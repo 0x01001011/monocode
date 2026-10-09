@@ -73,6 +73,22 @@ const render = (element: React.ReactElement) => {
 const buttonByLabel = (label: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
 
+it("balances the checks headline so a long summary has no orphan", async () => {
+  await act(async () =>
+    root.render(
+      createElement(InboxPrChecks, {
+        cwd: "/tmp/web",
+        repo: "acme/web",
+        onRefresh() {},
+        view: view({
+          checks: { headOid: "abc", checks: [check({ state: "fail" })] },
+        }),
+      }),
+    ),
+  );
+  expect(container.querySelector("h2")?.className).toContain("text-balance");
+});
+
 it("keeps expanded details on the same check when checks share a URL", async () => {
   invoke.mockResolvedValue({ steps: [], annotations: [], notice: null });
   const first = check({

@@ -186,7 +186,7 @@ export function UnifiedDiffView({
 
   if (files.length === 0) {
     return (
-      <p className="px-4 py-6 text-[13px] text-content/45">No file changes</p>
+      <p className="px-4 py-6 text-[13px] text-muted">No file changes</p>
     );
   }
 
@@ -216,7 +216,7 @@ export function UnifiedDiffView({
             title="Expand all files"
             aria-label="Expand all files"
             onClick={() => setOpen(new Set(files.map((file) => file.id)))}
-            className="grid size-7 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+            className="grid size-7 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
           >
             <UnfoldVertical className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -226,7 +226,7 @@ export function UnifiedDiffView({
             aria-label="Collapse all files"
             disabled={open.size === 0}
             onClick={() => setOpen(new Set())}
-            className="grid size-7 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
+            className="grid size-7 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content disabled:opacity-40"
           >
             <FoldVertical className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -241,7 +241,7 @@ export function UnifiedDiffView({
         }
       >
         {truncated ? (
-          <p className="px-3 py-3 text-[12px] text-content/45">
+          <p className="px-3 py-3 text-[12px] text-muted">
             Diff is too large to display in full. File list is shown without
             patches.
           </p>
@@ -392,7 +392,7 @@ const FileSection = memo(function FileSection({
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
           <Chevron
-            className="size-3.5 shrink-0 text-content/45"
+            className="size-3.5 shrink-0 text-muted"
             strokeWidth={1.75}
           />
           <FileTypeIcon name={name} isDir={false} size={16} />
@@ -877,7 +877,7 @@ function FoldBar({
         title="Expand upward"
         aria-label="Expand unmodified lines upward"
         onClick={() => onReveal("up")}
-        className="grid size-5 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
+        className="grid size-5 place-items-center rounded text-muted hover:bg-content/10 hover:text-content"
       >
         <ChevronUp className="size-3" strokeWidth={2} />
       </button>
@@ -886,14 +886,14 @@ function FoldBar({
         title="Expand downward"
         aria-label="Expand unmodified lines downward"
         onClick={() => onReveal("down")}
-        className="grid size-5 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
+        className="grid size-5 place-items-center rounded text-muted hover:bg-content/10 hover:text-content"
       >
         <ChevronDown className="size-3" strokeWidth={2} />
       </button>
       <button
         type="button"
         onClick={() => onReveal("all")}
-        className="min-w-0 flex-1 py-1 text-left font-mono text-[11px] text-content/45 hover:text-content/70"
+        className="min-w-0 flex-1 py-1 text-left font-mono text-[11px] text-muted hover:text-content/70"
       >
         {hidden} unmodified {hidden === 1 ? "line" : "lines"}
       </button>
@@ -925,7 +925,7 @@ const DiffLineRow = memo(function DiffLineRow({
         style={{ height: UNIFIED_HUNK_PX }}
       >
         {lane === "code" ? (
-          <span className="px-3 font-mono text-[11px] leading-none text-content/40">
+          <span className="px-3 font-mono text-[11px] leading-none text-muted">
             {line.text}
           </span>
         ) : null}
@@ -945,7 +945,7 @@ const DiffLineRow = memo(function DiffLineRow({
     ? "text-diff-add-fg"
     : deleted
       ? "text-diff-del-fg"
-      : "text-content/35";
+      : "text-muted";
 
   if (lane === "gutter") {
     return (
@@ -971,7 +971,7 @@ const DiffLineRow = memo(function DiffLineRow({
             onClick={(event) =>
               onComment(event.currentTarget.getBoundingClientRect())
             }
-            className={`absolute top-0.5 left-0.5 z-10 grid size-4 place-items-center rounded-[3px] bg-content text-background-base outline-none transition-opacity hover:opacity-80 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent/50 ${
+            className={`absolute top-0.5 left-0.5 z-10 grid size-4 place-items-center rounded-[3px] bg-content text-background-base outline-none transition-opacity hover:opacity-80 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:focus-ring ${
               hovered || commenting
                 ? "opacity-100"
                 : "pointer-events-none opacity-0"
@@ -1043,7 +1043,7 @@ function renderLineText(line: UnifiedLine, tokens?: SyntaxToken[]) {
 }
 
 function EmptyBody({ children }: { children: string }) {
-  return <p className="px-3 py-3 text-[12px] text-content/45">{children}</p>;
+  return <p className="px-3 py-3 text-[12px] text-muted">{children}</p>;
 }
 
 function DiffCounts({
@@ -1084,7 +1084,7 @@ function IconButton({
       aria-label={title}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
+      className="grid size-6 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content disabled:opacity-40"
     >
       {children}
     </button>

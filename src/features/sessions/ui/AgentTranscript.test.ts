@@ -566,6 +566,18 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Both reviewers agree.");
   });
 
+  it("sets the live working clock in tabular digits so the line does not shift each second", () => {
+    const markup = render(
+      [
+        { id: "user", role: "user", text: "Review this", startedAt: 1_000 },
+        { id: "lead", role: "assistant", text: "Looking." },
+        tool("t0"),
+      ],
+      true,
+    );
+    expect(markup).toMatch(/class="shimmer-text[^"]*tabular-nums/);
+  });
+
   it("keeps the turn's status line at the top of the turn above a stack", () => {
     const markup = render(
       [

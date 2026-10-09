@@ -902,6 +902,7 @@ impl Drop for Tunnel {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        crate::tunnel_registry::forget(self.child.id());
     }
 }
 impl Tunnel {
@@ -1031,6 +1032,7 @@ impl Tunnel {
         let mut child = command
             .spawn()
             .map_err(|e| Attempt::Failed(spawn_error(&e)))?;
+        crate::tunnel_registry::record(child.id());
         let stderr = StderrCapture::spawn(child.stderr.take().unwrap(), 8192, job.cloned());
         let mut tunnel = Self {
             child,

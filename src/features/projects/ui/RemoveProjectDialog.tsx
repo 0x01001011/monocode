@@ -58,19 +58,19 @@ export function RemoveProjectDialog({ name, path, onCancel, onConfirm }: Props) 
           <h2 className="text-[13px] font-medium leading-tight text-content">
             Delete “{name}”?
           </h2>
-          <p className="text-[12px] leading-snug text-content/55">
+          <p className="text-[12px] leading-snug text-muted">
             All conversations for this project will be deleted. It also
             leaves the sidebar. The folder on disk stays put, and opening it
             again brings the project back empty.
           </p>
           {sessions != null && sessions > 0 ? (
-            <p className="text-[12px] leading-snug text-content/45">
+            <p className="text-[12px] leading-snug text-muted">
               {sessions === 1
                 ? "1 saved conversation will be removed."
                 : `${sessions} saved conversations will be removed.`}
             </p>
           ) : null}
-          <p className="truncate text-[11px] leading-tight text-content/40">
+          <p className="truncate text-[11px] leading-tight text-muted">
             {prettyCwd(path)}
           </p>
         </div>
@@ -87,7 +87,7 @@ export function RemoveProjectDialog({ name, path, onCancel, onConfirm }: Props) 
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-md bg-red-500/20 px-3 py-1.5 text-[12px] font-medium text-red-300 hover:bg-red-500/30"
+            className="rounded-md bg-danger/10 px-3 py-1.5 text-[12px] font-medium text-danger hover:bg-danger/20"
           >
             Delete
           </button>

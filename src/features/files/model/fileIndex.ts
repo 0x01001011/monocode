@@ -16,7 +16,11 @@ import {
 const MAX_RECENTS = 30;
 const MAX_RESULTS = 80;
 const REFRESH_MS = 150;
-const CACHE_LIMIT = 8;
+// Always keep this many checkouts; beyond it evict the least recently used
+// until the retained listings fit the entry budget (huge monorepos cost more).
+const CACHE_MIN = 8;
+const CACHE_MAX = 32;
+const CACHE_ENTRY_BUDGET = 400_000;
 
 type Listener = () => void;
 
@@ -29,6 +33,19 @@ let refreshing = false;
 let refreshAgain = false;
 const listeners = new Set<Listener>();
 const recentsByCwd = new Map<string, string[]>();
+
+function trimCache() {
+  let entries = 0;
+  for (const listing of cache.values()) entries += listing.length;
+  while (
+    cache.size > CACHE_MAX ||
+    (cache.size > CACHE_MIN && entries > CACHE_ENTRY_BUDGET)
+  ) {
+    const oldest = cache.keys().next().value!;
+    entries -= cache.get(oldest)!.length;
+    cache.delete(oldest);
+  }
+}
 
 function normCwd(cwd: string): string {
   return slash(cwd).replace(/\/+$/, "") || "/";
@@ -138,7 +155,7 @@ export function loadProjectFiles(
       if (inflight.get(cwd) !== promise) return files;
       cache.delete(cwd);
       cache.set(cwd, files);
-      if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+      trimCache();
       notifyProjectFilesChanged();
       return files;
     })

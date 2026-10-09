@@ -48,6 +48,7 @@ mod skills_watch;
 pub mod ssh_askpass;
 #[cfg(target_os = "windows")]
 mod tray;
+mod tunnel_registry;
 mod window;
 mod window_transfer;
 #[cfg(windows)]
@@ -614,6 +615,10 @@ pub fn run() {
                 macos::prefer_bundle_dock_icon();
             }
             window::ensure_launch_window_visible(handle);
+            // A crash or force quit leaves its ssh tunnels running; stop them.
+            std::thread::spawn(|| {
+                tunnel_registry::reap_orphans();
+            });
         }
         tauri::RunEvent::WindowEvent {
             label,

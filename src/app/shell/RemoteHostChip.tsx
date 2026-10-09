@@ -52,7 +52,7 @@ export const RemoteHostChip = memo(function RemoteHostChip({
     <span className="flex min-w-0 shrink-0 items-center gap-1">
       <button
         type="button"
-        className="inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 text-[11px] text-content/55 hover:bg-content/10 hover:text-content"
+        className="inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 text-[11px] text-muted hover:bg-content/10 hover:text-content"
         ref={trigger}
         aria-label={`Remote machine ${machine.name}: ${label}${latency ? `, ${latency}` : ""}${
           hasLoad ? `, ${summary.map((segment) => segment.text).join(", ")}` : ""
@@ -73,14 +73,14 @@ export const RemoteHostChip = memo(function RemoteHostChip({
         />
         <span className="max-w-28 truncate">{machine.name}</span>
         <span>{label}</span>
-        {latency ? <span className="tabular-nums text-content/40">{latency}</span> : null}
+        {latency ? <span className="tabular-nums text-muted">{latency}</span> : null}
         {hasLoad ? (
           <span
             data-host-load
             className={`flex items-center gap-1.5 tabular-nums max-md:hidden ${load.stale ? "opacity-50" : ""}`}
           >
             {summary.map((segment) => (
-              <span key={segment.key} className={segment.hot ? "text-amber-400" : "text-content/55"}>
+              <span key={segment.key} className={segment.hot ? "text-warning" : "text-muted"}>
                 {segment.text}
               </span>
             ))}
@@ -162,7 +162,7 @@ function HostLoadPopover({
     >
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="truncate font-medium">{name}</span>
-        <span className={`shrink-0 text-content/45 ${stale ? "text-amber-400" : ""}`}>
+        <span className={`shrink-0 ${stale ? "text-warning" : "text-muted"}`}>
           {stale ? "Out of date" : updatedAt ? `Updated ${formatAge(updatedAt, now)}` : ""}
         </span>
       </div>
@@ -170,8 +170,8 @@ function HostLoadPopover({
         {rows.map((row) => (
           <li key={row.key} className="flex flex-col gap-0.5">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="min-w-0 truncate text-content/55">{row.label}</span>
-              <span className={`shrink-0 tabular-nums ${row.hot ? "text-amber-400" : ""}`}>
+              <span className="min-w-0 truncate text-muted">{row.label}</span>
+              <span className={`shrink-0 tabular-nums ${row.hot ? "text-warning" : ""}`}>
                 {row.value}
               </span>
             </div>
@@ -185,7 +185,7 @@ function HostLoadPopover({
                 aria-valuenow={row.percent}
               >
                 <div
-                  className={`h-full rounded-full ${row.hot ? "bg-amber-400" : "bg-emerald-400"}`}
+                  className={`h-full rounded-full ${row.hot ? "bg-warning" : "bg-success"}`}
                   style={{ width: `${row.percent}%` }}
                 />
               </div>

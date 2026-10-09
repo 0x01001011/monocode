@@ -271,7 +271,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind }: Props) {
 
   if (!cwd || cwd === "~") {
     return (
-      <p className="grid h-full place-items-center text-[13px] text-content/45">
+      <p className="grid h-full place-items-center text-[13px] text-muted">
         No project folder
       </p>
     );
@@ -279,15 +279,15 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind }: Props) {
   if (error) {
     return (
       <div className="grid h-full place-items-center p-6 text-center">
-        <AlertCircle className="mx-auto mb-3 size-5 text-red-400" />
+        <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
         <p className="text-[13px] text-content">Couldn’t load changes</p>
-        <p className="mt-1 text-[12px] text-content/50">{error}</p>
+        <p className="mt-1 text-[12px] text-muted">{error}</p>
       </div>
     );
   }
   if (files == null) {
     return (
-      <div className="grid h-full place-items-center text-content/40">
+      <div className="grid h-full place-items-center text-muted">
         <Loader className="size-4 animate-spin" strokeWidth={1.75} />
       </div>
     );

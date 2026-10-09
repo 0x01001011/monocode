@@ -3,6 +3,12 @@ import { X } from "./icons";
 import { useContext, useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLockOverscroll } from "../hooks/useLockOverscroll";
+import {
+  inertBackground,
+  restoreFocus,
+  tabbableWithin,
+  trapTab,
+} from "../lib/focusTrap";
 import { LAYER } from "../lib/layers";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 
@@ -44,14 +50,42 @@ export function ModalPanel({
 }: Props) {
   const popupHost = useContext(NativePopupHost);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Read while rendering: children's effects (autofocus) run before this
+  // component's and would otherwise hide where focus was when the dialog opened.
+  const openerRef = useRef<Element | null | undefined>(undefined);
+  if (openerRef.current === undefined && typeof document !== "undefined") {
+    openerRef.current = document.activeElement;
+  }
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const uid = useId();
   const titleId = `${uid}-title`;
   const descriptionId = description ? `${uid}-desc` : undefined;
 
   useEffect(() => {
-    if (!minimalHeader) closeRef.current?.focus();
+    const dialog = dialogRef.current;
+    if (!minimalHeader) {
+      closeRef.current?.focus();
+    } else if (dialog && !dialog.contains(dialog.ownerDocument.activeElement)) {
+      // Nothing inside claimed focus: take the first control, then the panel.
+      const items = tabbableWithin(dialog);
+      const target =
+        items.find((item) => item !== closeRef.current) ?? items[0] ?? dialog;
+      target.focus();
+    }
   }, [minimalHeader]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const doc = dialog.ownerDocument;
+    const release = inertBackground(doc, dialog);
+    const opener = openerRef.current;
+    return () => {
+      release();
+      restoreFocus(doc, opener ?? null);
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -79,12 +113,15 @@ export function ModalPanel({
       }
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
+        tabIndex={-1}
+        onKeyDown={(event) => trapTab(event.nativeEvent, event.currentTarget)}
         onMouseDown={(event) => event.stopPropagation()}
-        className={`relative isolate flex flex-col overflow-hidden rounded-2xl border border-content/7 shadow-2xl ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""} ${className ?? ""}`}
+        className={`relative isolate flex flex-col overflow-hidden rounded-2xl outline-none border border-content/7 shadow-2xl ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""} ${className ?? ""}`}
       >
         <GlassBackdrop className="bg-background-base dark:bg-background-base/55" />
         <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
@@ -100,14 +137,14 @@ export function ModalPanel({
             >
               <h2
                 id={titleId}
-                className="text-md font-semibold leading-tight tracking-tight text-content"
+                className="text-title font-semibold leading-tight tracking-tight text-content"
               >
                 {title}
               </h2>
               {description ? (
                 <p
                   id={descriptionId}
-                  className="mt-0.5 truncate text-[12px] leading-snug text-content/50"
+                  className="mt-0.5 truncate text-[12px] leading-snug text-muted"
                 >
                   {description}
                 </p>
@@ -118,7 +155,7 @@ export function ModalPanel({
               type="button"
               aria-label="Close"
               onClick={onClose}
-              className="grid size-7 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/8 hover:text-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content focus-visible:focus-ring"
             >
               <X className="size-3.5" strokeWidth={1.75} />
             </button>

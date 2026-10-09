@@ -522,7 +522,7 @@ export function SettingsView({
       >
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-          <span className="shrink-0 text-content/45">Settings</span>
+          <span className="shrink-0 text-muted">Settings</span>
           <span aria-hidden className="shrink-0 text-content/25">
             /
           </span>
@@ -538,7 +538,7 @@ export function SettingsView({
             <button
               type="button"
               onClick={appearance.restoreDefaults}
-              className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-content/50 hover:bg-content/10 hover:text-content"
+              className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-muted hover:bg-content/10 hover:text-content"
             >
               <RotateCcw className="size-3.5" strokeWidth={1.75} />
               Restore defaults
@@ -666,7 +666,7 @@ function SettingsSearch({
 
   return (
     <div ref={root} className="relative shrink-0">
-      <label className="flex h-7 w-48 items-center gap-2 rounded-md border border-content/10 px-2 text-content/45 focus-within:border-content/20">
+      <label className="flex h-7 w-48 items-center gap-2 rounded-md border border-content/10 px-2 text-muted focus-within:border-content/20">
         <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
         <input
           ref={input}
@@ -680,7 +680,7 @@ function SettingsSearch({
           aria-controls={listId}
           spellCheck={false}
           autoComplete="off"
-          className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+          className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
         />
         {query ? (
           <button
@@ -691,7 +691,7 @@ function SettingsSearch({
               setQuery("");
               input.current?.focus();
             }}
-            className="grid size-4 shrink-0 place-items-center rounded text-content/45 hover:text-content"
+            className="grid size-4 shrink-0 place-items-center rounded text-muted hover:text-content"
           >
             <X className="size-3" strokeWidth={2} />
           </button>
@@ -714,7 +714,7 @@ function SettingsSearch({
           className="overflow-y-auto overscroll-contain p-1"
         >
           {results.length === 0 ? (
-            <p className="px-2 py-1.5 text-[12px] text-content/45">
+            <p className="px-2 py-1.5 text-[12px] text-muted">
               No matching settings
             </p>
           ) : (
@@ -734,7 +734,7 @@ function SettingsSearch({
                 }`}
               >
                 <span className="min-w-0 flex-1 truncate">{result.label}</span>
-                <span className="shrink-0 text-[11px] text-content/40">
+                <span className="shrink-0 text-[11px] text-muted">
                   {result.settingId ? result.sectionLabel : "Page"}
                 </span>
               </button>
@@ -859,7 +859,7 @@ function GeneralPage({
             <NotificationsBlocked />
           ) : null}
           {notificationsEnabled && notificationPermission === "unsupported" ? (
-            <span className="text-[12px] text-content/45">
+            <span className="text-[12px] text-muted">
               Not available on this platform
             </span>
           ) : null}
@@ -915,7 +915,7 @@ function GeneralPage({
             description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to MonoCode. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
           >
             {quickComposerError ? (
-              <span className="text-[12px] text-content/45">
+              <span className="text-[12px] text-muted">
                 {quickComposerError}
               </span>
             ) : null}
@@ -1306,7 +1306,7 @@ function GithubSettings() {
   return (
     <>
       <Row label="Connection" description={description}>
-        <span className="text-[12px] text-content/50">{label}</span>
+        <span className="text-[12px] text-muted">{label}</span>
         {!checking && !status?.installed ? (
           <SecondaryButton
             onClick={() => {
@@ -1321,7 +1321,7 @@ function GithubSettings() {
         </SecondaryButton>
       </Row>
       {error ? (
-        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-danger last:border-b-0">
           {error}
         </p>
       ) : null}
@@ -1395,7 +1395,7 @@ function GitlabSettings() {
       >
         {connected ? (
           <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
-            <span className="max-w-56 truncate text-[12px] text-content/50">
+            <span className="max-w-56 truncate text-[12px] text-muted">
               {url}
             </span>
             <SecondaryButton
@@ -1416,7 +1416,7 @@ function GitlabSettings() {
                 aria-label="GitLab URL"
                 autoComplete="url"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
               />
             </label>
             <label className="flex h-7 w-52 max-w-full shrink-0 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20">
@@ -1431,7 +1431,7 @@ function GitlabSettings() {
                 aria-label="GitLab access token"
                 autoComplete="off"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
               />
             </label>
             <SecondaryButton
@@ -1444,7 +1444,7 @@ function GitlabSettings() {
         )}
       </Row>
       {error ? (
-        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-danger last:border-b-0">
           {error}
         </p>
       ) : null}
@@ -1518,7 +1518,7 @@ function AzureDevOpsSettings() {
       >
         {connected ? (
           <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
-            <span className="max-w-56 truncate text-[12px] text-content/50">
+            <span className="max-w-56 truncate text-[12px] text-muted">
               {url}
             </span>
             <SecondaryButton
@@ -1539,7 +1539,7 @@ function AzureDevOpsSettings() {
                 aria-label="Azure DevOps organization URL"
                 autoComplete="url"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
               />
             </label>
             <label className="flex h-7 w-52 max-w-full shrink-0 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20">
@@ -1554,7 +1554,7 @@ function AzureDevOpsSettings() {
                 aria-label="Azure DevOps personal access token"
                 autoComplete="off"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
               />
             </label>
             <SecondaryButton
@@ -1567,7 +1567,7 @@ function AzureDevOpsSettings() {
         )}
       </Row>
       {error ? (
-        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-danger last:border-b-0">
           {error}
         </p>
       ) : null}
@@ -1685,7 +1685,7 @@ function LinearSettings() {
                 aria-label="Linear API key"
                 autoComplete="off"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
               />
             </label>
             <SecondaryButton
@@ -1698,14 +1698,14 @@ function LinearSettings() {
         )}
       </Row>
       {error ? (
-        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-danger last:border-b-0">
           {error}
         </p>
       ) : null}
       {connected && teams.length > 0 ? (
         <div className="border-b border-content/5 px-4 py-3.5 last:border-b-0">
           <div className="text-[13px] font-medium text-content">Teams</div>
-          <p className="mt-1 text-[12px] leading-relaxed text-content/45">
+          <p className="mt-1 text-[12px] leading-relaxed text-muted">
             Unchecked teams stay out of the inbox.
           </p>
           <div className="-mx-2 mt-2 flex flex-col gap-0.5">
@@ -1721,7 +1721,7 @@ function LinearSettings() {
                   <span className="min-w-0 flex-1 truncate">
                     {team.name}
                     {team.key ? (
-                      <span className="ml-1.5 text-content/40">{team.key}</span>
+                      <span className="ml-1.5 text-muted">{team.key}</span>
                     ) : null}
                   </span>
                   {checked ? (
@@ -1798,7 +1798,7 @@ function UpdateRow({
       label={
         <span className="flex items-baseline gap-2">
           Version
-          <span className="font-mono text-[12px] text-content/45">
+          <span className="font-mono text-[12px] text-muted">
             {snapshot.currentVersion}
           </span>
         </span>
@@ -2340,7 +2340,7 @@ function ChatBackgroundCard({
                   }}
                 />
               )}
-              <span className="pointer-events-none absolute bottom-2 left-2 text-[11px] text-content/40">
+              <span className="pointer-events-none absolute bottom-2 left-2 text-[11px] text-muted">
                 Empty chat preview at {emptyVisibility}%
               </span>
             </div>
@@ -2349,7 +2349,7 @@ function ChatBackgroundCard({
               type="button"
               onClick={() => void appearance.onChooseChatBackground()}
               disabled={busy}
-              className="flex h-36 w-full flex-col items-center justify-center gap-2 text-content/40 hover:bg-content/5 hover:text-content/70 disabled:cursor-default disabled:opacity-40"
+              className="flex h-36 w-full flex-col items-center justify-center gap-2 text-muted hover:bg-content/5 hover:text-content/70 disabled:cursor-default disabled:opacity-40"
             >
               {busy ? (
                 <Loader className="size-5 animate-spin" aria-hidden />
@@ -2381,7 +2381,7 @@ function ChatBackgroundCard({
           </div>
         ) : null}
         {appearance.chatBackgroundError ? (
-          <p className="mt-2 text-[12px] text-red-400">
+          <p className="mt-2 text-[12px] text-danger">
             {appearance.chatBackgroundError}
           </p>
         ) : null}
@@ -2599,7 +2599,7 @@ function ShortcutEditor({
             busy ? "opacity-50" : ""
           } ${
             display === null
-              ? "border-dashed border-content/15 text-content/35"
+              ? "border-dashed border-content/15 text-muted"
               : "border-content/15 text-content/80 hover:bg-content/10"
           }`}
         />
@@ -2609,7 +2609,7 @@ function ShortcutEditor({
             aria-label={`Reset ${name} shortcut`}
             disabled={busy}
             onClick={() => void run(onReset)}
-            className="rounded-md px-1 py-1 text-content/35 hover:bg-content/10 hover:text-content disabled:opacity-50"
+            className="rounded-md px-1 py-1 text-muted hover:bg-content/10 hover:text-content disabled:opacity-50"
           >
             <RotateCcw className="size-3.5" />
           </button>
@@ -2617,7 +2617,7 @@ function ShortcutEditor({
       </div>
       {recording ? (
         <p
-          className="pointer-events-none absolute top-1/2 right-full z-40 mr-3 -translate-y-1/2 text-[10px] whitespace-nowrap text-content/50"
+          className="pointer-events-none absolute top-1/2 right-full z-40 mr-3 -translate-y-1/2 text-[10px] whitespace-nowrap text-muted"
           aria-live="polite"
         >
           Del disables · Esc cancels
@@ -2626,7 +2626,7 @@ function ShortcutEditor({
       {error ? (
         <p
           role="alert"
-          className="absolute top-full left-0 z-40 mt-1.5 w-max max-w-64 rounded-md border border-content/10 bg-background-base/95 px-2 py-1 text-[11px] whitespace-nowrap text-red-400 shadow-lg"
+          className="absolute top-full left-0 z-40 mt-1.5 w-max max-w-64 rounded-md border border-content/10 bg-background-base/95 px-2 py-1 text-[11px] whitespace-nowrap text-danger shadow-lg"
         >
           {error}
         </p>
@@ -2728,10 +2728,10 @@ function KeybindingsPage() {
       description="Click a shortcut to record new keys. Press Delete while recording to disable it."
       action={
         <div className="flex items-center gap-3">
-          <span className="shrink-0 text-[12px] text-content/40 tabular-nums">
+          <span className="shrink-0 text-[12px] text-muted tabular-nums">
             {rows.length} {rows.length === 1 ? "binding" : "bindings"}
           </span>
-          <label className="flex h-7 w-44 shrink-0 items-center gap-2 rounded-md border border-content/10 px-2 text-content/45 focus-within:border-content/20">
+          <label className="flex h-7 w-44 shrink-0 items-center gap-2 rounded-md border border-content/10 px-2 text-muted focus-within:border-content/20">
             <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
             <input
               value={query}
@@ -2740,21 +2740,19 @@ function KeybindingsPage() {
               aria-label="Filter keybindings"
               spellCheck={false}
               autoComplete="off"
-              className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+              className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
             />
           </label>
         </div>
       }
     >
-      <div className="flex items-center border-b border-stroke bg-content/5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-content/40">
+      <div className="flex items-center border-b border-stroke bg-content/5 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
         <span className="min-w-0 flex-1">Command</span>
         <span className="w-40 shrink-0">Keybinding</span>
         <span className="w-28 shrink-0">When</span>
       </div>
       {rows.length === 0 ? (
-        <p className="px-4 py-3 text-[12px] text-content/45">
-          No matching bindings
-        </p>
+        <p className="px-4 py-3 text-[12px] text-muted">No matching bindings</p>
       ) : (
         rows.map((row) => {
           const override = overrides[row.command];
@@ -2765,7 +2763,7 @@ function KeybindingsPage() {
               className="flex h-11 items-center border-b border-content/5 px-4 text-[12px] last:border-b-0"
             >
               <span
-                className={`min-w-0 flex-1 truncate ${disabled ? "text-content/45" : ""}`}
+                className={`min-w-0 flex-1 truncate ${disabled ? "text-muted" : ""}`}
               >
                 {row.command}
               </span>
@@ -2779,7 +2777,7 @@ function KeybindingsPage() {
                   onSave={save}
                 />
               )}
-              <span className="w-28 shrink-0 font-mono text-[11px] text-content/40">
+              <span className="w-28 shrink-0 font-mono text-[11px] text-muted">
                 {row.when}
               </span>
             </div>
@@ -2934,9 +2932,7 @@ function ProviderBinaryControl({
           setEditing(false);
         }}
         className={`grid size-6 place-items-center rounded hover:bg-content/10 focus-visible:outline-2 focus-visible:outline-accent ${
-          restartRequired
-            ? "text-amber-300"
-            : "text-content/35 hover:text-content"
+          restartRequired ? "text-warning" : "text-muted hover:text-content"
         }`}
       >
         <FolderOpen className="size-3.5" strokeWidth={1.75} />
@@ -2979,10 +2975,10 @@ function ProviderBinaryControl({
               {title} CLI
             </span>
             <div className="flex items-center gap-1.5">
-              <span className="rounded-full bg-content/10 px-1.5 py-0.5 text-[10px] text-content/50">
+              <span className="rounded-full bg-content/10 px-1.5 py-0.5 text-[10px] text-muted">
                 Global path
               </span>
-              <span className="rounded-full bg-content/10 px-1.5 py-0.5 text-[10px] text-content/50">
+              <span className="rounded-full bg-content/10 px-1.5 py-0.5 text-[10px] text-muted">
                 {error
                   ? "Needs attention"
                   : restartRequired
@@ -2997,7 +2993,7 @@ function ProviderBinaryControl({
             <form className="mt-2" onSubmit={submit}>
               <label
                 htmlFor={`${provider}-binary-path`}
-                className="text-[11px] text-content/50"
+                className="text-[11px] text-muted"
               >
                 CLI path
               </label>
@@ -3010,16 +3006,16 @@ function ProviderBinaryControl({
                 disabled={working}
                 autoFocus
                 onChange={(event) => setDraft(event.target.value)}
-                className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-mono text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/35 focus:border-accent/45 disabled:opacity-50"
+                className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-mono text-[11px] text-content outline-none placeholder:font-sans placeholder:text-muted focus:border-accent/45 disabled:opacity-50"
               />
-              <p className="mt-1.5 text-[10px] text-content/40">
+              <p className="mt-1.5 text-[10px] text-muted">
                 Enter the absolute path to the CLI executable. Changes apply
                 after restarting MonoCode.
               </p>
               {error ? (
                 <span
                   role="alert"
-                  className="mt-1.5 block text-[11px] text-red-400"
+                  className="mt-1.5 block text-[11px] text-danger"
                 >
                   {error}
                 </span>
@@ -3057,7 +3053,7 @@ function ProviderBinaryControl({
                       ? "CLI could not be resolved"
                       : "Checking the selected CLI…")}
                 </span>
-                <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[10px] text-content/40">
+                <span className="mt-1 block max-h-10 overflow-y-auto whitespace-pre-wrap break-words text-[10px] text-muted">
                   {inspection?.version ??
                     (error ? "Retry to check this CLI" : "Checking version…")}
                 </span>
@@ -3066,7 +3062,7 @@ function ProviderBinaryControl({
                 <span
                   role="alert"
                   title={error}
-                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
+                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-danger"
                 >
                   {error}
                 </span>
@@ -3074,7 +3070,7 @@ function ProviderBinaryControl({
               {revealError ? (
                 <span
                   role="alert"
-                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-red-400"
+                  className="mt-1.5 block max-h-20 overflow-y-auto whitespace-pre-wrap break-words text-[10px] leading-4 text-danger"
                 >
                   Could not open the CLI location: {revealError}
                 </span>
@@ -3483,7 +3479,7 @@ function ProviderAccountsSettings() {
                   <div className="text-[13px] font-medium text-content">
                     {HARNESS_TITLE[provider]}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-content/40">
+                  <div className="mt-0.5 text-[11px] text-muted">
                     {accounts.length}{" "}
                     {accounts.length === 1 ? "account" : "accounts"}
                   </div>
@@ -3532,7 +3528,7 @@ function ProviderAccountsSettings() {
                           {account.label}
                         </span>
                         {orgTag ? (
-                          <span className="max-w-[8rem] shrink-0 truncate rounded bg-content/[0.07] px-1 text-[9px] leading-4 text-content/50">
+                          <span className="max-w-[8rem] shrink-0 truncate rounded bg-content/[0.07] px-1 text-micro leading-4 text-muted">
                             {orgTag}
                           </span>
                         ) : null}
@@ -3549,14 +3545,14 @@ function ProviderAccountsSettings() {
                               ? "Provider CLI profile"
                               : "Isolated profile"
                           }
-                          className="truncate text-content/30"
+                          className="truncate text-muted"
                         />
                       </div>
                     </div>
                     <AccountUsageMeters limits={limits} now={usage.now} />
                     <div className="flex w-24 shrink-0 items-center justify-end gap-1">
                       {account.isDefault ? (
-                        <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30">
+                        <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-muted">
                           Default
                         </span>
                       ) : null}
@@ -3566,7 +3562,7 @@ function ProviderAccountsSettings() {
                         aria-label={`Rename ${account.label}`}
                         title="Rename account"
                         onClick={() => startRename(account)}
-                        className="grid size-7 place-items-center rounded-md text-content/40 transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-35"
+                        className="grid size-7 place-items-center rounded-md text-muted transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-35"
                       >
                         <Pencil className="size-3.5" strokeWidth={1.75} />
                       </button>
@@ -3577,7 +3573,7 @@ function ProviderAccountsSettings() {
                           aria-label={`Remove ${account.label}`}
                           title="Remove account"
                           onClick={() => void removeAccount(account)}
-                          className="grid size-7 place-items-center rounded-md text-content/35 transition-transform duration-150 hover:bg-red-400/10 hover:text-red-400 active:scale-[0.96] disabled:opacity-35"
+                          className="grid size-7 place-items-center rounded-md text-muted transition-transform duration-150 hover:bg-danger/10 hover:text-danger active:scale-[0.96] disabled:opacity-35"
                         >
                           {removing ? (
                             <Loader className="size-3.5 animate-spin" />
@@ -3609,7 +3605,7 @@ function ProviderAccountsSettings() {
       })}
       {error ? (
         <p
-          className="border-t border-content/5 px-4 py-2.5 text-[11px] leading-4 text-red-400"
+          className="border-t border-content/5 px-4 py-2.5 text-[11px] leading-4 text-danger"
           role="alert"
         >
           {error}
@@ -3660,7 +3656,7 @@ function ProviderAccountEditor({
           type="button"
           disabled={working}
           onClick={onCancel}
-          className="flex h-6 shrink-0 items-center rounded-[4.5px] bg-content/[0.05] px-2.5 text-[11px] text-content/45 transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.97] disabled:opacity-40"
+          className="flex h-6 shrink-0 items-center rounded-[4.5px] bg-content/[0.05] px-2.5 text-[11px] text-muted transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.97] disabled:opacity-40"
         >
           Cancel
         </button>
@@ -3786,7 +3782,7 @@ function ProviderRow({
       </SecondaryButton>
       {available ? (
         <div className="flex items-center gap-2">
-          <span className="text-[12px] text-content/50">
+          <span className="text-[12px] text-muted">
             {pickerLocked ? "Hidden globally" : "Show in picker"}
           </span>
           <Toggle
@@ -3859,7 +3855,7 @@ function ArchivePage({
         description="Archive a project from the rail to keep its chats without listing it in the sidebar."
       >
         {archivedProjects.length === 0 ? (
-          <p className="px-4 py-3.5 text-[12px] text-content/45">
+          <p className="px-4 py-3.5 text-[12px] text-muted">
             No archived projects.
           </p>
         ) : (
@@ -3872,7 +3868,7 @@ function ArchivePage({
                 <div className="truncate text-[13px]">
                   {archivedProjectLabel(project.path)}
                 </div>
-                <div className="truncate text-[11px] text-content/40">
+                <div className="truncate text-[11px] text-muted">
                   {prettyCwd(project.path)}
                 </div>
               </div>
@@ -3910,11 +3906,11 @@ function ArchivePage({
           />
         </Row>
         {!looksLikeProject(cwd) ? (
-          <p className="px-4 py-3.5 text-[12px] text-content/45">
+          <p className="px-4 py-3.5 text-[12px] text-muted">
             Open a project to see its archived conversations.
           </p>
         ) : archived.length === 0 ? (
-          <p className="px-4 py-3.5 text-[12px] text-content/45">
+          <p className="px-4 py-3.5 text-[12px] text-muted">
             No archived conversations in this project.
           </p>
         ) : (
@@ -3934,7 +3930,7 @@ function ArchivePage({
               >
                 {sessionDisplayTitle(session.title, session.harness)}
               </button>
-              <span className="shrink-0 text-[11px] text-content/35 tabular-nums">
+              <span className="shrink-0 text-[11px] text-muted tabular-nums">
                 {formatDate(session.updatedAt)}
               </span>
               <SecondaryButton
@@ -4027,9 +4023,7 @@ function MonosPage() {
         {monos.length ? (
           monos.map((mono) => <MonoRow key={mono.id} mono={mono} />)
         ) : (
-          <p className="px-4 py-3.5 text-[12px] text-content/45">
-            No monos yet.
-          </p>
+          <p className="px-4 py-3.5 text-[12px] text-muted">No monos yet.</p>
         )}
       </Group>
     </>
@@ -4057,7 +4051,7 @@ function MonoRow({ mono }: { mono: Mono }) {
           : "No projects yet"
       }
     >
-      <span className="text-[12px] leading-5 text-content/50">
+      <span className="text-[12px] leading-5 text-muted">
         Show Mono spawned session on the sidebar
       </span>
       <Toggle
@@ -4085,7 +4079,7 @@ function MonoRow({ mono }: { mono: Mono }) {
             title="Reset to defaults"
             aria-label={`Reset ${look.name} to defaults`}
             onClick={open}
-            className="grid size-7 place-items-center rounded-md text-content/40 transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.96]"
+            className="grid size-7 place-items-center rounded-md text-muted transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.96]"
           >
             <RotateCcw className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -4108,7 +4102,7 @@ function PageHeader({
         {title}
       </h1>
       {description ? (
-        <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-content/45">
+        <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-muted">
           {description}
         </p>
       ) : null}
@@ -4147,7 +4141,7 @@ function Group({
         <div className="min-w-0 flex-1">
           <h2 className="text-[13px] font-semibold text-content">{title}</h2>
           {description ? (
-            <p className="mt-1 text-[12px] leading-relaxed text-content/45">
+            <p className="mt-1 text-[12px] leading-relaxed text-muted">
               {description}
             </p>
           ) : null}
@@ -4191,7 +4185,7 @@ function Row({
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-medium text-content">{label}</div>
         {description ? (
-          <p className="mt-1 text-[12px] leading-relaxed text-content/45">
+          <p className="mt-1 text-[12px] leading-relaxed text-muted">
             {description}
           </p>
         ) : null}
@@ -4240,7 +4234,7 @@ function Segmented<T extends string>({
           className={`min-w-0 rounded-[5px] px-2.5 py-1 ${
             value === option.value
               ? "bg-selection text-content"
-              : "text-content/50 hover:text-content"
+              : "text-muted hover:text-content"
           }`}
         >
           {option.label}
@@ -4359,7 +4353,7 @@ function AccentColorPicker({
 /** macOS keeps the decision after the first prompt; only System Settings can flip it. Windows toasts are governed by Settings > Notifications. */
 function NotificationsBlocked() {
   return (
-    <span className="flex items-center gap-2 text-[12px] text-content/45">
+    <span className="flex items-center gap-2 text-[12px] text-muted">
       Permission needed
       {IS_MAC || IS_WIN ? (
         <button
@@ -4399,12 +4393,12 @@ function Toggle({
         playCue("switch");
       }}
       className={`relative h-5 w-9 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-        on ? "bg-accent" : "bg-content/20"
+        on ? "bg-accent" : "bg-content/40 ring-1 ring-inset ring-content/25"
       }`}
     >
       <span
-        className={`absolute top-0.5 size-4 rounded-full bg-white transition-[left] ${
-          on ? "left-4.5" : "left-0.5"
+        className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow-sm transition-transform motion-reduce:transition-none ${
+          on ? "translate-x-4" : "translate-x-0"
         }`}
       />
     </button>
@@ -4523,7 +4517,7 @@ function Select({
           </span>
         </span>
         <ChevronDown
-          className={`size-3.5 shrink-0 text-content/50 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`size-3.5 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
       </button>

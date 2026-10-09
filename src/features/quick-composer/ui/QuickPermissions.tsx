@@ -30,7 +30,7 @@ export function QuickPermissionIcon({
   const Icon = ICONS[mode];
   return (
     <Icon
-      className={`${className ?? ""} ${mode === "full-access" ? "text-amber-400/90" : ""}`}
+      className={`${className ?? ""} ${mode === "full-access" ? "text-warning" : ""}`}
       strokeWidth={1.75}
     />
   );
@@ -103,7 +103,7 @@ export function QuickPermissions({
             <span className="block text-[13px] font-medium">
               {RUNTIME_MODE_LABEL[mode]}
             </span>
-            <span className="mt-0.5 block text-[11px] text-content/45">
+            <span className="mt-0.5 block text-[11px] text-muted">
               {RUNTIME_MODE_HINT[mode]}
             </span>
           </span>

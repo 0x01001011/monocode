@@ -68,6 +68,9 @@ describe("ComposerAction", () => {
     const empty = renderAction(true, false);
     expect(empty).toContain('aria-label="Stop"');
     expect(empty).not.toContain('aria-label="Send"');
+    // Stop shares Send's themed fill so it never drops out of the light composer.
+    expect(empty).toContain("composer-send primary-action");
+    expect(empty).not.toContain("bg-white");
 
     const typed = renderAction(true, true);
     expect(typed).toContain('aria-label="Send"');

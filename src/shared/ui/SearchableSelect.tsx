@@ -200,23 +200,23 @@ export function SearchableSelect({
         }}
         className={
           variant === "row"
-            ? "inline-flex h-7 max-w-full items-center gap-1 rounded-md bg-content/10 py-0 pr-1.5 pl-2 text-left text-[12px] outline-none hover:bg-content/[0.14] focus-visible:bg-content/[0.14] disabled:opacity-50"
+            ? "inline-flex h-7 max-w-full items-center gap-1 rounded-md bg-content/10 py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-content/[0.14] focus-visible:bg-content/[0.14] focus-visible:focus-ring disabled:opacity-50"
             : variant === "panel"
-              ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-content/6 bg-content/6 px-4 text-right text-[14px] font-medium outline-none hover:bg-content/8 focus:border-content/12 focus:bg-content/8 disabled:opacity-50 active:scale-[0.995]"
+              ? "flex h-14 w-full items-center justify-end gap-3 rounded-xl border border-content/6 bg-content/6 px-4 text-right text-[14px] font-medium hover:bg-content/8 focus:border-content/12 focus:bg-content/8 focus-visible:focus-ring disabled:opacity-50 active:scale-[0.995]"
               : variant === "pill"
-                ? "inline-flex h-7 max-w-full items-center gap-1 rounded-md bg-content/10 py-0 pr-1.5 pl-2 text-left text-[12px] outline-none hover:bg-content/[0.14] focus-visible:bg-content/[0.14] disabled:opacity-50"
+                ? "inline-flex h-7 max-w-full items-center gap-1 rounded-md bg-content/10 py-0 pr-1.5 pl-2 text-left text-[12px] hover:bg-content/[0.14] focus-visible:bg-content/[0.14] focus-visible:focus-ring disabled:opacity-50"
                 : variant === "transparent"
-                  ? "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-transparent px-2.5 text-left text-[13px] outline-none hover:border-content/20 focus:border-content/25 disabled:opacity-50 active:scale-[0.99]"
-                  : "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-background-base px-2.5 text-left text-[13px] outline-none hover:border-content/20 focus:border-content/25 disabled:opacity-50 active:scale-[0.99]"
+                  ? "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-transparent px-2.5 text-left text-[13px] hover:border-content/20 focus:border-content/25 focus-visible:focus-ring disabled:opacity-50 active:scale-[0.99]"
+                  : "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-content/10 bg-background-base px-2.5 text-left text-[13px] hover:border-content/20 focus:border-content/25 focus-visible:focus-ring disabled:opacity-50 active:scale-[0.99]"
         }
       >
         <span
-          className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : variant === "pill" || variant === "row" ? "" : "flex-1"} ${selected ? "text-content" : "text-content/40"}`}
+          className={`min-w-0 truncate ${variant === "panel" ? "flex-1 text-right" : variant === "pill" || variant === "row" ? "" : "flex-1"} ${selected ? "text-content" : "text-muted"}`}
         >
           {selected?.label ?? placeholder}
         </span>
         <ChevronDown
-          className={`shrink-0 text-content/45 transition-transform duration-150 ease-out ${variant === "pill" || variant === "row" ? "size-3" : "size-3.5"} ${open ? "rotate-180" : ""}`}
+          className={`shrink-0 text-muted transition-transform duration-150 ease-out ${variant === "pill" || variant === "row" ? "size-3" : "size-3.5"} ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
       </button>
@@ -237,7 +237,7 @@ export function SearchableSelect({
           className="flex flex-col overflow-hidden"
         >
           {searchable ? (
-            <label className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-2.5 text-content/45 focus-within:text-content/70">
+            <label className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-2.5 text-muted focus-within:border-focus focus-within:text-content">
               <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
               <span className="sr-only">{searchPlaceholder}</span>
               <input
@@ -257,7 +257,7 @@ export function SearchableSelect({
                   setActive(0);
                 }}
                 onKeyDown={onSearchKeyDown}
-                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+                className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
               />
             </label>
           ) : null}
@@ -269,7 +269,7 @@ export function SearchableSelect({
             aria-activedescendant={searchable ? undefined : activeId}
             tabIndex={searchable ? undefined : 0}
             onKeyDown={searchable ? undefined : onSearchKeyDown}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1 outline-none"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1 outline-none focus-visible:focus-ring-inset"
           >
             {filtered.length > 0 ? (
               filtered.map((option, index) => {
@@ -307,7 +307,7 @@ export function SearchableSelect({
                 );
               })
             ) : (
-              <p className="px-2 py-3 text-center text-[12px] text-content/45">
+              <p className="px-2 py-3 text-center text-[12px] text-muted">
                 {emptyLabel}
               </p>
             )}

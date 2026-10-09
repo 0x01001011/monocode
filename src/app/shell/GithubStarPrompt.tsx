@@ -125,7 +125,7 @@ export function GithubStarPrompt() {
         aria-busy={busy}
         disabled={busy}
         onClick={() => void starFromPrompt()}
-        className="group flex h-full w-full items-center justify-center gap-2 rounded-md bg-orange-300/10 pl-2.5 pr-8 text-orange-400 transition-[background-color,transform] duration-150 ease-out hover:bg-orange-300/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60 active:scale-[0.98] disabled:cursor-default disabled:opacity-65"
+        className="group flex h-full w-full items-center justify-center gap-2 rounded-md bg-orange-300/10 pl-2.5 pr-8 text-orange-400 transition-[background-color,transform] duration-150 ease-out hover:bg-orange-300/20 focus-visible:focus-ring-inset active:scale-[0.98] disabled:cursor-default disabled:opacity-65"
       >
         {busy ? (
           <Loader aria-hidden className="size-3 shrink-0 animate-spin" />
@@ -145,7 +145,7 @@ export function GithubStarPrompt() {
         title="Don't show again"
         aria-label="Dismiss GitHub star prompt"
         onClick={dismissPrompt}
-        className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-orange-400/60 transition-[color,background-color,transform] duration-150 ease-out hover:bg-orange-300/15 hover:text-orange-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/60 active:scale-95"
+        className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-orange-400/60 transition-[color,background-color,transform] duration-150 ease-out hover:bg-orange-300/15 hover:text-orange-300 focus-visible:focus-ring active:scale-95"
       >
         <X className="size-3" strokeWidth={1.75} />
       </button>

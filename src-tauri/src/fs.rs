@@ -5605,10 +5605,40 @@ fn read_text_file_sync(path: &str) -> Result<String, String> {
 
 /// Atomically replace a text file from a temporary file in the same directory.
 #[tauri::command]
-pub async fn write_text_file(path: String, content: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || write_text_file_sync(&path, &content))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn write_text_file(
+    path: String,
+    content: String,
+    expected_mtime_ms: Option<u64>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        write_text_file_checked(&path, &content, expected_mtime_ms)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Stable prefix the webview matches to offer "overwrite" instead of a plain error.
+const SAVE_CONFLICT_PREFIX: &str = "[save-conflict]";
+
+/// Refuse to overwrite a file that changed on disk since the caller read it.
+/// `None` skips the check (first save of a new file, or an explicit overwrite).
+fn write_text_file_checked(
+    path: &str,
+    content: &str,
+    expected_mtime_ms: Option<u64>,
+) -> Result<(), String> {
+    if let Some(expected) = expected_mtime_ms {
+        let current = std::fs::metadata(expand_home(path))
+            .ok()
+            .filter(|meta| meta.is_file())
+            .and_then(|meta| file_mtime_ms(&meta));
+        if current.is_some_and(|current| current != expected) {
+            return Err(format!(
+                "{SAVE_CONFLICT_PREFIX} This file changed on disk after it was opened."
+            ));
+        }
+    }
+    write_text_file_sync(path, content)
 }
 
 fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {
@@ -6345,6 +6375,31 @@ mod tests {
             .collect();
         assert_eq!(names, vec![std::ffi::OsString::from("example.rs")]);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn save_refuses_a_file_changed_since_it_was_read() {
+        let dir = tmp("save-conflict");
+        let file = dir.0.join("note.md");
+        std::fs::write(&file, "one\n").unwrap();
+        let path = file.to_string_lossy().into_owned();
+        let read_at = file_mtime_ms(&std::fs::metadata(&file).unwrap()).unwrap();
+
+        // Unchanged since the read: the save goes through.
+        write_text_file_checked(&path, "two\n", Some(read_at)).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "two\n");
+
+        // Someone else changed it (the caller still holds the old timestamp).
+        let error = write_text_file_checked(&path, "mine\n", Some(read_at.saturating_sub(5_000)))
+            .unwrap_err();
+        assert!(error.starts_with(SAVE_CONFLICT_PREFIX), "{error}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "two\n");
+
+        // No expectation (explicit overwrite) always saves; a new file has nothing to conflict with.
+        write_text_file_checked(&path, "forced\n", None).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "forced\n");
+        let created = dir.0.join("new.md").to_string_lossy().into_owned();
+        write_text_file_checked(&created, "x", Some(1)).unwrap();
     }
 
     #[test]
