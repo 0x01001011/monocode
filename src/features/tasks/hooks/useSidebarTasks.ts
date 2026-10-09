@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
+import { useQuietAfterMinutes } from "../../settings/model/tasksPrefs";
 import { sameProjectPath } from "../../projects/model/recents";
 import { sessionNeedsInput, type Block, type Session } from "../../sessions/model/session";
 import type { StatusSessionInput } from "../model/statusCard";
@@ -146,6 +147,7 @@ export function useSidebarTasks(input: Input): { board: TaskBoard; running: bool
   const { cwd, sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession, visible, remote = false } = input;
   const blocks = activeSession?.blocks;
   const pendingQuestion = activeSession?.pendingQuestion;
+  const quietAfterMinutes = useQuietAfterMinutes();
 
   const statusSessions = useMemo<StatusSessionInput[]>(
     () =>
@@ -161,6 +163,7 @@ export function useSidebarTasks(input: Input): { board: TaskBoard; running: bool
     projectCwd: cwd,
     ...(activeSession ? { activeSession } : {}),
     sessions: statusSessions,
+    quietAfterMs: quietAfterMinutes * 60_000,
     visible: visible && !remote,
   });
 

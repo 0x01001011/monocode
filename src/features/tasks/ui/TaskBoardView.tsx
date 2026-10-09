@@ -16,6 +16,8 @@ type Props = {
   sessions: readonly StatusSessionInput[];
   /** False while the tab is hidden or covered: no fast polling and no clock tick. */
   visible?: boolean;
+  /** How long a busy session may stay silent before the status card calls it quiet. */
+  quietAfterMs?: number;
   onAction?: (action: StatusAction, card: StatusCard) => void;
   onOpenNode?: (node: BoardNode, section: BoardSection) => void;
   onOpenPlan?: (path: string) => void;
@@ -50,8 +52,8 @@ function EmptyState({ loading }: { loading: boolean }) {
 }
 
 /** The whole plan as a table: every task, the final review, then decisions and small issues. */
-export function TaskBoardView({ projectCwd, session, sessions, visible = true, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
-  const board = useTaskBoard({ projectCwd, ...(session ? { activeSession: session } : {}), sessions, visible });
+export function TaskBoardView({ projectCwd, session, sessions, visible = true, quietAfterMs, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
+  const board = useTaskBoard({ projectCwd, ...(session ? { activeSession: session } : {}), sessions, visible, ...(quietAfterMs !== undefined ? { quietAfterMs } : {}) });
   const card = board.statusCard;
   const plan = board.plan;
   const running = visible && (sessions.some((s) => s.busy) || (card.kind !== "idle" && card.kind !== "done"));

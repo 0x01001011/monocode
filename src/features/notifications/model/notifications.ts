@@ -269,6 +269,59 @@ async function notifyProjectSession(
   sessionVisible: boolean,
   subject: NotificationSubject,
 ): Promise<boolean> {
+  return deliverNotification(session.id, subject, sessionVisible, () =>
+    notificationText(session, event),
+  );
+}
+
+/** The part of a session a task alert needs, so a summary can stand in for a loaded session. */
+export type TaskAlertTarget = Pick<
+  Session,
+  "id" | "cwd" | "title" | "harness" | "inboxAsk"
+>;
+
+export type TaskAlertNotice = {
+  kind: "struggling" | "quiet" | "plan-done";
+  title: string;
+  body: string;
+};
+
+/**
+ * An exception in a Tasks plan (struggling, quiet, finished). It follows the same
+ * focus, permission, mute and category rules as the other banners: a finished plan
+ * is an "agent finished" event, the others ask the user to look.
+ */
+export async function notifyTaskAlert(
+  target: TaskAlertTarget,
+  alert: TaskAlertNotice,
+  sessionVisible: boolean,
+): Promise<boolean> {
+  if (target.inboxAsk) return false;
+  const occurredAt = Date.now();
+  const project = knownNotificationProject(target.cwd);
+  if (!project) return false;
+  return deliverNotification(
+    target.id,
+    {
+      projectId: project.id,
+      category: alert.kind === "plan-done" ? "agentFinished" : "agentInput",
+      occurredAt,
+    },
+    sessionVisible,
+    () => ({
+      title: "MonoCode",
+      subtitle: `${alert.title} · ${sessionDisplayTitle(target.title, target.harness)}`,
+      body: clip(alert.body),
+    }),
+  );
+}
+
+async function deliverNotification(
+  sessionId: string,
+  subject: NotificationSubject,
+  sessionVisible: boolean,
+  text: () => NotificationText,
+): Promise<boolean> {
   if (!allowsProjectNotification(subject)) return false;
   const decision = shouldNotify({
     enabled: loadNotificationsEnabled(),
@@ -277,10 +330,10 @@ async function notifyProjectSession(
     sessionVisible,
   });
   if (!decision) return false;
-  const { title, subtitle, body } = notificationText(session, event);
+  const { title, subtitle, body } = text();
   try {
     await invoke("show_notification", {
-      sessionId: session.id,
+      sessionId,
       title,
       subtitle,
       body,

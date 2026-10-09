@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { saveQuietAfterMinutes } from "../../settings/model/tasksPrefs";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type { Block, Session } from "../../sessions/model/session";
 import { deriveStatusCard, type StatusCard } from "../model/statusCard";
@@ -82,6 +83,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  localStorage.clear();
   act(() => root.unmount());
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -96,6 +98,13 @@ describe("useSidebarTasks", () => {
     expect(input.visible).toBe(true);
     expect(input.activeSession).toBe(session);
     expect(result?.board.statusCard.kind).toBe("idle");
+  });
+
+  it("reads the quiet threshold from the setting, five minutes by default", () => {
+    render(base());
+    expect(lastInput().quietAfterMs).toBe(5 * 60_000);
+    act(() => saveQuietAfterMinutes(2));
+    expect(lastInput().quietAfterMs).toBe(2 * 60_000);
   });
 
   it("builds one status input per session from the busy and approval sets", () => {

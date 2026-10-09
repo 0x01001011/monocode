@@ -1,7 +1,9 @@
-import { useMemo, type ComponentProps } from "react";
+import { useContext, useMemo, type ComponentProps } from "react";
+import { useQuietAfterMinutes } from "../../settings/model/tasksPrefs";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { Session } from "../../sessions/model/session";
 import { statusSessionsFromLoaded } from "../hooks/useSidebarTasks";
+import { TaskActionsContext } from "../hooks/useTaskActions";
 import { TaskBoardView } from "./TaskBoardView";
 
 type Props = Pick<
@@ -17,6 +19,8 @@ type Props = Pick<
 /** An editor tab's board: finds its session among the loaded ones and its siblings in the project. */
 export function TaskBoardSurface({ projectCwd, sessionId, sessions, ...handlers }: Props) {
   const remote = isRemoteProjectPath(projectCwd);
+  const quietAfterMinutes = useQuietAfterMinutes();
+  const actions = useContext(TaskActionsContext);
   const session = sessions.find((entry) => entry.id === sessionId);
   const statusSessions = useMemo(
     () => (remote ? [] : statusSessionsFromLoaded(sessions, projectCwd, sessionId)),
@@ -29,5 +33,23 @@ export function TaskBoardSurface({ projectCwd, sessionId, sessions, ...handlers 
       </div>
     );
   }
-  return <TaskBoardView projectCwd={projectCwd} session={session} sessions={statusSessions} {...handlers} />;
+  // The context's handlers act for this tab's session; props, when given, win.
+  const shared: Pick<Props, "onAction" | "onOpenNode" | "onOpenPlan" | "onChangeDecision"> = actions
+    ? {
+        onAction: actions.onAction,
+        onOpenNode: (node, section) => actions.onOpenNode(node, section, sessionId),
+        onOpenPlan: actions.onOpenPlan,
+        onChangeDecision: (note) => actions.onChangeDecision(note, sessionId),
+      }
+    : {};
+  return (
+    <TaskBoardView
+      projectCwd={projectCwd}
+      session={session}
+      sessions={statusSessions}
+      quietAfterMs={quietAfterMinutes * 60_000}
+      {...shared}
+      {...handlers}
+    />
+  );
 }

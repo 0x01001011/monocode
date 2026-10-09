@@ -419,8 +419,14 @@ import {
 import { applyAddToChatRequest } from "../features/sessions/model/addChatToWorkspace";
 import {
   ADD_TO_CHAT_EVENT,
+  requestAddToChat,
   type AddToChatRequest,
 } from "../features/sessions/model/quoteDraft";
+import {
+  TaskActionsContext,
+  useTaskActions,
+  type TaskActionHost,
+} from "../features/tasks/hooks/useTaskActions";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
 import {
@@ -8637,6 +8643,43 @@ function Workspace({
     [ensureAutomationRecovery, launchAutomation],
   );
 
+  // The Tasks tab and board tabs act through one host; the hook owns what each button means.
+  const taskActionHost: TaskActionHost = {
+    selectSession: (sessionId) => onSelectHistorySession(sessionId),
+    // Sent like any follow-up: the user's follow-up setting decides between steering and queueing.
+    queueMessage: async (sessionId, text) => {
+      await submitSession(sessionId, text);
+    },
+    prefillComposer: async (sessionId, text) => {
+      await onSelectHistorySession(sessionId);
+      // The session pane takes focus on the next frames; add-to-chat targets the focused pane.
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      requestAddToChat(text, "plain");
+    },
+    openFile: (path) =>
+      onOpenFile(path, undefined, /^(\/|[A-Za-z]:[\\/])/.test(path) ? { exact: true } : undefined),
+    openCommit: (range) => {
+      const sha = range.split("..").pop() ?? range;
+      onOpenCommit({
+        sha,
+        shortSha: sha.slice(0, 7),
+        parents: [],
+        author: "",
+        timestamp: 0,
+        subject: range,
+        refs: [],
+        head: false,
+      });
+    },
+    scrollToBlock: requestTranscriptJump,
+  };
+  const taskActions = useTaskActions(taskActionHost, {
+    projectCwd: sidebarCwd,
+    activeSessionId,
+  });
+
   const onUpdatePlan = useCallback(
     (sessionId: string, blockId: string, text: string) => {
       setSessions((prev) =>
@@ -12489,6 +12532,7 @@ function Workspace({
   return (
     <OrchestrationActions.Provider value={orchestrationActions}>
       <OrchestrationWorkers.Provider value={orchestrationWorkers}>
+        <TaskActionsContext.Provider value={taskActions}>
         <div
           className={`workspace-background flex h-full flex-col text-content ${
             HAS_NATIVE_GLASS
@@ -12516,6 +12560,8 @@ function Workspace({
               tab={sidebarTab}
               onTabChange={setSidebarTab}
               onOpenTasksTab={onOpenTasksTab}
+              onTasksAction={taskActions.onAction}
+              onOpenTaskNode={taskActions.onOpenNode}
               filesSearchOpen={filesSearchOpen}
               onFilesSearchOpenChange={setFilesSearchOpen}
               onOpenFilesSearch={onFindInProject}
@@ -13152,6 +13198,7 @@ function Workspace({
           ) : null}
         </div>
         <TranscriptPoolOutlet pool={transcriptPool} />
+        </TaskActionsContext.Provider>
       </OrchestrationWorkers.Provider>
     </OrchestrationActions.Provider>
   );

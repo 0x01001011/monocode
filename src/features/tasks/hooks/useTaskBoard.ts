@@ -16,6 +16,7 @@ import {
 } from "../model/sections";
 import { deriveStatusCard, type StatusCard, type StatusSessionInput } from "../model/statusCard";
 import type { BoardSection } from "../model/taskBoard";
+import { applySnoozes, snoozeVersion, subscribeSnoozes } from "../model/taskSnooze";
 import { tauriSddFs } from "../model/tauriSddFs";
 
 export type TaskBoard = {
@@ -33,6 +34,8 @@ type Input = {
   activeSession?: Session;
   sessions: readonly StatusSessionInput[];
   visible: boolean;
+  /** How long a busy session may stay silent before the card calls it quiet. */
+  quietAfterMs?: number;
   now?: () => number;
   fs?: SddFs;
   pollMs?: { visible: number; hiddenBusy: number };
@@ -41,7 +44,7 @@ type Input = {
 type Loaded = { cwd: string; workspaces: SddWorkspaceRef[]; selected?: string; plan?: BoardSection };
 
 const DEFAULT_POLL = { visible: 3000, hiddenBusy: 15000 };
-const QUIET_AFTER_MS = 5 * 60_000;
+export const DEFAULT_QUIET_AFTER_MS = 5 * 60_000;
 /** What a closed panel exposes: only the status card and tab badge are read then. */
 const NO_SECTIONS: BoardSection[] = [];
 
@@ -74,6 +77,7 @@ export function useTaskBoard(input: Input): TaskBoard {
   const fs = input.fs ?? tauriSddFs;
   const pollVisible = input.pollMs?.visible ?? DEFAULT_POLL.visible;
   const pollHidden = input.pollMs?.hiddenBusy ?? DEFAULT_POLL.hiddenBusy;
+  const quietAfterMs = input.quietAfterMs ?? DEFAULT_QUIET_AFTER_MS;
   const nowRef = useRef(input.now ?? Date.now);
   nowRef.current = input.now ?? Date.now;
 
@@ -147,17 +151,19 @@ export function useTaskBoard(input: Input): TaskBoard {
     }, [visible, plan, run, blocks, clock]),
   );
 
+  // A snooze changes the card at once, without waiting for the next poll.
+  const snoozes = useSyncExternalStore(subscribeSnoozes, snoozeVersion, snoozeVersion);
   const statusCard = useStable(
     useMemo(
       () =>
         deriveStatusCard({
-          sessions: [...sessions],
+          sessions: [...applySnoozes(sessions, nowRef.current())],
           ...(sessionId ? { activeSessionId: sessionId } : {}),
           ...(plan ? { plan } : {}),
           now: nowRef.current(),
-          quietAfterMs: QUIET_AFTER_MS,
+          quietAfterMs,
         }),
-      [sessions, sessionId, plan, clock],
+      [sessions, sessionId, plan, clock, quietAfterMs, snoozes],
     ),
   );
 

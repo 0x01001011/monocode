@@ -55,6 +55,7 @@ import {
   type SidebarTabId,
 } from "../../features/settings/model/appearance";
 import { useSidebarTasks } from "../../features/tasks/hooks/useSidebarTasks";
+import { useTaskAlerts } from "../../features/tasks/hooks/useTaskAlerts";
 import { tabBadge, type StatusAction, type StatusCard } from "../../features/tasks/model/statusCard";
 import type { BoardNode, BoardSection } from "../../features/tasks/model/taskBoard";
 import { TasksPanelLive } from "../../features/tasks/ui/TasksPanelLive";
@@ -465,6 +466,10 @@ function SidebarComponent({
     remote: remoteProject,
   });
   const tasksBadge = tabBadge(tasks.board.statusCard);
+  useTaskAlerts(tasks.board.statusCard, {
+    findSession: (id) => sessions.find((entry) => entry.id === id),
+    activeSessionId,
+  });
   const remote = useRemoteProjectSessions(cwd, remoteProject);
   const hostProject = remoteProject ? remoteProjectFor(cwd) : undefined;
   const remoteChange = async (

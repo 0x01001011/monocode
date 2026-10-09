@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block, Session } from "../../sessions/model/session";
 import type { SddFs } from "../model/sddWorkspace";
 import * as sections from "../model/sections";
+import { clearSnoozes, snoozeSession } from "../model/taskSnooze";
 import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
 
 // Call-through spies: the real builders run, the tests only count the calls.
@@ -322,5 +323,37 @@ describe("useTaskBoard", () => {
     await mount(base(fs, { visible: false, sessions: busy, activeSession: session("s") }));
     expect(latest?.sections).toEqual([]);
     expect(latest?.statusCard.kind).not.toBe("idle");
+  });
+
+  describe("quiet threshold and snooze", () => {
+    const NOW = 1_700_000_000_000;
+    const MIN = 60_000;
+    const silent = (ago: number) => [{ id: "s", title: "s", busy: true, needsInput: false, lastActivityAt: NOW - ago }];
+    const quietInput = (fs: SddFs, over: Partial<Input> = {}) =>
+      base(fs, { now: () => NOW, sessions: silent(6 * MIN), activeSession: session("s"), ...over });
+
+    afterEach(() => clearSnoozes());
+
+    it("uses five minutes by default and the given quietAfterMs when set", async () => {
+      const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+      await mount(quietInput(fs));
+      expect(latest?.statusCard.kind).toBe("quiet");
+      await mount(quietInput(fs, { sessions: silent(2 * MIN) }));
+      expect(latest?.statusCard.kind).not.toBe("quiet");
+      await mount(quietInput(fs, { sessions: silent(2 * MIN), quietAfterMs: MIN }));
+      expect(latest?.statusCard.kind).toBe("quiet");
+      await mount(quietInput(fs, { quietAfterMs: 10 * MIN }));
+      expect(latest?.statusCard.kind).not.toBe("quiet");
+    });
+
+    it("a snoozed session is not quiet until the snooze ends", async () => {
+      const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+      await mount(quietInput(fs));
+      expect(latest?.statusCard.kind).toBe("quiet");
+      await act(async () => snoozeSession("s", 10 * MIN, NOW));
+      expect(latest?.statusCard.kind).not.toBe("quiet");
+      await mount(quietInput(fs, { now: () => NOW + 10 * MIN + 1 }));
+      expect(latest?.statusCard.kind).toBe("quiet");
+    });
   });
 });
