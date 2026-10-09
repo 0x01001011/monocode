@@ -105,7 +105,7 @@ describe("loadSddSnapshot", () => {
     expect(snap.slug).toBe("2026-10-09-demo");
   });
 
-  it("loads a workspace with no ledger: nothing done, no throw", async () => {
+  it("loads a workspace with no ledger as all-pending", async () => {
     const dir = `${ROOT}/2026-10-09-fresh`;
     const { fs } = fakeFs({
       [`${dir}/task-1-brief.md`]: { text: "### Task 1: One\n", mtimeMs: 10 },
@@ -116,8 +116,9 @@ describe("loadSddSnapshot", () => {
     const section = buildSddSection(snap, 1_000);
     expect(section.done).toBe(0);
     expect(section.total).toBe(2);
-    // No ledger line yet, but the first brief marks the first task as the one in progress.
-    expect(section.nodes.map((n) => n.status)).toEqual(["running", "pending"]);
+    // Briefs alone are not evidence of work.
+    expect(section.nodes.some((n) => n.status === "running")).toBe(false);
+    expect(section.nodes.map((n) => n.status)).toEqual(["pending", "pending"]);
   });
 
   it("leaves unknown mtimes out", async () => {

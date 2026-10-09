@@ -53,6 +53,25 @@ function ledgerThroughTask6(): string {
   return lines.slice(0, at + 1).join("\n");
 }
 
+/** Every time on the board is undefined or finite, and no span runs backwards. */
+function expectSaneTimes(section: ReturnType<typeof buildSddSection>): void {
+  const all = [...section.nodes, ...(section.finalReview ? [section.finalReview] : [])];
+  for (const n of all) {
+    for (const t of [n.startedAt, n.endedAt, ...(n.stages ?? []).flatMap((s) => [s.startedAt, s.endedAt])]) {
+      if (t !== undefined) expect(Number.isFinite(t)).toBe(true);
+    }
+    if (n.startedAt !== undefined && n.endedAt !== undefined) {
+      expect(n.endedAt).toBeGreaterThanOrEqual(n.startedAt);
+    }
+    for (const s of n.stages ?? []) {
+      if (s.startedAt !== undefined && s.endedAt !== undefined) {
+        expect(s.endedAt).toBeGreaterThanOrEqual(s.startedAt);
+      }
+    }
+  }
+  if (section.startedAt !== undefined) expect(Number.isFinite(section.startedAt)).toBe(true);
+}
+
 const node = (section: ReturnType<typeof buildSddSection>, n: number) =>
   section.nodes.find((x) => x.index === n)!;
 
@@ -212,7 +231,93 @@ describe("buildSddSection", () => {
       expect(n.startedAt).toBeUndefined();
       expect(n.endedAt).toBeUndefined();
     }
-    expect(JSON.stringify(none)).not.toContain("NaN");
+    expectSaneTimes(none);
+  });
+
+  it("DONE_WITH_CONCERNS report keeps the task running", () => {
+    const snap = fixtureSnapshot({ ledgerText: ledgerThroughTask6() });
+    snap.reports[7] = "Status: DONE_WITH_CONCERNS\n";
+    expect(node(buildSddSection(snap, NOW), 7).status).toBe("running");
+  });
+
+  it("a brief alone does not start a task", () => {
+    const snap = fixtureSnapshot({ ledgerText: "" });
+    snap.reports = {};
+    const section = buildSddSection(snap, NOW);
+    expect(section.nodes.every((n) => n.status === "pending")).toBe(true);
+    expect(section.startedAt).toBeUndefined();
+  });
+
+  it("a missing report mtime in the middle of the run never gives a negative duration", () => {
+    const snap = fixtureSnapshot();
+    delete snap.mtimes["task-3-report.md"];
+    const section = buildSddSection(snap, NOW);
+    expectSaneTimes(section);
+    // Task 2 can no longer be bounded by report 3, but its own packages still end it.
+    expect(node(section, 2).endedAt).toBe(REVIEW_T2_FIX.mtimeMs);
+    // Task 3 has no package and no report mtime: its end is unknown, not guessed.
+    expect(node(section, 3).endedAt).toBeUndefined();
+    expect(node(section, 4).startedAt).toBeUndefined();
+  });
+
+  it("no sha match falls back to the report mtime", () => {
+    const snap = fixtureSnapshot();
+    snap.reviews = [{ name: "review-aaaaaaa..bbbbbbb.diff", mtimeMs: reportAt(1) + MIN }];
+    const section = buildSddSection(snap, NOW);
+    expect(node(section, 1).endedAt).toBe(reportAt(1));
+    expect(node(section, 2).endedAt).toBe(reportAt(2));
+  });
+
+  describe("whole-branch review packages", () => {
+    const ledger = [
+      "Task 1: complete (commits aaaa111..bbbb222, review clean)",
+      "Task 2: complete (commits bbbb222..cccc333, review clean)",
+    ].join("\n");
+    const twoTasks = (reviews: { name: string; mtimeMs: number }[]) => {
+      const snap = fixtureSnapshot({ ledgerText: ledger });
+      for (const n of [3, 4, 5, 6, 7, 8]) {
+        delete snap.briefs[n];
+        delete snap.reports[n];
+        delete snap.mtimes[`task-${n}-brief.md`];
+        delete snap.mtimes[`task-${n}-report.md`];
+      }
+      snap.reviews = reviews;
+      return buildSddSection(snap, NOW);
+    };
+
+    it("do not extend the last task's end", () => {
+      const own = { name: "review-bbbb222..cccc333.diff", mtimeMs: reportAt(2) + 3 * MIN };
+      const wholeBranch = { name: "review-aaaa111..cccc333.diff", mtimeMs: reportAt(2) + 50 * MIN };
+      const section = twoTasks([own, wholeBranch]);
+      expect(node(section, 2).endedAt).toBe(own.mtimeMs);
+    });
+
+    it("are ignored even when they are the only match", () => {
+      const wholeBranch = { name: "review-aaaa111..cccc333.diff", mtimeMs: reportAt(2) + 5 * MIN };
+      expect(node(twoTasks([wholeBranch]), 2).endedAt).toBe(reportAt(2));
+    });
+
+    it("named by the FINAL REVIEW line are ignored too", () => {
+      const withFinal = `${ledger}\nFINAL REVIEW (opus, dddd444..cccc333): ship\n`;
+      const snap = fixtureSnapshot({ ledgerText: withFinal });
+      for (const n of [3, 4, 5, 6, 7, 8]) {
+        delete snap.briefs[n];
+        delete snap.reports[n];
+      }
+      snap.reviews = [{ name: "review-dddd444..cccc333.diff", mtimeMs: reportAt(2) + 40 * MIN }];
+      expect(node(buildSddSection(snap, NOW), 2).endedAt).toBe(reportAt(2));
+    });
+  });
+
+  it("clamps an end that falls before its start", () => {
+    const snap = fixtureSnapshot();
+    // Briefs were written long after task 1's report was recorded.
+    for (let n = 1; n <= 8; n++) snap.mtimes[`task-${n}-brief.md`] = reportAt(1) + 600 * MIN;
+    const section = buildSddSection(snap, NOW);
+    expect(node(section, 1).startedAt).toBe(reportAt(1) + 600 * MIN);
+    expect(node(section, 1).endedAt).toBeUndefined();
+    expect(node(section, 1).stages![0].endedAt).toBeUndefined();
+    expectSaneTimes(section);
   });
 
   it("an empty workspace is an empty section", () => {

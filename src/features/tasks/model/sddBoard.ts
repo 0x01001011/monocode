@@ -26,7 +26,8 @@ const FINAL_TITLE = "Last review of the whole branch";
 const ISSUE_WORDS = /\b(Important|Critical)\b/;
 const STEP_LABEL = /^Step\s+\d+\s*:\s*/;
 const BRIEF_FILE = /^task-\d+-brief\.md$/;
-const REVIEW_END = /^review-.*\.\.(.+)\.diff$/;
+const REVIEW_RANGE = /^review-(.+?)\.\.(.+)\.diff$/;
+const SHA_RANGE = /\b([0-9a-f]{4,40})\.\.([0-9a-f]{4,40})\b/;
 const AUTO_FIX_ROUNDS = 3;
 
 function sectionTitle(slug: string): string {
@@ -64,7 +65,7 @@ function sameSha(a: string, b: string): boolean {
 function packagesFor(reviews: Review[], sha: string | undefined): Review[] {
   if (!sha) return [];
   return reviews.filter((r) => {
-    const end = REVIEW_END.exec(r.name)?.[1];
+    const end = REVIEW_RANGE.exec(r.name)?.[2];
     return end !== undefined && sameSha(end, sha);
   });
 }
@@ -88,7 +89,7 @@ function stagesFor(
       label: "Implement",
       status: implementDone ? "done" : status === "blocked" ? "blocked" : "running",
       startedAt,
-      endedAt: implementDone ? reportAt : undefined,
+      endedAt: implementDone ? notBefore(startedAt, reportAt) : undefined,
     },
   ];
   const implemented = task?.implemented;
@@ -115,7 +116,30 @@ function stagesFor(
   return stages;
 }
 
-/** Mtime of the task's last review package inside [reportAt, nextReportAt]. */
+/** True when `time` is a finite number that does not precede `start` (when known). */
+function notBefore(start: number | undefined, time: number | undefined): number | undefined {
+  if (time === undefined || !Number.isFinite(time)) return undefined;
+  return start !== undefined && time < start ? undefined : time;
+}
+
+/**
+ * Review packages that span the whole branch (they start at the plan's base sha
+ * or at the final review's base), so they never belong to a single task.
+ */
+function wholeBranchStarts(ledger: ParsedLedger): string[] {
+  const starts: string[] = [];
+  const first = ledger.tasks.find((t) => t.complete?.commits?.includes(".."));
+  if (first?.complete?.commits) starts.push(first.complete.commits.split("..")[0]);
+  const final = SHA_RANGE.exec(ledger.final.review ?? "");
+  if (final) starts.push(final[1]);
+  return starts;
+}
+
+/**
+ * Mtime of the task's last review package inside [reportAt, nextReportAt].
+ * Only packages whose end sha belongs to the task count; with none the report
+ * mtime stands in.
+ */
 function reviewEnd(
   task: LedgerTask | undefined,
   reviews: Review[],
@@ -128,7 +152,7 @@ function reviewEnd(
     task?.complete?.commits ? endSha(task.complete.commits) : undefined,
   ];
   const own = reviews.filter((r) => shas.some((s) => packagesFor([r], s).length > 0));
-  const inWindow = (own.length > 0 ? own : reviews).filter(
+  const inWindow = own.filter(
     (r) => r.mtimeMs >= (reportAt ?? -Infinity) && r.mtimeMs <= (nextReportAt ?? Infinity),
   );
   return latest(inWindow) ?? reportAt;
@@ -164,7 +188,12 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
   const briefs = new Map<number, BriefInfo>(
     Object.entries(snapshot.briefs).map(([n, text]) => [Number(n), parseBrief(text)]),
   );
-  const { mtimes, reviews } = snapshot;
+  const { mtimes } = snapshot;
+  const branchStarts = wholeBranchStarts(ledger);
+  const reviews = snapshot.reviews.filter((r) => {
+    const start = REVIEW_RANGE.exec(r.name)?.[1];
+    return Number.isFinite(r.mtimeMs) && !(start && branchStarts.some((b) => sameSha(b, start)));
+  });
   const reportMtime = (n: number): number | undefined => mtimes[`task-${n}-report.md`];
 
   const seen = [
@@ -184,7 +213,8 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     const task = ledgerTasks.get(n);
     const brief = briefs.get(n);
     const report = snapshot.reports[n];
-    const hasSignal = brief !== undefined || report !== undefined || task !== undefined;
+    // A brief alone is not evidence of work: briefs may all be extracted up front.
+    const hasSignal = report !== undefined || task !== undefined;
     const maxRound = Math.max(0, ...(task?.fixes.map((f) => f.round) ?? []));
 
     let status: BoardStatus = "pending";
@@ -204,7 +234,9 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     const startedAt = started ? (n === 1 ? firstBriefAt : previousEnd) : undefined;
     const reportAt = reportMtime(n);
     const endedAt =
-      status === "done" ? reviewEnd(task, reviews, reportAt, reportMtime(n + 1)) : undefined;
+      status === "done"
+        ? notBefore(startedAt, reviewEnd(task, reviews, reportAt, reportMtime(n + 1)))
+        : undefined;
     previousEnd = endedAt;
 
     const implementDone =
