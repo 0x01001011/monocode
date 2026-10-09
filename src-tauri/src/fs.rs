@@ -3855,7 +3855,7 @@ fn github_fetch_remote(root: &Path) -> Option<String> {
     git_remote_name(root)
 }
 
-fn gh_resolved_remote(root: &Path) -> Option<String> {
+pub(crate) fn gh_resolved_remote(root: &Path) -> Option<String> {
     let listed = git_stdout(
         root,
         &["config", "--get-regexp", r"remote\..*\.gh-resolved"],
@@ -4473,7 +4473,7 @@ fn git_branch(root: &Path) -> Option<String> {
     git_head_branch(root).or_else(|| git_stdout(root, &["rev-parse", "--short", "HEAD"]))
 }
 
-fn git_head_branch(root: &Path) -> Option<String> {
+pub(crate) fn git_head_branch(root: &Path) -> Option<String> {
     git_stdout(root, &["symbolic-ref", "--short", "HEAD"]).filter(|branch| branch != "HEAD")
 }
 
@@ -4730,7 +4730,7 @@ fn git_sync_for(root: &Path) -> GitSync {
     }
 }
 
-fn git_remote_name(root: &Path) -> Option<String> {
+pub(crate) fn git_remote_name(root: &Path) -> Option<String> {
     let remotes = git_stdout(root, &["remote"])?;
     let mut names = remotes
         .lines()
@@ -4743,7 +4743,7 @@ fn git_remote_name(root: &Path) -> Option<String> {
     Some(first)
 }
 
-fn git_default_branch(root: &Path, remote: Option<&str>) -> Option<String> {
+pub(crate) fn git_default_branch(root: &Path, remote: Option<&str>) -> Option<String> {
     if let Some(remote) = remote {
         if let Some(head) = git_stdout(
             root,
@@ -4793,7 +4793,7 @@ fn git_ahead_behind(root: &Path, base: &str) -> (i64, i64) {
     (ahead, behind)
 }
 
-fn git_stdout(root: &Path, args: &[&str]) -> Option<String> {
+pub(crate) fn git_stdout(root: &Path, args: &[&str]) -> Option<String> {
     let output = git_cmd().arg("-C").arg(root).args(args).output().ok()?;
     if !output.status.success() {
         return None;

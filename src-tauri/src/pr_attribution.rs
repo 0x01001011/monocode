@@ -1,0 +1,375 @@
+//! Attributes git branches and pull requests to the chat that produced them.
+//!
+//! Three signals feed `pr_store`: the live branch seen on every session save
+//! (`note_branch`), PR URLs a chat created (`pr_record_url`) and PR numbers the
+//! frontend scraped from transcripts (`pr_record_hints`). Attribution is
+//! best-effort: it must never fail or slow down a session save.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use rusqlite::Connection;
+use tauri::State;
+
+use crate::pr_store::{self, Relation};
+use crate::session_store::{now_millis, validate_id, SessionStore};
+
+const REPO_FACTS_TTL: Duration = Duration::from_secs(60);
+
+/// What we learn about a checkout once per minute: its GitHub slug and the
+/// branch pull requests normally target.
+#[derive(Debug, Clone, Default)]
+struct RepoFacts {
+    slug: Option<String>,
+    default_branch: Option<String>,
+}
+
+static REPO_FACTS_CACHE: Mutex<Option<HashMap<PathBuf, (Instant, RepoFacts)>>> = Mutex::new(None);
+
+/// "owner/name" of the GitHub repo behind `cwd`, as the remote spells it.
+pub fn repo_slug_for(cwd: &Path) -> Option<String> {
+    repo_facts_for(cwd).slug
+}
+
+fn repo_facts_for(cwd: &Path) -> RepoFacts {
+    if let Ok(mut guard) = REPO_FACTS_CACHE.lock() {
+        let cache = guard.get_or_insert_with(HashMap::new);
+        cache.retain(|_, (at, _)| at.elapsed() < REPO_FACTS_TTL);
+        if let Some((_, facts)) = cache.get(cwd) {
+            return facts.clone();
+        }
+    }
+    let facts = repo_facts_uncached(cwd);
+    if let Ok(mut guard) = REPO_FACTS_CACHE.lock() {
+        guard
+            .get_or_insert_with(HashMap::new)
+            .insert(cwd.to_path_buf(), (Instant::now(), facts.clone()));
+    }
+    facts
+}
+
+fn repo_facts_uncached(cwd: &Path) -> RepoFacts {
+    let remote = crate::fs::gh_resolved_remote(cwd).or_else(|| crate::fs::git_remote_name(cwd));
+    let slug = remote
+        .as_deref()
+        .and_then(|name| crate::fs::git_stdout(cwd, &["remote", "get-url", name]))
+        .and_then(|url| parse_github_slug(&url));
+    let default_branch = crate::fs::git_default_branch(cwd, remote.as_deref());
+    RepoFacts {
+        slug,
+        default_branch,
+    }
+}
+
+/// Extracts "owner/name" from an https, ssh:// or scp-style GitHub remote URL.
+fn parse_github_slug(url: &str) -> Option<String> {
+    let url = url.trim();
+    let path = if let Some(rest) = url.split_once("://").map(|(_, rest)| rest) {
+        let (authority, path) = rest.split_once('/')?;
+        let host = authority.rsplit('@').next()?;
+        let host = host.split(':').next()?;
+        if !host.eq_ignore_ascii_case("github.com") {
+            return None;
+        }
+        path
+    } else {
+        // scp-style: git@github.com:owner/name.git
+        let (authority, path) = url.split_once(':')?;
+        let host = authority.rsplit('@').next()?;
+        if !host.eq_ignore_ascii_case("github.com") {
+            return None;
+        }
+        path
+    };
+    let path = path.trim_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let (owner, name) = path.split_once('/')?;
+    if owner.is_empty() || name.is_empty() || name.contains('/') {
+        return None;
+    }
+    Some(format!("{owner}/{name}"))
+}
+
+/// `(repo, number)` from `https://github.com/o/r/pull/12`, ignoring any
+/// trailing path, query or fragment.
+pub fn parse_pr_url(url: &str) -> Option<(String, u32)> {
+    let url = url.trim();
+    let rest = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("https://www.github.com/"))?;
+    let rest = rest.split(['?', '#']).next()?;
+    let mut parts = rest.split('/');
+    let owner = parts.next().filter(|part| !part.is_empty())?;
+    let name = parts.next().filter(|part| !part.is_empty())?;
+    if parts.next()? != "pull" {
+        return None;
+    }
+    let number: u32 = parts.next()?.parse().ok().filter(|n| *n > 0)?;
+    Some((format!("{owner}/{name}"), number))
+}
+
+/// Records `branch` as one the chat worked on. No-op for no branch, a detached
+/// HEAD, the repo's default branch or a checkout without a GitHub remote.
+pub fn note_branch(conn: &Connection, session_id: &str, cwd: &str, branch: Option<&str>) {
+    let Some(name) = usable_branch(branch) else {
+        return;
+    };
+    let root = crate::fs::expand_home(cwd);
+    // `git_info_for` reports a short commit id when HEAD is detached.
+    if looks_like_commit_id(name) && crate::fs::git_head_branch(&root).is_none() {
+        return;
+    }
+    if repo_facts_for(&root).default_branch.as_deref() == Some(name) {
+        return;
+    }
+    note_branch_with(conn, session_id, cwd, branch, repo_slug_for);
+}
+
+/// `note_branch` with the repo lookup injected so tests need no git.
+pub fn note_branch_with(
+    conn: &Connection,
+    session_id: &str,
+    cwd: &str,
+    branch: Option<&str>,
+    resolve: impl Fn(&Path) -> Option<String>,
+) {
+    let Some(name) = usable_branch(branch) else {
+        return;
+    };
+    let Some(repo) = resolve(&crate::fs::expand_home(cwd)) else {
+        return;
+    };
+    if let Err(err) = pr_store::record_branch(conn, session_id, &repo, name, "save", now_millis()) {
+        eprintln!("[pr_attribution] could not record branch {name} for {session_id}: {err}");
+    }
+}
+
+/// A branch worth attributing: not empty, not a detached marker, not the
+/// conventional default.
+fn usable_branch(branch: Option<&str>) -> Option<&str> {
+    branch
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .filter(|name| !matches!(*name, "HEAD" | "main" | "master"))
+}
+
+fn looks_like_commit_id(name: &str) -> bool {
+    (7..=40).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn record_url(conn: &Connection, session_id: &str, url: &str) -> Result<(), String> {
+    let (repo, number) =
+        parse_pr_url(url).ok_or_else(|| "Not a GitHub pull request URL".to_string())?;
+    pr_store::record_pr(
+        conn,
+        session_id,
+        &repo,
+        number,
+        Relation::Owned,
+        "create",
+        now_millis(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+fn record_hints(
+    conn: &Connection,
+    session_id: &str,
+    repo: &str,
+    numbers: &[u32],
+) -> rusqlite::Result<()> {
+    let now = now_millis();
+    for number in numbers {
+        pr_store::record_pr(
+            conn,
+            session_id,
+            repo,
+            *number,
+            Relation::Existing,
+            "hint",
+            now,
+        )?;
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn pr_record_url(
+    store: State<'_, SessionStore>,
+    session_id: String,
+    url: String,
+) -> Result<(), String> {
+    validate_id(&session_id, "session")?;
+    let conn = store.lock_conn()?;
+    record_url(&conn, &session_id, &url)
+}
+
+#[tauri::command(async)]
+pub fn pr_record_hints(
+    store: State<'_, SessionStore>,
+    session_id: String,
+    cwd: String,
+    numbers: Vec<u32>,
+) -> Result<(), String> {
+    validate_id(&session_id, "session")?;
+    let Some(repo) = repo_slug_for(&crate::fs::expand_home(&cwd)) else {
+        return Ok(());
+    };
+    let conn = store.lock_conn()?;
+    record_hints(&conn, &session_id, &repo, &numbers).map_err(|e| e.to_string())
+}
+
+#[tauri::command(async)]
+pub fn pr_dismiss(
+    store: State<'_, SessionStore>,
+    session_id: String,
+    repo: String,
+    number: u32,
+    dismissed: bool,
+) -> Result<(), String> {
+    validate_id(&session_id, "session")?;
+    let conn = store.lock_conn()?;
+    pr_store::set_dismissed(&conn, &session_id, &repo, number, dismissed).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        pr_store::ensure_schema(&conn).unwrap();
+        conn
+    }
+
+    fn repo(_: &Path) -> Option<String> {
+        Some("Octo/Repo".to_string())
+    }
+
+    #[test]
+    fn parse_pr_url_accepts_pull_urls_and_rejects_others() {
+        assert_eq!(
+            parse_pr_url("https://github.com/o/r/pull/12"),
+            Some(("o/r".into(), 12))
+        );
+        assert_eq!(
+            parse_pr_url("https://github.com/Octo/Re-po.x/pull/7/files?diff=split#top"),
+            Some(("Octo/Re-po.x".into(), 7))
+        );
+        assert_eq!(
+            parse_pr_url("  https://github.com/o/r/pull/12/  "),
+            Some(("o/r".into(), 12))
+        );
+        assert_eq!(parse_pr_url("https://github.com/o/r/issues/12"), None);
+        assert_eq!(parse_pr_url("https://gitlab.com/o/r/pull/12"), None);
+        assert_eq!(parse_pr_url("https://github.com.evil.io/o/r/pull/12"), None);
+        assert_eq!(parse_pr_url("https://github.com/o/r/pull/abc"), None);
+        assert_eq!(parse_pr_url("https://github.com/o/r/pull/0"), None);
+        assert_eq!(parse_pr_url("https://github.com/o/pull/12"), None);
+        assert_eq!(parse_pr_url("not a url"), None);
+    }
+
+    #[test]
+    fn parse_github_slug_handles_https_and_ssh_remotes() {
+        for url in [
+            "https://github.com/Octo/Repo.git",
+            "https://github.com/Octo/Repo",
+            "https://user:token@github.com/Octo/Repo.git/",
+            "git@github.com:Octo/Repo.git",
+            "ssh://git@github.com/Octo/Repo.git",
+        ] {
+            assert_eq!(
+                parse_github_slug(url).as_deref(),
+                Some("Octo/Repo"),
+                "{url}"
+            );
+        }
+        assert_eq!(parse_github_slug("git@gitlab.com:o/r.git"), None);
+        assert_eq!(parse_github_slug("/local/path/repo"), None);
+    }
+
+    #[test]
+    fn note_branch_ignores_default_and_detached() {
+        let conn = conn();
+        for branch in [
+            None,
+            Some(""),
+            Some("  "),
+            Some("main"),
+            Some("master"),
+            Some("HEAD"),
+        ] {
+            note_branch_with(&conn, "s1", "/work", branch, repo);
+        }
+        assert!(pr_store::session_branches(&conn, "s1").unwrap().is_empty());
+    }
+
+    #[test]
+    fn note_branch_ignores_checkout_without_github_remote() {
+        let conn = conn();
+        note_branch_with(&conn, "s1", "/work", Some("feat/a"), |_| None);
+        assert!(pr_store::session_branches(&conn, "s1").unwrap().is_empty());
+    }
+
+    #[test]
+    fn note_branch_records_non_default_branch_once_per_branch_with_repo() {
+        let conn = conn();
+        note_branch_with(&conn, "s1", "/work", Some("feat/a"), repo);
+        note_branch_with(&conn, "s1", "/work", Some("feat/a"), repo);
+        assert_eq!(
+            pr_store::session_branches(&conn, "s1").unwrap(),
+            vec![("Octo/Repo".to_string(), "feat/a".to_string())]
+        );
+        let source: String = conn
+            .query_row("SELECT source FROM session_branches", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(source, "save");
+    }
+
+    #[test]
+    fn switching_branches_keeps_both_branches_for_session() {
+        let conn = conn();
+        note_branch_with(&conn, "s1", "/work", Some("feat/a"), repo);
+        note_branch_with(&conn, "s1", "/work", Some("feat/b"), repo);
+        note_branch_with(&conn, "s2", "/work", Some("feat/c"), repo);
+        let mut branches: Vec<String> = pr_store::session_branches(&conn, "s1")
+            .unwrap()
+            .into_iter()
+            .map(|(_, branch)| branch)
+            .collect();
+        branches.sort();
+        assert_eq!(branches, vec!["feat/a", "feat/b"]);
+        assert_eq!(pr_store::session_branches(&conn, "s2").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn record_url_marks_owned() {
+        let conn = conn();
+        record_url(&conn, "s1", "https://github.com/o/r/pull/12").unwrap();
+        assert_eq!(
+            pr_store::session_pr_keys(&conn, "s1").unwrap(),
+            vec![("o/r".to_string(), 12, Relation::Owned, false)]
+        );
+        let source: String = conn
+            .query_row("SELECT source FROM session_prs", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(source, "create");
+        assert!(record_url(&conn, "s1", "https://github.com/o/r/issues/3").is_err());
+    }
+
+    #[test]
+    fn record_hints_marks_existing_without_downgrading_owned() {
+        let conn = conn();
+        record_url(&conn, "s1", "https://github.com/o/r/pull/12").unwrap();
+        record_hints(&conn, "s1", "o/r", &[12, 13, 13]).unwrap();
+        assert_eq!(
+            pr_store::session_pr_keys(&conn, "s1").unwrap(),
+            vec![
+                ("o/r".to_string(), 12, Relation::Owned, false),
+                ("o/r".to_string(), 13, Relation::Existing, false),
+            ]
+        );
+    }
+}

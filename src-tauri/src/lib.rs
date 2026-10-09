@@ -34,6 +34,7 @@ mod notes;
 mod notifications;
 mod pasteboard;
 mod pi_usage;
+mod pr_attribution;
 mod pr_store;
 mod project_logo;
 mod pty;
@@ -506,6 +507,9 @@ pub fn run() {
             session_store::session_set_archived,
             session_store::session_set_pinned,
             session_store::session_set_linked_work_item,
+            pr_attribution::pr_record_url,
+            pr_attribution::pr_record_hints,
+            pr_attribution::pr_dismiss,
             session_store::skill_usage_record,
             session_store::skill_usage_snapshot,
             session_store::skill_usage_backfill,

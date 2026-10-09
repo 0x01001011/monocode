@@ -1178,6 +1178,16 @@ pub(crate) fn upsert_session(
         .map(str::trim)
         .filter(|value| !value.is_empty());
 
+    // Best effort: attribution must never fail or block a transcript save.
+    if !session.worktree_removed {
+        crate::pr_attribution::note_branch(
+            conn,
+            &session.id,
+            worktree_cwd.unwrap_or(&session.cwd),
+            branch,
+        );
+    }
+
     let has_user_message = has_user_block(&session.blocks);
     let is_draft = has_draft_block(&session.blocks);
 
