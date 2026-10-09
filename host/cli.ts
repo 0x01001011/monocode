@@ -27,6 +27,9 @@ import {
   REMOTE_PROVIDERS,
   type RemoteProvider,
 } from "../src/features/connections/model/protocol";
+import { firstFreePort } from "./port";
+import { pruneRuntimes } from "./runtimes";
+import { bearerMatches } from "./secret";
 import { connectionInfo, installService, uninstallService } from "./service";
 import { version } from "../package.json";
 import { protectWindowsDirectory } from "./windows";
@@ -122,16 +125,18 @@ Connect another computer using an SSH forward to the loopback port.`);
   if (command === "service") {
     if (args[1] !== "install")
       throw new Error("Use: service install, or service uninstall");
-    console.log(
-      JSON.stringify(
-        await installService({
-          directory,
-          port,
-          executable: process.execPath,
-          entry: fileURLToPath(import.meta.url),
-        }),
-      ),
+    const installed = await installService({
+      directory,
+      // Another account on this machine may already own the default port.
+      port: args.includes("--port") ? port : await firstFreePort(port),
+      executable: process.execPath,
+      entry: fileURLToPath(import.meta.url),
+    });
+    // Housekeeping only: a failure here must not fail the setup.
+    await pruneRuntimes(directory, { running: installed.pid }).catch(
+      () => undefined,
     );
+    console.log(JSON.stringify(installed));
     return;
   }
   if (command === "status" || command === "stop") {
@@ -247,7 +252,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       if (
         request.method !== "POST" ||
         request.headers.origin ||
-        request.headers.authorization !== `Bearer ${secret}`
+        !bearerMatches(request.headers.authorization, secret)
       ) {
         response.writeHead(403).end();
         return;

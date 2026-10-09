@@ -7,7 +7,6 @@ RELEASE=@@RELEASE@@
 EXISTED=0
 [ -x "$ENTRY" ] && EXISTED=1
 FORCE_UPGRADE=${MONOCODE_HOST_FORCE_UPGRADE:-0}
-HOST_PORT=${MONOCODE_HOST_PORT:-3774}
 
 if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
   case "$(uname -s)" in Darwin) OS=darwin ;; Linux) OS=linux ;; *) echo 'MonoCode Host supports Linux and macOS.' >&2; exit 1 ;; esac
@@ -65,5 +64,11 @@ fi
 if [ "$EXISTED" = 1 ] && [ "$FORCE_UPGRADE" = 1 ]; then
   "$ENTRY" service uninstall >/dev/null
 fi
-"$ENTRY" service install --port "$HOST_PORT" >/dev/null
+# Without MONOCODE_HOST_PORT the host picks the first free port from 3774, so a
+# second account on a shared machine does not collide with the first.
+if [ -n "${MONOCODE_HOST_PORT:-}" ]; then
+  "$ENTRY" service install --port "$MONOCODE_HOST_PORT" >/dev/null
+else
+  "$ENTRY" service install >/dev/null
+fi
 "$ENTRY" connection-info

@@ -29,7 +29,7 @@ function fixture(badChecksum = false) {
   mkdirSync(bin);
   writeFileSync(
     join(source, "monocode-host"),
-    `#!/bin/sh\ncase "$1" in\n--version) printf '%s\\n' ${quote(version)} ;;\nservice) printf 'service %s\\n' "$2" >> "$MONOCODE_TEST_EVENTS" ;;\nconnection-info) printf '{"port":3774,"pid":123}\\n' ;;\n*) exit 1 ;;\nesac\n`,
+    `#!/bin/sh\ncase "$1" in\n--version) printf '%s\\n' ${quote(version)} ;;\nservice) printf 'service %s\\n' "$2" >> "$MONOCODE_TEST_EVENTS"; printf '%s\\n' "$*" >> "$MONOCODE_TEST_EVENTS.args" ;;\nconnection-info) printf '{"port":3774,"pid":123}\\n' ;;\n*) exit 1 ;;\nesac\n`,
     { mode: 0o755 },
   );
   const archive = join(dir, "host.tar.gz");
@@ -49,7 +49,7 @@ function fixture(badChecksum = false) {
     .replace('BASE="$HOME/.monocode-host"', `BASE=${quote(base)}`)
     .replace("@@VERSION@@", quote(version))
     .replace("@@RELEASE@@", "'https://example.invalid/releases'");
-  const run = (forceUpgrade = false) =>
+  const run = (forceUpgrade = false, extraEnv: Record<string, string> = {}) =>
     new Promise<{ code: number | null; out: string; error: string }>(
       (resolve, reject) => {
         const child = spawn("sh", ["-s"], {
@@ -61,6 +61,7 @@ function fixture(badChecksum = false) {
             MONOCODE_TEST_EVENTS: join(dir, "events"),
             MONOCODE_TEST_DOWNLOADS: join(dir, "downloads"),
             MONOCODE_HOST_FORCE_UPGRADE: forceUpgrade ? "1" : "0",
+            ...extraEnv,
           },
           signal: AbortSignal.timeout(10_000),
         });
@@ -121,5 +122,23 @@ it.skipIf(process.platform === "win32")(
     expect(result.error).toContain("checksum mismatch");
     expect(existsSync(join(base, "bin/monocode-host"))).toBe(false);
     expect(existsSync(join(dir, "events"))).toBe(false);
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "lets the host choose its own port unless one is requested",
+  async () => {
+    const { dir, run } = fixture();
+    expect((await run()).code).toBe(0);
+    expect(readFileSync(join(dir, "events.args"), "utf8").trim()).toBe(
+      "service install",
+    );
+    const explicit = fixture();
+    expect(
+      (await explicit.run(false, { MONOCODE_HOST_PORT: "4100" })).code,
+    ).toBe(0);
+    expect(readFileSync(join(explicit.dir, "events.args"), "utf8").trim()).toBe(
+      "service install --port 4100",
+    );
   },
 );

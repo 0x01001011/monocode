@@ -260,6 +260,7 @@ import {
   confirmCloseTerminals,
 } from "../features/terminal/model/terminalClose";
 import {
+  canOpenTerminal,
   listRunningTerminals,
   newTerminalCwd,
   terminalTabLabel,
@@ -1905,6 +1906,8 @@ function Workspace({
     session: active,
     fallback: sidebarCwd,
   });
+  // Hide terminal controls where opening one would do nothing.
+  const terminalAvailable = canOpenTerminal(projectCwd);
   const gitCwdBranches = useProjectBranches(
     gitCwd,
     Boolean(gitCwd) && gitCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
@@ -2917,8 +2920,7 @@ function Workspace({
   const onOpenTerminal = useCallback(
     (cwd: string, asWorkspaceTab = false, occupySessionId?: string) => {
       const workdir = cwd || terminalCwd;
-      if (!isLocalProject(projectCwdRef.current) || !isLocalProject(workdir))
-        return;
+      if (!canOpenTerminal(projectCwdRef.current, workdir)) return;
       if (openProjectTerminal(workdir)) return;
 
       if (asWorkspaceTab || !activeTab) {
@@ -12515,7 +12517,7 @@ function Workspace({
       onToggleSidebar={onToggleSidebar}
       onToggleSessionSidebar={onToggleSessionSidebar}
       onSelect={activateTab}
-      onNewTerminal={onNewTerminal}
+      onNewTerminal={terminalAvailable ? onNewTerminal : undefined}
       onOpenSettings={onOpenSettings}
       onOpenInbox={onOpenInbox}
       onOpenNotes={notesEnabled ? onOpenNotes : undefined}
@@ -12650,7 +12652,7 @@ function Workspace({
               monoViewActive={monoCovers}
               onNew={onNew}
               openSessions={openProjectSessions}
-              onNewTerminal={onNewTerminal}
+              onNewTerminal={terminalAvailable ? onNewTerminal : undefined}
               onSearch={onOpenSearch}
               onOpenInbox={onOpenInbox}
               onOpenInboxItem={onOpenLinkedWorkItem}
@@ -12710,7 +12712,7 @@ function Workspace({
                 {!IS_MAC ? (
                   <MenuBar
                     onNew={onNew}
-                    onNewTerminal={onNewTerminal}
+                    onNewTerminal={terminalAvailable ? onNewTerminal : undefined}
                     onToggleTerminal={onToggleProjectTerminal}
                     onGoToFile={onGoToFile}
                     onToggleSidebar={onToggleSidebar}
@@ -13107,12 +13109,12 @@ function Workspace({
                   terminalOpen={!monoCovers && runningTerminalOpen}
                   onToggleTerminal={onToggleRunningTerminal}
                   onNewTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
+                    !monoCovers && terminalAvailable
                       ? onNewTerminal
                       : undefined
                   }
                   onShowTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
+                    !monoCovers && terminalAvailable
                       ? onShowProjectTerminal
                       : undefined
                   }
