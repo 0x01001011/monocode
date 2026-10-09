@@ -8,7 +8,7 @@ import { TaskBoardView } from "./TaskBoardView";
 
 type Props = Pick<
   ComponentProps<typeof TaskBoardView>,
-  "onAction" | "onOpenNode" | "onOpenPlan" | "onChangeDecision" | "visible"
+  "onAction" | "onOpenNode" | "onOpenPlan" | "onChangeDecision" | "visible" | "fs"
 > & {
   /** The project: its sessions are the board's status inputs. */
   projectCwd: string;

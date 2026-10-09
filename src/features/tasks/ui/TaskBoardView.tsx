@@ -4,6 +4,7 @@ import type { Session } from "../../sessions/model/session";
 import { useTaskBoard } from "../hooks/useTaskBoard";
 import { planFilePath } from "../model/planRoot";
 import { progressLine } from "../model/progress";
+import type { SddFs } from "../model/sddWorkspace";
 import type { StatusAction, StatusCard, StatusKind, StatusSessionInput } from "../model/statusCard";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
 import { FlowStrip } from "./FlowStrip";
@@ -22,6 +23,8 @@ type Props = {
   visible?: boolean;
   /** How long a busy session may stay silent before the status card calls it quiet. */
   quietAfterMs?: number;
+  /** Where plan files are read from; the real filesystem unless a test or fixture gives its own. */
+  fs?: SddFs;
   onAction?: (action: StatusAction, card: StatusCard) => void;
   onOpenNode?: (node: BoardNode, section: BoardSection) => void;
   onOpenPlan?: (path: string) => void;
@@ -73,7 +76,7 @@ function revealHeading(heading: Element | null | undefined) {
 }
 
 /** The whole plan as a table: every task, the final review, then decisions and small issues. */
-export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessions, visible = true, quietAfterMs, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
+export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessions, visible = true, quietAfterMs, fs, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
   // Nothing reads a hidden board tab (the sidebar owns the badge and alerts), so it never polls hidden.
   const board = useTaskBoard({
     projectCwd,
@@ -83,6 +86,7 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
     visible,
     needsStatusWhenHidden: false,
     ...(quietAfterMs !== undefined ? { quietAfterMs } : {}),
+    ...(fs ? { fs } : {}),
   });
   const card = board.statusCard;
   const plan = board.plan;
@@ -166,7 +170,7 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
                 aria-label="Plan"
                 value={board.selectedWorkspace}
                 onChange={(e) => board.selectWorkspace(e.target.value)}
-                className={`min-h-6 rounded-md bg-transparent text-[11.5px] ${FOCUS}`}
+                className={`h-6 rounded-md bg-transparent text-[11.5px] ${FOCUS}`}
               >
                 {board.workspaces.map((w) => (
                   <option key={w.slug} value={w.slug}>

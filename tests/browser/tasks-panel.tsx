@@ -160,7 +160,12 @@ function board({ card, flow, plan: section }: View): TaskBoard {
     plan: section,
     flow,
     statusCard: card,
-    workspaces: [],
+    // Two workspaces, so the plan picker renders and its target size is measured.
+    workspaces: [
+      { dir: "/work/.superpowers/sdd/alpha", slug: "alpha", ledgerMtimeMs: T0 },
+      { dir: "/work/.superpowers/sdd/beta", slug: "beta", ledgerMtimeMs: T0 - MIN },
+    ],
+    selectedWorkspace: "alpha",
     selectWorkspace: () => {},
     loading: false,
     loaded: true,

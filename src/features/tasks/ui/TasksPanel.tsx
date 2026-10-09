@@ -127,7 +127,7 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab, onOpenFile }: Pi
             aria-label="Plan"
             value={board.selectedWorkspace}
             onChange={(e) => board.selectWorkspace(e.target.value)}
-            className={`min-h-6 min-w-0 flex-1 rounded-md bg-transparent text-[12.5px] font-semibold ${FOCUS}`}
+            className={`h-6 min-w-0 flex-1 rounded-md bg-transparent text-[12.5px] font-semibold ${FOCUS}`}
           >
             {board.workspaces.map((w) => (
               <option key={w.slug} value={w.slug}>
