@@ -18,6 +18,11 @@ const WIDTHS = [240, 340, 480];
 
 type Failure = { kind: string; what: string; got: number; need: number };
 
+// Colors are measured at rest: a theme switch must not be caught mid-transition.
+async function freezeTransitions(page: Page) {
+  await page.addStyleTag({ content: "*, *::before, *::after { transition: none !important; }" });
+}
+
 async function openEverything(page: Page) {
   // Open the legend, the note sections and every collapsed tree row so each text node exists.
   await page.evaluate(() => {
@@ -135,6 +140,7 @@ test.describe("tasks panel accessibility", () => {
     for (const state of STATES) {
       test(`${theme} ${palette} ${state}`, async ({ page }, testInfo) => {
         await page.goto("/tests/browser/tasks-panel.html");
+        await freezeTransitions(page);
         await page.evaluate(([t, p, s]) => {
           window.setTheme(t as "dark", p as "default");
           window.showTasks(s);
@@ -153,6 +159,7 @@ test.describe("tasks panel widths", () => {
     for (const theme of ["dark", "light"] as const) {
       test(`${width}px ${theme} does not scroll sideways`, async ({ page }) => {
         await page.goto("/tests/browser/tasks-panel.html");
+        await freezeTransitions(page);
         await page.evaluate(([w, t]) => {
           // setViewportSize does not resize #root; the fixture column is fixed-width.
           document.getElementById("root")!.style.width = `${w}px`;
