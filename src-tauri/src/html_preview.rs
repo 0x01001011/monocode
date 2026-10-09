@@ -32,6 +32,28 @@ connect-src 'self' preview: http://preview.localhost https: wss: data: blob:; \
 frame-src 'self' preview: http://preview.localhost https: data: blob:; \
 object-src 'none'; base-uri 'self' preview: http://preview.localhost; form-action 'self' https:";
 
+/// Attribute that marks the injected script, so it is never added twice.
+const BOOTSTRAP_MARKER: &str = "data-monocode-preview";
+
+/// Runs first in every HTML page and talks to the host app over `postMessage`.
+/// The page has an opaque origin, so the host can learn nothing about it
+/// otherwise. The channel nonce is the frame's `window.name`, which the host
+/// sets and which survives in-frame navigation; outside a MonoCode frame the
+/// script does nothing. Messages are untrusted input on the host side.
+const BOOTSTRAP: &str = concat!(
+    "<script data-monocode-preview>",
+    "(function(){var n=window.name;",
+    "if(typeof n!==\"string\"||n.slice(0,3)!==\"mc:\")return;",
+    "function send(m){m.mcp=1;m.n=n;try{parent.postMessage(m,\"*\")}catch(e){}}",
+    "window.addEventListener(\"keydown\",function(e){",
+    "if(e.key!==\"Escape\")return;",
+    // This listener runs before the page's own, so wait until dispatch is
+    // over: a page that handled Escape (preventDefault) keeps it.
+    "setTimeout(function(){if(!e.defaultPrevented)send({type:\"escape\"})},0)});",
+    "send({type:\"ready\"})",
+    "})();</script>"
+);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PreviewRoot {
     Dir(PathBuf),
@@ -100,10 +122,15 @@ pub fn serve_with_file(
     match registry.get(token) {
         Some(PreviewRoot::Dir(root)) => match resolve(&root, rel) {
             Some(file) => match std::fs::read(&file) {
-                Ok(body) => (
-                    respond(200, mime_type(&file), body),
-                    Some((token.to_string(), file)),
-                ),
+                Ok(body) => {
+                    let mime = mime_type(&file);
+                    let body = if mime.starts_with("text/html") {
+                        bootstrapped(body)
+                    } else {
+                        body
+                    };
+                    (respond(200, mime, body), Some((token.to_string(), file)))
+                }
                 Err(_) => (not_found(), None),
             },
             None => (not_found(), None),
@@ -111,13 +138,81 @@ pub fn serve_with_file(
         Some(PreviewRoot::Artifact(id)) if rel.is_empty() || rel == "index.html" => {
             match artifact_body(&id) {
                 Some(body) => (
-                    respond(200, "text/html; charset=utf-8", body.into_bytes()),
+                    respond(
+                        200,
+                        "text/html; charset=utf-8",
+                        with_bootstrap(&body).into_bytes(),
+                    ),
                     None,
                 ),
                 None => (not_found(), None),
             }
         }
         _ => (not_found(), None),
+    }
+}
+
+/// Put the bootstrap where it runs before author scripts without disturbing
+/// the document: after `<head>`, else `<html>`, else after the doctype (which
+/// must stay first or the page falls into quirks mode), else at the start.
+fn with_bootstrap(html: &str) -> String {
+    if html.contains(BOOTSTRAP_MARKER) {
+        return html.to_string();
+    }
+    let at = bootstrap_offset(html);
+    format!("{}{}{}", &html[..at], BOOTSTRAP, &html[at..])
+}
+
+fn bootstrap_offset(html: &str) -> usize {
+    // ASCII lowercasing keeps every byte offset valid for slicing `html`.
+    let lower = html.to_ascii_lowercase();
+    let comments = comment_ranges(&lower);
+    let in_comment = |at: usize| comments.iter().any(|&(start, end)| at >= start && at < end);
+    for tag in ["<head", "<html"] {
+        let mut from = 0;
+        while let Some(found) = lower[from..].find(tag) {
+            let start = from + found;
+            from = start + tag.len();
+            let boundary = lower[from..]
+                .chars()
+                .next()
+                .is_some_and(|c| c == '>' || c == '/' || c.is_ascii_whitespace());
+            if boundary && !in_comment(start) {
+                if let Some(end) = lower[start..].find('>') {
+                    return start + end + 1;
+                }
+            }
+        }
+    }
+    let leading = lower.len() - lower.trim_start().len();
+    if lower[leading..].starts_with("<!doctype") {
+        if let Some(end) = lower[leading..].find('>') {
+            return leading + end + 1;
+        }
+    }
+    0
+}
+
+fn comment_ranges(lower: &str) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut from = 0;
+    while let Some(found) = lower[from..].find("<!--") {
+        let start = from + found;
+        let end = lower[start + 4..]
+            .find("-->")
+            .map_or(lower.len(), |close| start + 4 + close + 3);
+        ranges.push((start, end));
+        from = end;
+    }
+    ranges
+}
+
+/// HTML documents get the bootstrap; text that is not valid UTF-8 is left
+/// alone rather than corrupted.
+fn bootstrapped(body: Vec<u8>) -> Vec<u8> {
+    match String::from_utf8(body) {
+        Ok(html) => with_bootstrap(&html).into_bytes(),
+        Err(error) => error.into_bytes(),
     }
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { basename } from "../../../platform/tauri/fs";
 import { parentPath } from "../../../shared/lib/paths";
+import { newFrameName, parseFrameMessage } from "../frameChannel";
 import {
   closePreview,
   openPreview,
@@ -37,6 +38,9 @@ export function HtmlFrame({
   const [error, setError] = useState(false);
   const [reload, setReload] = useState(0);
   const tokenRef = useRef<string | null>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  // The page reads this from window.name to address its messages to us.
+  const [frameName] = useState(newFrameName);
 
   useEffect(() => {
     let live = true;
@@ -87,6 +91,28 @@ export function HtmlFrame({
     };
   }, []);
 
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const frame = frameRef.current;
+      // The frame's origin is "null", so the window is the only identity check.
+      if (!frame || event.source !== frame.contentWindow) return;
+      const message = parseFrameMessage(event.data, frameName);
+      if (message?.type === "escape") {
+        // Keys pressed inside the page never reach this window; hand them back.
+        frame.blur();
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [frameName]);
+
   if (error)
     return (
       <p role="alert" className="p-6 text-[13px] text-content/65">
@@ -104,6 +130,8 @@ export function HtmlFrame({
     <iframe
       // A new element reloads the page and every subresource it fetched.
       key={`${token}:${reload}:${version ?? ""}`}
+      ref={frameRef}
+      name={frameName}
       data-html-preview={token}
       title={title}
       src={previewUrl(token, entry)}

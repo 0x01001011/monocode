@@ -26,6 +26,16 @@ fn no_artifacts(_: &str) -> Option<String> {
     None
 }
 
+/// The page as the author wrote it: the response body without the injected bootstrap.
+fn original(response: &http::Response<Vec<u8>>) -> Vec<u8> {
+    let mut body = response.body().clone();
+    let script = BOOTSTRAP.as_bytes();
+    if let Some(at) = body.windows(script.len()).position(|w| w == script) {
+        body.drain(at..at + script.len());
+    }
+    body
+}
+
 fn header<'a>(response: &'a http::Response<Vec<u8>>, name: &str) -> &'a str {
     response
         .headers()
@@ -74,10 +84,10 @@ fn html_preview_serves_index_for_root_and_directories() {
     for path in [format!("/{token}"), format!("/{token}/")] {
         let response = serve(&registry, &path, no_artifacts);
         assert_eq!(response.status(), 200, "{path}");
-        assert_eq!(response.body(), b"<h1>Home</h1>");
+        assert_eq!(original(&response), b"<h1>Home</h1>");
     }
     let nested = serve(&registry, &format!("/{token}/assets/"), no_artifacts);
-    assert_eq!(nested.body(), b"assets home");
+    assert_eq!(original(&nested), b"assets home");
 }
 
 #[test]
@@ -101,7 +111,7 @@ fn html_preview_resolves_relative_assets_with_mime_types() {
         let response = serve(&registry, &format!("/{token}/{rel}?v=3"), no_artifacts);
         assert_eq!(response.status(), 200, "{rel}");
         assert!(header(&response, "content-type").contains(mime), "{rel}");
-        assert_eq!(response.body(), body, "{rel}");
+        assert_eq!(original(&response), body, "{rel}");
     }
     assert!(header(
         &serve(&registry, &format!("/{token}/index.html"), no_artifacts),
@@ -203,7 +213,7 @@ fn html_preview_serves_artifacts_from_storage() {
         let response = serve(&registry, &path, lookup);
         assert_eq!(response.status(), 200, "{path}");
         assert!(header(&response, "content-type").starts_with("text/html"));
-        assert_eq!(response.body(), b"<p>chart</p>");
+        assert_eq!(original(&response), b"<p>chart</p>");
     }
     assert_eq!(
         serve(&registry, &format!("/{token}/other.css"), lookup).status(),
@@ -348,4 +358,127 @@ fn html_preview_a_served_file_does_not_watch_the_tree() {
     assert_eq!(watcher.watched_dirs(), 1);
     watcher.unwatch("tok-a");
     assert_eq!(watcher.watched_dirs(), 0);
+}
+
+// --- Preview bootstrap channel (autoresearch P16) ---------------------------
+
+const MARKER: &str = "data-monocode-preview";
+
+fn text(response: &http::Response<Vec<u8>>) -> String {
+    String::from_utf8_lossy(response.body()).into_owned()
+}
+
+#[test]
+fn html_preview_injects_the_bootstrap_into_html_only() {
+    let dir = site();
+    fs::write(
+        dir.path().join("page.html"),
+        "<!DOCTYPE html>\n<html><head><title>t</title></head><body>hi</body></html>",
+    )
+    .unwrap();
+    fs::write(dir.path().join("data.json"), "{\"a\":1}").unwrap();
+    let registry = PreviewRegistry::default();
+    let token = registry
+        .register(PreviewRoot::Dir(dir.path().into()))
+        .unwrap();
+    let page = text(&serve(
+        &registry,
+        &format!("/{token}/page.html"),
+        no_artifacts,
+    ));
+    assert_eq!(page.matches(MARKER).count(), 1, "{page}");
+    // It runs before author scripts: right after <head>, with the doctype untouched.
+    assert!(
+        page.starts_with("<!DOCTYPE html>\n<html><head><script"),
+        "{page}"
+    );
+    assert!(page.contains("</script><title>t</title>"), "{page}");
+    // Anything that is not an HTML document is served byte for byte.
+    for (rel, expected) in [
+        ("data.json", &b"{\"a\":1}"[..]),
+        ("assets/site.css", &b"h1{color:red}"[..]),
+        ("assets/app.js", &b"console.log(1)"[..]),
+    ] {
+        assert_eq!(
+            serve(&registry, &format!("/{token}/{rel}"), no_artifacts).body(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn html_preview_bootstrap_never_breaks_standards_mode() {
+    let registry = PreviewRegistry::default();
+    let token = registry
+        .register(PreviewRoot::Artifact("a".into()))
+        .unwrap();
+    let cases = [
+        // No <head>: after <html>.
+        (
+            "<!doctype html><html><body>x</body></html>",
+            "<html><script",
+        ),
+        // Only a doctype: after it, so the doctype stays first.
+        ("<!doctype html><p>x</p>", "<!doctype html><script"),
+        // A bare fragment: the script leads.
+        ("<p>x</p>", "<script"),
+        // Attributes on <head>.
+        (
+            "<html><head lang=\"en\"><meta charset=\"utf-8\">",
+            "<head lang=\"en\"><script",
+        ),
+    ];
+    for (html, expected_start) in cases {
+        let body = html.to_string();
+        let response = serve(&registry, &format!("/{token}/"), move |_| {
+            Some(body.clone())
+        });
+        let served = text(&response);
+        assert_eq!(served.matches(MARKER).count(), 1, "{html} -> {served}");
+        assert!(served.contains(expected_start), "{html} -> {served}");
+    }
+}
+
+#[test]
+fn html_preview_bootstrap_is_added_once_and_skips_non_utf8() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::write(
+        root.join("index.html"),
+        format!("<head><script {MARKER}></script></head>"),
+    )
+    .unwrap();
+    // Latin-1 bytes that are not valid UTF-8: left alone rather than corrupted.
+    fs::write(
+        root.join("old.html"),
+        b"<head><title>caf\xe9</title></head>",
+    )
+    .unwrap();
+    let registry = PreviewRegistry::default();
+    let token = registry.register(PreviewRoot::Dir(root.into())).unwrap();
+    let once = text(&serve(
+        &registry,
+        &format!("/{token}/index.html"),
+        no_artifacts,
+    ));
+    assert_eq!(once.matches(MARKER).count(), 1, "{once}");
+    let old = serve(&registry, &format!("/{token}/old.html"), no_artifacts);
+    assert_eq!(old.body(), b"<head><title>caf\xe9</title></head>");
+}
+
+#[test]
+fn html_preview_bootstrap_only_speaks_inside_a_monocode_frame() {
+    let registry = PreviewRegistry::default();
+    let token = registry
+        .register(PreviewRoot::Artifact("a".into()))
+        .unwrap();
+    let body = text(&serve(&registry, &format!("/{token}/"), |_| {
+        Some("<head></head>".into())
+    }));
+    // The channel nonce comes from window.name, set by the host's iframe.
+    assert!(body.contains("window.name"), "{body}");
+    assert!(body.contains("\"mc:\""), "{body}");
+    assert!(body.contains("postMessage"), "{body}");
+    // A page must not be able to close its own script early.
+    assert_eq!(body.matches("</script>").count(), 1, "{body}");
 }
