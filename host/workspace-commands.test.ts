@@ -7,6 +7,7 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
+  statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -123,17 +124,35 @@ describe("skill root read-only allowance", () => {
 });
 
 describe("skill read containment", () => {
+  // Windows links a directory with a junction but needs a real symlink for a
+  // file, which can require elevation; callers skip when it is refused.
   const link = (target: string, path: string) =>
-    symlinkSync(target, path, process.platform === "win32" ? "junction" : undefined);
+    symlinkSync(
+      target,
+      path,
+      process.platform !== "win32"
+        ? undefined
+        : statSync(target).isDirectory()
+          ? "junction"
+          : "file",
+    );
+  const refused = (error: unknown) =>
+    process.platform === "win32" &&
+    (error as NodeJS.ErrnoException).code === "EPERM";
 
-  it("does not read a secret through a symlinked SKILL.md", async () => {
+  it("does not read a secret through a symlinked SKILL.md", async (ctx) => {
     const { dir, project, home, commands } = setup();
     mkdirSync(join(dir, "secret"));
     writeFileSync(join(dir, "secret/id_rsa"), "PRIVATE KEY");
     for (const root of [project, home]) {
       const evil = join(root, ".claude/skills/evil");
       mkdirSync(evil);
-      link(join(dir, "secret/id_rsa"), join(evil, "SKILL.md"));
+      try {
+        link(join(dir, "secret/id_rsa"), join(evil, "SKILL.md"));
+      } catch (error) {
+        if (refused(error)) return ctx.skip();
+        throw error;
+      }
       await expect(
         commands.run("read_text_file", { path: join(evil, "SKILL.md") }),
       ).rejects.toThrow("outside");
