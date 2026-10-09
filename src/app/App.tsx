@@ -419,9 +419,9 @@ import {
 import { applyAddToChatRequest } from "../features/sessions/model/addChatToWorkspace";
 import {
   ADD_TO_CHAT_EVENT,
-  requestAddToChat,
   type AddToChatRequest,
 } from "../features/sessions/model/quoteDraft";
+import { requestComposerPrefill } from "../features/sessions/model/composerPrefill";
 import {
   TaskActionsContext,
   useTaskActions,
@@ -8646,18 +8646,26 @@ function Workspace({
   // The Tasks tab and board tabs act through one host; the hook owns what each button means.
   const taskActionHost: TaskActionHost = {
     selectSession: (sessionId) => onSelectHistorySession(sessionId),
-    // Sent like any follow-up: the user's follow-up setting decides between steering and queueing.
+    isBusy: (sessionId) => busySessionIds.has(sessionId),
+    // The stop request must reach the running turn, so a steerable harness gets it as a
+    // steer; any other harness keeps the user's follow-up setting. It is never an interrupt.
     queueMessage: async (sessionId, text) => {
-      await submitSession(sessionId, text);
-    },
-    prefillComposer: async (sessionId, text) => {
-      await onSelectHistorySession(sessionId);
-      // The session pane takes focus on the next frames; add-to-chat targets the focused pane.
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      const target = sessionsRef.current.find((s) => s.id === sessionId);
+      const steerable =
+        !!target && isLiveHarness(target.harness) && canSteerHarness(target.harness);
+      await submitSession(
+        sessionId,
+        text,
+        [],
+        steerable ? { followUpBehavior: "steer" } : undefined,
       );
-      requestAddToChat(text, "plain");
     },
+    // Recorded for that session's pane, which inserts it (never sends) once it shows.
+    // A Mono has its own composer, so it is only selected.
+    prefillComposer: (sessionId, text) => {
+      if (!isMonoSession(sessionId)) requestComposerPrefill(sessionId, text);
+    },
+    remind: (sessionId, dueAt) => sessionReminders.schedule([sessionId], dueAt),
     openFile: (path) =>
       onOpenFile(path, undefined, /^(\/|[A-Za-z]:[\\/])/.test(path) ? { exact: true } : undefined),
     openCommit: (range) => {

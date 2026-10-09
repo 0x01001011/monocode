@@ -35,6 +35,7 @@ vi.mock("../../features/tasks/hooks/useTaskBoard", () => {
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,
+    loaded: true,
   };
   return { useTaskBoard: () => board };
 });

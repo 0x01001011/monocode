@@ -14,7 +14,7 @@ vi.mock("./useTaskBoard", () => ({ useTaskBoard: vi.fn() }));
 const T0 = 1_700_000_000_000;
 
 function board(card: StatusCard): TaskBoard {
-  return { sections: [], statusCard: card, workspaces: [], selectWorkspace: () => {}, loading: false };
+  return { sections: [], statusCard: card, workspaces: [], selectWorkspace: () => {}, loading: false, loaded: true };
 }
 const IDLE: StatusCard = { kind: "idle", headline: "", actions: [] };
 const RUNNING: StatusCard = { kind: "running", headline: "Working", actions: [] };

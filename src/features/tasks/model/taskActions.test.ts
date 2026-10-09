@@ -35,6 +35,7 @@ describe("effectForAction", () => {
     expect(effectForAction("open-session", card({ sessionId: undefined }), {})).toEqual({ kind: "none" });
     expect(effectForAction("stop-after-task", card({ sessionId: undefined }), {})).toEqual({ kind: "none" });
     expect(effectForAction("keep-waiting", card({ sessionId: undefined }), {})).toEqual({ kind: "none" });
+    expect(effectForAction("remind-later", card({ sessionId: undefined }), {})).toEqual({ kind: "none" });
   });
 
   it("stop-after-task queues the stop message and never interrupts", () => {
@@ -46,10 +47,12 @@ describe("effectForAction", () => {
     expect(STOP_AFTER_TASK_TEXT).toBe("Stop after the current task and summarize where you are.");
   });
 
-  it("remind-later and keep-waiting snooze for 10 minutes", () => {
-    for (const action of ["remind-later", "keep-waiting"] as const) {
-      expect(effectForAction(action, card(), {})).toEqual({ kind: "snooze", sessionId: "s1", ms: 600_000 });
-    }
+  it("remind-later schedules a reminder in 10 minutes", () => {
+    expect(effectForAction("remind-later", card(), {})).toEqual({ kind: "remind", sessionId: "s1", ms: 600_000 });
+  });
+
+  it("keep-waiting snoozes the quiet state for 10 minutes", () => {
+    expect(effectForAction("keep-waiting", card(), {})).toEqual({ kind: "snooze", sessionId: "s1", ms: 600_000 });
   });
 
   it("see-issues and review-decisions are handled locally by the UI", () => {

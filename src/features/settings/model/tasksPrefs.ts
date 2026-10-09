@@ -15,7 +15,7 @@ const clampMinutes = (value: number) =>
 export function loadQuietAfterMinutes(): number {
   try {
     const raw = localStorage.getItem(QUIET_AFTER_MINUTES_KEY);
-    if (raw == null) return QUIET_AFTER_MINUTES_DEFAULT;
+    if (raw == null || raw.trim() === "") return QUIET_AFTER_MINUTES_DEFAULT;
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? clampMinutes(parsed) : QUIET_AFTER_MINUTES_DEFAULT;
   } catch {
@@ -24,6 +24,7 @@ export function loadQuietAfterMinutes(): number {
 }
 
 export function saveQuietAfterMinutes(value: number) {
+  if (!Number.isFinite(value)) return;
   const next = clampMinutes(value);
   try {
     localStorage.setItem(QUIET_AFTER_MINUTES_KEY, String(next));

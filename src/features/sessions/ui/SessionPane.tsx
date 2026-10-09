@@ -91,6 +91,7 @@ import {
   subscribeNotesEnabled,
 } from "../../settings/model/settings";
 import { getComposerDraft, setComposerDraft } from "../model/draftCache";
+import { useComposerPrefill } from "../hooks/useComposerPrefill";
 import { resolveModel } from "../model/models";
 import { isAstraModel } from "../model/astraWelcome";
 import { isOpus55Model } from "../model/opusWelcome";
@@ -568,6 +569,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     },
     [],
   );
+  // Text another surface queued for this session's composer (Tasks "Change this"); never sent.
+  const insertPrefill = useCallback((text: string) => addSelectionToChat(text, "plain"), [addSelectionToChat]);
+  useComposerPrefill(session.id, visible, insertPrefill);
   const acknowledgeQuote = useCallback((handledId: number) => {
     setQuoteRequest((current) => acknowledgeQuoteRequest(current, handledId));
   }, []);

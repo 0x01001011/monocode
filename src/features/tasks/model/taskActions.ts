@@ -6,6 +6,7 @@ export type TaskActionEffect =
   | { kind: "queue-message"; sessionId: string; text: string }
   | { kind: "prefill-composer"; sessionId: string; text: string }
   | { kind: "snooze"; sessionId: string; ms: number }
+  | { kind: "remind"; sessionId: string; ms: number }
   | { kind: "open-file"; path: string }
   | { kind: "open-commit"; range: string }
   | { kind: "scroll-transcript"; sessionId: string; blockId: string }
@@ -32,6 +33,7 @@ export function effectForAction(
     case "stop-after-task":
       return sessionId ? { kind: "queue-message", sessionId, text: STOP_AFTER_TASK_TEXT } : NONE;
     case "remind-later":
+      return sessionId ? { kind: "remind", sessionId, ms: SNOOZE_MS } : NONE;
     case "keep-waiting":
       return sessionId ? { kind: "snooze", sessionId, ms: SNOOZE_MS } : NONE;
     case "see-issues":

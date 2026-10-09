@@ -25,7 +25,7 @@ export function TaskBoardNotes({ decisions, issues, onChangeDecision }: Props) {
     <div className="px-3 pt-4 pb-4">
       {decisions.length > 0 ? (
         <section aria-labelledby="board-decisions" className="mb-4">
-          <h3 id="board-decisions" className="m-0 text-[12.5px] font-semibold">
+          <h3 id="board-decisions" tabIndex={-1} className={`m-0 text-[12.5px] font-semibold ${FOCUS}`}>
             Decisions made for you · {decisions.length}
           </h3>
           <p className="m-0 mb-1 text-[11.5px] leading-[1.45] text-content/55">{DECISIONS_EXPLAINER}</p>
@@ -49,7 +49,7 @@ export function TaskBoardNotes({ decisions, issues, onChangeDecision }: Props) {
       ) : null}
       {issues.length > 0 ? (
         <section aria-labelledby="board-issues">
-          <h3 id="board-issues" className="m-0 text-[12.5px] font-semibold">
+          <h3 id="board-issues" tabIndex={-1} className={`m-0 text-[12.5px] font-semibold ${FOCUS}`}>
             Small issues saved for the end · {issues.length}
           </h3>
           <p className="m-0 mb-1 text-[11.5px] leading-[1.45] text-content/55">{ISSUES_EXPLAINER}</p>

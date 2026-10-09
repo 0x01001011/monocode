@@ -136,6 +136,7 @@ describe("useTaskBoard", () => {
     });
     await mount(base(fs));
     expect(latest?.loading).toBe(false);
+    expect(latest?.loaded).toBe(true);
     expect(latest?.workspaces.map((w) => w.slug)).toEqual(["2026-10-05-new-plan", "2026-10-01-old-plan"]);
     expect(latest?.selectedWorkspace).toBe("2026-10-05-new-plan");
     expect(latest?.plan?.source).toBe("sdd");
@@ -161,6 +162,16 @@ describe("useTaskBoard", () => {
     await advance(60_000);
     expect(idle.loads()).toBe(0);
     expect(idle.lists()).toBe(0);
+  });
+
+  it("is not loaded before the first read finishes, nor for a project that was never read", async () => {
+    const { fs } = fakeFs(workspace("2026-10-05-plan", "Slow", 9_000), 1_000);
+    await mount(base(fs));
+    expect(latest?.loaded).toBe(false);
+    await advance(3_000);
+    expect(latest?.loaded).toBe(true);
+    await mount(base(fs, { projectCwd: "/other" }));
+    expect(latest?.loaded).toBe(false);
   });
 
   it("stops polling when the panel is hidden and nothing is busy", async () => {

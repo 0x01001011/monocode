@@ -19,8 +19,10 @@ let container: HTMLDivElement;
 let root: Root;
 const notify = vi.fn(async () => true);
 
-function Probe(props: { card: StatusCard; activeSessionId?: string; known?: string[] }) {
+function Probe(props: { card: StatusCard; activeSessionId?: string; known?: string[]; ready?: boolean; projectCwd?: string }) {
   useTaskAlerts(props.card, {
+    ready: props.ready ?? true,
+    projectCwd: props.projectCwd ?? "/proj",
     findSession: (id) => ((props.known ?? ["s1", "s2"]).includes(id) ? target(id) : undefined),
     activeSessionId: props.activeSessionId,
     notify,
@@ -45,10 +47,50 @@ afterEach(() => {
 });
 
 describe("useTaskAlerts", () => {
-  it("does not alert for the first card it sees, even a finished plan", () => {
+  it("does not alert for the first ready card, even a finished plan", () => {
     render({ card: card("done", { sessionId: undefined }), activeSessionId: "s1" });
     render({ card: card("done", { sessionId: undefined, headline: "Plan finished in 4m" }), activeSessionId: "s1" });
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("first load idle -> done alerts nothing, because the baseline waits for the plan", () => {
+    render({ card: card("idle", { sessionId: undefined }), ready: false });
+    render({ card: card("done", { sessionId: undefined, headline: "Plan finished in 4m" }), ready: true });
+    expect(notify).not.toHaveBeenCalled();
+    render({ card: card("struggling"), ready: true });
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it("first load idle -> struggling alerts nothing", () => {
+    render({ card: card("idle"), ready: false });
+    render({ card: card("struggling"), ready: true });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("a real later running -> done alerts once", () => {
+    render({ card: card("idle", { sessionId: undefined }), ready: false });
+    render({ card: card("running", { sessionId: undefined }), ready: true, activeSessionId: "s1" });
+    render({ card: card("done", { sessionId: undefined, headline: "Plan finished in 4m" }), ready: true, activeSessionId: "s1" });
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ id: "s1" }), expect.objectContaining({ kind: "plan-done" }), true);
+  });
+
+  it("a board that stops being ready starts over without alerting", () => {
+    render({ card: card("running"), ready: true });
+    render({ card: card("idle"), ready: false });
+    render({ card: card("struggling"), ready: true });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("changing the project resets the baseline without alerting", () => {
+    render({ card: card("running"), projectCwd: "/one" });
+    render({ card: card("done", { sessionId: undefined }), projectCwd: "/two" });
+    expect(notify).not.toHaveBeenCalled();
+    render({ card: card("done", { sessionId: undefined, headline: "again" }), projectCwd: "/two" });
+    expect(notify).not.toHaveBeenCalled();
+    render({ card: card("running", { sessionId: undefined }), projectCwd: "/two" });
+    render({ card: card("done", { sessionId: undefined }), projectCwd: "/two", activeSessionId: "s1" });
+    expect(notify).toHaveBeenCalledTimes(1);
   });
 
   it("alerts once when a run goes quiet, with the session as target", () => {

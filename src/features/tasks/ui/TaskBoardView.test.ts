@@ -104,6 +104,7 @@ function board(over: Partial<TaskBoard> = {}): TaskBoard {
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,
+    loaded: true,
     ...over,
   };
 }
@@ -355,5 +356,57 @@ describe("TaskBoardView", () => {
     render();
     expect(text()).toContain("Nothing to track yet");
     expect(container.querySelector("table")).toBeNull();
+  });
+
+  describe("card actions that point at the notes", () => {
+    const struggling: StatusCard = { kind: "struggling", sessionId: "s1", headline: "Task 3 is on fix round 3 of 5", actions: ["see-issues"] };
+    const done: StatusCard = { kind: "done", headline: "Plan finished", actions: ["review-decisions"] };
+    let scrolled: { id: string; options: unknown }[];
+
+    beforeEach(() => {
+      scrolled = [];
+      Element.prototype.scrollIntoView = function (this: Element, options?: unknown) {
+        scrolled.push({ id: this.id, options });
+      };
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query }));
+    });
+    afterEach(() => {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    });
+
+    it("See the open issues scrolls the small issues into view and focuses their heading", () => {
+      hook.board = board({ statusCard: struggling });
+      const onAction = vi.fn();
+      render({ onAction });
+      click(buttons("See the open issues")[0]);
+      expect(scrolled).toEqual([{ id: "board-issues", options: { block: "start", behavior: "smooth" } }]);
+      expect(document.activeElement?.id).toBe("board-issues");
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it("Review decisions scrolls the decisions into view and focuses their heading", () => {
+      hook.board = board({ statusCard: done });
+      const onAction = vi.fn();
+      render({ onAction });
+      click(buttons("Review decisions")[0]);
+      expect(scrolled).toEqual([{ id: "board-decisions", options: { block: "start", behavior: "smooth" } }]);
+      expect(document.activeElement?.id).toBe("board-decisions");
+      expect(onAction).not.toHaveBeenCalled();
+    });
+
+    it("See the open issues falls back to the decisions when there are no small issues", () => {
+      hook.board = board({ statusCard: struggling, plan: plan({ minors: [] }) });
+      render();
+      click(buttons("See the open issues")[0]);
+      expect(scrolled.map((s) => s.id)).toEqual(["board-decisions"]);
+    });
+
+    it("jumps without animation when the user prefers reduced motion", () => {
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce"), media: query }));
+      hook.board = board({ statusCard: done });
+      render();
+      click(buttons("Review decisions")[0]);
+      expect(scrolled[0].options).toEqual({ block: "start", behavior: "auto" });
+    });
   });
 });

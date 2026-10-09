@@ -20,6 +20,7 @@ const board: TaskBoard = {
   workspaces: [],
   selectWorkspace: () => {},
   loading: false,
+  loaded: true,
 };
 
 let container: HTMLDivElement;

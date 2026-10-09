@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check } from "../../../shared/ui/icons";
 import type { Session } from "../../sessions/model/session";
 import { useTaskBoard } from "../hooks/useTaskBoard";
@@ -51,11 +51,20 @@ function EmptyState({ loading }: { loading: boolean }) {
   );
 }
 
+/** Scrolls a heading to the top of the view and moves focus to it; reduced motion jumps instead. */
+function revealHeading(heading: Element | null | undefined) {
+  if (!(heading instanceof HTMLElement)) return;
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  heading.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+  heading.focus({ preventScroll: true });
+}
+
 /** The whole plan as a table: every task, the final review, then decisions and small issues. */
 export function TaskBoardView({ projectCwd, session, sessions, visible = true, quietAfterMs, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
   const board = useTaskBoard({ projectCwd, ...(session ? { activeSession: session } : {}), sessions, visible, ...(quietAfterMs !== undefined ? { quietAfterMs } : {}) });
   const card = board.statusCard;
   const plan = board.plan;
+  const notesRef = useRef<HTMLDivElement>(null);
   const running = visible && (sessions.some((s) => s.busy) || (card.kind !== "idle" && card.kind !== "done"));
 
   // The tab owns its clock so a tick re-renders only this view; it ticks only while it is shown and work runs.
@@ -80,6 +89,17 @@ export function TaskBoardView({ projectCwd, session, sessions, visible = true, q
   const parkedFor = new Set((plan.parked ?? []).flatMap((n) => (n.taskIndex !== undefined ? [n.taskIndex] : [])));
   // Hide actions the plan cannot back: no decisions means nothing to review.
   const actions = card.actions.filter((a) => a !== "review-decisions" || (plan.decisions?.length ?? 0) > 0);
+  // These two buttons point at the notes below the table, so they bring them into view.
+  const handleAction = (action: StatusAction, target: StatusCard) => {
+    if (action === "see-issues" || action === "review-decisions") {
+      const notes = notesRef.current;
+      const wanted = action === "review-decisions" ? ["board-decisions"] : ["board-issues", "board-decisions"];
+      const heading = wanted.map((id) => notes?.querySelector(`[id="${id}"]`)).find(Boolean);
+      revealHeading(heading ?? notes);
+      return;
+    }
+    onAction?.(action, target);
+  };
   const issues = [...(plan.minors ?? []), ...(plan.parked ?? []).map((n) => ({ ...n, parked: true }))];
 
   return (
@@ -126,7 +146,7 @@ export function TaskBoardView({ projectCwd, session, sessions, visible = true, q
           {actions.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {actions.map((action) => (
-                <button key={action} type="button" onClick={() => onAction?.(action, card)} className={BUTTON}>
+                <button key={action} type="button" onClick={() => handleAction(action, card)} className={BUTTON}>
                   {actionLabel(action, card)}
                 </button>
               ))}
@@ -171,7 +191,9 @@ export function TaskBoardView({ projectCwd, session, sessions, visible = true, q
           ))}
         </tbody>
       </table>
-      <TaskBoardNotes decisions={plan.decisions ?? []} issues={issues} onChangeDecision={onChangeDecision} />
+      <div ref={notesRef} tabIndex={-1} className="outline-none">
+        <TaskBoardNotes decisions={plan.decisions ?? []} issues={issues} onChangeDecision={onChangeDecision} />
+      </div>
     </div>
   );
 }

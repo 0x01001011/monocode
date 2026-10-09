@@ -27,6 +27,8 @@ export type TaskBoard = {
   selectedWorkspace?: string;
   selectWorkspace(slug: string): void;
   loading: boolean;
+  /** The plan for this project has been read at least once, so the status card is trustworthy. */
+  loaded: boolean;
 };
 
 type Input = {
@@ -177,5 +179,6 @@ export function useTaskBoard(input: Input): TaskBoard {
     ...(data?.selected ? { selectedWorkspace: data.selected } : {}),
     selectWorkspace,
     loading: polling && data === undefined,
+    loaded: data !== undefined,
   };
 }

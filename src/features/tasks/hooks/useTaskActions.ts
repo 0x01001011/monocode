@@ -9,8 +9,15 @@ export type TaskActionHost = {
   selectSession(sessionId: string): void | Promise<void>;
   /** Sends `text` to the session as a follow-up. It never interrupts a running turn. */
   queueMessage(sessionId: string, text: string): void | Promise<unknown>;
-  /** Puts `text` in the session's composer without sending it. */
-  prefillComposer(sessionId: string, text: string): void | Promise<void>;
+  /**
+   * Records `text` as the draft to insert into that session's composer once its pane shows.
+   * It only inserts text, never sends. The hook selects the session right after.
+   */
+  prefillComposer(sessionId: string, text: string): void;
+  /** True while a turn is running in the session, so a stop request has something to stop. */
+  isBusy(sessionId: string): boolean;
+  /** Schedules a session reminder for `dueAt` (epoch ms). */
+  remind?(sessionId: string, dueAt: number): void | Promise<unknown>;
   openFile(path: string): void;
   /** `range` is a sha or `a..b`. */
   openCommit(range: string): void;
@@ -30,30 +37,50 @@ export type TaskActions = {
 /** Lets a board in an editor tab reach the handlers without threading props through the pane tree. */
 export const TaskActionsContext = createContext<TaskActions | undefined>(undefined);
 
+/** Runs a host call; a throw or a rejection is logged, never propagated to the click handler. */
+function attempt(what: string, call: () => unknown): void {
+  try {
+    const result = call();
+    if (result instanceof Promise) result.catch((error: unknown) => console.error(`Tasks: ${what} failed`, error));
+  } catch (error) {
+    console.error(`Tasks: ${what} failed`, error);
+  }
+}
+
 function run(host: TaskActionHost, effect: TaskActionEffect): void {
   switch (effect.kind) {
     case "select-session":
-      void host.selectSession(effect.sessionId);
+      attempt("select session", () => host.selectSession(effect.sessionId));
       return;
     case "queue-message":
-      void host.queueMessage(effect.sessionId, effect.text);
+      // A stop request only makes sense mid-turn; on an idle session it would start a new turn.
+      if (!host.isBusy(effect.sessionId)) return;
+      attempt("send message", () => host.queueMessage(effect.sessionId, effect.text));
       return;
     case "prefill-composer":
-      void host.prefillComposer(effect.sessionId, effect.text);
+      attempt("prefill composer", () => {
+        host.prefillComposer(effect.sessionId, effect.text);
+        return host.selectSession(effect.sessionId);
+      });
       return;
     case "snooze":
-      (host.snooze ?? snoozeSession)(effect.sessionId, effect.ms);
+      attempt("snooze", () => (host.snooze ?? snoozeSession)(effect.sessionId, effect.ms));
+      return;
+    case "remind":
+      attempt("set reminder", () => host.remind?.(effect.sessionId, Date.now() + effect.ms));
       return;
     case "open-file":
-      host.openFile(effect.path);
+      attempt("open file", () => host.openFile(effect.path));
       return;
     case "open-commit":
-      host.openCommit(effect.range);
+      attempt("open commit", () => host.openCommit(effect.range));
       return;
     case "scroll-transcript":
       // The jump is recorded first so the transcript consumes it as soon as it shows.
-      host.scrollToBlock?.(effect.sessionId, effect.blockId);
-      void host.selectSession(effect.sessionId);
+      attempt("scroll to block", () => {
+        host.scrollToBlock?.(effect.sessionId, effect.blockId);
+        return host.selectSession(effect.sessionId);
+      });
       return;
     case "none":
       return;
@@ -72,7 +99,7 @@ export function useTaskActions(host: TaskActionHost, ctx: { projectCwd: string; 
     const { host, ctx } = latest.current;
     run(host, effectForNode(node, section, { projectCwd: ctx.projectCwd, sessionId: sessionId ?? ctx.activeSessionId }));
   }, []);
-  const onOpenPlan = useCallback((path: string) => latest.current.host.openFile(path), []);
+  const onOpenPlan = useCallback((path: string) => run(latest.current.host, { kind: "open-file", path }), []);
   const onChangeDecision = useCallback((note: BoardNote, sessionId?: string) => {
     const { host, ctx } = latest.current;
     const target = sessionId ?? ctx.activeSessionId;

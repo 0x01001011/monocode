@@ -58,6 +58,7 @@ function board(over: Partial<TaskBoard> = {}): TaskBoard {
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,
+    loaded: true,
     ...over,
   };
 }
@@ -187,6 +188,31 @@ describe("TasksPanel", () => {
     render({ board: board({ plan: plan() }), onOpenAsTab });
     click(button("Open as tab"));
     expect(onOpenAsTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("See the open issues and Review decisions open the full tab instead of calling onAction", () => {
+    const onAction = vi.fn();
+    const onOpenAsTab = vi.fn();
+    const struggling: StatusCard = { kind: "struggling", sessionId: "s1", headline: "Task 4 is on fix round 3 of 5", actions: ["see-issues"] };
+    render({ board: board({ plan: plan(), statusCard: struggling }), onAction, onOpenAsTab });
+    click(button("See the open issues"));
+    expect(onOpenAsTab).toHaveBeenCalledTimes(1);
+
+    const done: StatusCard = { kind: "done", headline: "Plan finished", actions: ["review-decisions"] };
+    const withDecisions = plan({ decisions: [{ taskIndex: 2, text: "Keep it" }] });
+    render({ board: board({ plan: withDecisions, statusCard: done }), onAction, onOpenAsTab });
+    click(button("Review decisions"));
+    expect(onOpenAsTab).toHaveBeenCalledTimes(2);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("other card actions still reach onAction", () => {
+    const onAction = vi.fn();
+    const onOpenAsTab = vi.fn();
+    render({ board: board(), onAction, onOpenAsTab });
+    click(button("Stop after this task"));
+    expect(onAction).toHaveBeenCalledWith("stop-after-task", runningCard);
+    expect(onOpenAsTab).not.toHaveBeenCalled();
   });
 
   it("decisions show three then Show all", () => {

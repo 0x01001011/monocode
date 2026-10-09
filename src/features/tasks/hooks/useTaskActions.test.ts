@@ -7,7 +7,7 @@ import { STOP_AFTER_TASK_TEXT } from "../model/taskActions";
 import type { BoardNode, BoardSection } from "../model/taskBoard";
 import { useTaskActions, type TaskActionHost, type TaskActions } from "./useTaskActions";
 
-function fakeHost() {
+function fakeHost(busy: readonly string[] = ["s1", "active"]) {
   const calls: [string, ...unknown[]][] = [];
   const record =
     (name: string) =>
@@ -22,6 +22,8 @@ function fakeHost() {
     openCommit: record("openCommit"),
     scrollToBlock: record("scrollToBlock"),
     snooze: record("snooze"),
+    remind: record("remind"),
+    isBusy: (sessionId) => busy.includes(sessionId),
   };
   return { host, calls };
 }
@@ -74,12 +76,49 @@ describe("useTaskActions", () => {
     expect(calls).toEqual([["queueMessage", "s1", STOP_AFTER_TASK_TEXT]]);
   });
 
-  it("remind later and keep waiting snooze for 10 minutes", () => {
+  it("stop after task sends nothing, and starts no turn, when the session is not busy", () => {
+    const { host, calls } = fakeHost([]);
+    mount(host);
+    actions.onAction("stop-after-task", card());
+    expect(calls).toEqual([]);
+  });
+
+  it("remind later schedules a real reminder ten minutes from now", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_700_000_000_000);
+    try {
+      const { host, calls } = fakeHost();
+      mount(host);
+      actions.onAction("remind-later", card());
+      expect(calls).toEqual([["remind", "s1", 1_700_000_000_000 + 600_000]]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keep waiting snoozes the quiet state for 10 minutes", () => {
     const { host, calls } = fakeHost();
     mount(host);
-    actions.onAction("remind-later", card());
     actions.onAction("keep-waiting", card());
-    expect(calls).toEqual([["snooze", "s1", 600_000], ["snooze", "s1", 600_000]]);
+    expect(calls).toEqual([["snooze", "s1", 600_000]]);
+  });
+
+  it("logs a failing host call instead of throwing or leaving a rejection", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { host } = fakeHost();
+    mount({
+      ...host,
+      selectSession: () => Promise.reject(new Error("no such session")),
+      openFile: () => {
+        throw new Error("boom");
+      },
+    });
+    expect(() => actions.onAction("open-session", card())).not.toThrow();
+    expect(() => actions.onOpenPlan("p.md")).not.toThrow();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(error).toHaveBeenCalledTimes(2);
+    error.mockRestore();
   });
 
   it("see issues and review decisions touch nothing", () => {
@@ -134,10 +173,14 @@ describe("useTaskActions", () => {
     mount(host);
     actions.onChangeDecision({ taskIndex: 4, text: "Record usage at send" });
     actions.onChangeDecision({ text: "Use polling" }, "tab-session");
+    // The text is recorded for that session's composer first, then the session is shown; nothing is sent.
     expect(calls).toEqual([
       ["prefillComposer", "active", "About your decision on Task 4: Record usage at send"],
+      ["selectSession", "active"],
       ["prefillComposer", "tab-session", "About your decision: Use polling"],
+      ["selectSession", "tab-session"],
     ]);
+    expect(calls.some(([name]) => name === "queueMessage")).toBe(false);
   });
 
   it("does nothing when no session is known", () => {

@@ -38,6 +38,25 @@ describe("quiet after minutes preference", () => {
     expect(loadQuietAfterMinutes()).toBe(5);
   });
 
+  it("loads an empty or blank stored value as the default, not the minimum", () => {
+    localStorage.setItem(QUIET_AFTER_MINUTES_KEY, "");
+    expect(loadQuietAfterMinutes()).toBe(5);
+    localStorage.setItem(QUIET_AFTER_MINUTES_KEY, "   ");
+    expect(loadQuietAfterMinutes()).toBe(5);
+  });
+
+  it("ignores a save that is not a number: nothing is written and nobody is notified", () => {
+    saveQuietAfterMinutes(7);
+    const listener = vi.fn();
+    const stop = subscribeQuietAfterMinutes(listener);
+    saveQuietAfterMinutes(Number.NaN);
+    saveQuietAfterMinutes(Number.POSITIVE_INFINITY);
+    expect(localStorage.getItem(QUIET_AFTER_MINUTES_KEY)).toBe("7");
+    expect(loadQuietAfterMinutes()).toBe(7);
+    expect(listener).not.toHaveBeenCalled();
+    stop();
+  });
+
   it("notifies this window when saved", () => {
     const listener = vi.fn();
     const stop = subscribeQuietAfterMinutes(listener);

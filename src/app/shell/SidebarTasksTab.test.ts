@@ -58,6 +58,7 @@ function board(statusCard: StatusCard): TaskBoard {
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,
+    loaded: true,
   };
 }
 

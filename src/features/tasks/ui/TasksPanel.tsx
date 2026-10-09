@@ -203,10 +203,16 @@ export function TasksPanel({ board, now, onAction, onOpenNode, onOpenAsTab }: Pr
       ? { ...raw, actions: raw.actions.filter((a) => a !== "review-decisions") }
       : raw;
 
+  // The notes these two buttons point at live in the full tab, so they open it.
+  const handleAction: typeof onAction = (action, target) => {
+    if (action === "see-issues" || action === "review-decisions") onOpenAsTab?.();
+    else onAction?.(action, target);
+  };
+
   const empty = board.sections.length === 0 && card.kind === "idle";
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto pt-0.5 pb-3.5">
-      <StatusCard card={card} onAction={onAction} />
+      <StatusCard card={card} onAction={handleAction} />
       {plan ? <PlanBlock board={board} plan={plan} now={now} onOpenNode={onOpenNode} onOpenAsTab={onOpenAsTab} /> : null}
       {agents.map((section) => (
         <SectionBlock key={section.id} section={section} label="Other agents here" now={now} onOpenNode={onOpenNode} />

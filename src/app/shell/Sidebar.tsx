@@ -467,6 +467,8 @@ function SidebarComponent({
   });
   const tasksBadge = tabBadge(tasks.board.statusCard);
   useTaskAlerts(tasks.board.statusCard, {
+    ready: tasks.board.loaded && !remoteProject,
+    projectCwd: cwd,
     findSession: (id) => sessions.find((entry) => entry.id === id),
     activeSessionId,
   });
