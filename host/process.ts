@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, readdirSync } from "node:fs";
 import { access, readFile, realpath, readlink, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
@@ -21,6 +21,53 @@ const binaryNames: Record<RemoteProvider, string[]> = {
   fx: ["fx"],
   hermes: ["hermes"],
   antigravity: ["agy_acp_server.par"],
+};
+
+const versionKey = (name: string) =>
+  name
+    .replace(/^v/, "")
+    .split(".")
+    .map((part) => Number.parseInt(part, 10) || 0);
+
+/** Newest version directory first: `parent/<version>/<...suffix>`. */
+const newestVersions = (parent: string, suffix: string[]): string[] => {
+  try {
+    return readdirSync(parent)
+      .filter((name) => /^v?\d/.test(name))
+      .sort((a, b) => {
+        const left = versionKey(a);
+        const right = versionKey(b);
+        for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+          const delta = (right[i] ?? 0) - (left[i] ?? 0);
+          if (delta !== 0) return delta;
+        }
+        return 0;
+      })
+      .map((name) => join(parent, name, ...suffix));
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Node version managers are initialised from interactive shell startup files,
+ * so a service's PATH never contains their directories. Packages installed
+ * with them (`npm i -g @openai/codex`) would otherwise report "not installed".
+ */
+const versionManagerDirectories = (home: string): string[] => {
+  if (process.platform === "win32") return [];
+  const env = process.env;
+  const nvm = env.NVM_DIR || join(home, ".nvm");
+  const fnm = env.FNM_DIR || join(home, ".local", "share", "fnm");
+  return [
+    ...newestVersions(join(nvm, "versions", "node"), ["bin"]),
+    join(fnm, "aliases", "default", "bin"),
+    ...newestVersions(join(fnm, "node-versions"), ["installation", "bin"]),
+    join(env.VOLTA_HOME || join(home, ".volta"), "bin"),
+    env.PNPM_HOME || join(home, ".local", "share", "pnpm"),
+    join(env.ASDF_DATA_DIR || join(home, ".asdf"), "shims"),
+    join(home, ".local", "share", "mise", "shims"),
+  ];
 };
 
 const providerDirectories = (provider: RemoteProvider): string[] => {
@@ -47,6 +94,7 @@ const providerDirectories = (provider: RemoteProvider): string[] => {
       join(home, ".cargo", "bin"),
       join(home, "n", "bin"),
       join(home, ".bun", "bin"),
+      ...versionManagerDirectories(home),
       ...(extra[provider] ?? []),
       ...(process.platform === "win32"
         ? [join(process.env.APPDATA ?? join(home, "AppData", "Roaming"), "npm")]
