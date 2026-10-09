@@ -34,6 +34,7 @@ mod notes;
 mod notifications;
 mod pasteboard;
 mod pi_usage;
+mod pr_store;
 mod project_logo;
 mod pty;
 #[cfg(target_os = "macos")]
