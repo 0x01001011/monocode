@@ -59,6 +59,7 @@ import { useSidebarTasks } from "../../features/tasks/hooks/useSidebarTasks";
 import { useTaskAlerts } from "../../features/tasks/hooks/useTaskAlerts";
 import { tabBadge, type StatusAction, type StatusCard } from "../../features/tasks/model/statusCard";
 import type { BoardNode, BoardSection } from "../../features/tasks/model/taskBoard";
+import { planFilePath, planRootFor } from "../../features/tasks/model/planRoot";
 import { TasksPanelLive } from "../../features/tasks/ui/TasksPanelLive";
 import { TasksTabBadge, tasksTabLabel } from "../../features/tasks/ui/TasksTabBadge";
 import { formatInteger } from "../../shared/lib/numbers";
@@ -2178,6 +2179,7 @@ function SidebarComponent({
               onAction={onTasksAction}
               onOpenNode={onOpenTaskNode}
               onOpenAsTab={onOpenTasksTab}
+              onOpenFile={(path) => onOpenFile(planFilePath(planRootFor(cwd, activeSession), path))}
             />
           </div>
         ) : null}

@@ -4,6 +4,7 @@ import type { TaskBoard } from "../hooks/useTaskBoard";
 import { progressLine } from "../model/progress";
 import type { StatusAction, StatusCard as StatusCardData } from "../model/statusCard";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
+import { FlowStrip } from "./FlowStrip";
 import { StatusCard } from "./StatusCard";
 import { TaskGlyph, type GlyphKind } from "./TaskGlyph";
 import { TaskTree } from "./TaskTree";
@@ -14,6 +15,8 @@ type Props = {
   onAction?: (action: StatusAction, card: StatusCardData) => void;
   onOpenNode?: (node: BoardNode, section: BoardSection) => void;
   onOpenAsTab?: () => void;
+  /** Opens a spec or plan file; `path` is relative to the plan root, as the ledger wrote it. */
+  onOpenFile?: (path: string) => void;
 };
 
 const PREVIEW_NOTES = 3;
@@ -98,7 +101,7 @@ function NoteSection({ title, notes, open, onToggle, explainer }: {
   );
 }
 
-function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab }: Pick<Props, "board" | "now" | "onOpenNode" | "onOpenAsTab"> & { plan: BoardSection }) {
+function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab, onOpenFile }: Pick<Props, "board" | "now" | "onOpenNode" | "onOpenAsTab" | "onOpenFile"> & { plan: BoardSection }) {
   const [legend, setLegend] = useState(false);
   const [decisionsOpen, setDecisionsOpen] = useState<boolean>();
   const [minorsOpen, setMinorsOpen] = useState(false);
@@ -145,6 +148,11 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab }: Pick<Props, "b
         </button>
       </div>
       <div className="px-3 pb-1.5 text-[11.5px] text-muted tabular-nums">{progressLine(plan, now)}</div>
+      {board.flow.length > 0 ? (
+        <div className="px-2 pb-1.5">
+          <FlowStrip phases={board.flow} {...(onOpenFile ? { onOpenPath: onOpenFile } : {})} />
+        </div>
+      ) : null}
       {legend ? <Legend /> : null}
       <TaskTree
         nodes={nodes}
@@ -204,7 +212,7 @@ function EmptyState() {
   );
 }
 
-export function TasksPanel({ board, now, onAction, onOpenNode, onOpenAsTab }: Props) {
+export function TasksPanel({ board, now, onAction, onOpenNode, onOpenAsTab, onOpenFile }: Props) {
   const plan = board.plan;
   const rest = board.sections.filter((s) => s !== plan);
   const agents = rest.filter((s) => s.source === "agents");
@@ -230,7 +238,7 @@ export function TasksPanel({ board, now, onAction, onOpenNode, onOpenAsTab }: Pr
       {board.planFilesUnavailable ? (
         <div className="px-4 pt-1 text-[11.5px] text-muted">Plan files are not available for remote projects yet.</div>
       ) : null}
-      {plan ? <PlanBlock board={board} plan={plan} now={now} onOpenNode={onOpenNode} onOpenAsTab={onOpenAsTab} /> : null}
+      {plan ? <PlanBlock board={board} plan={plan} now={now} onOpenNode={onOpenNode} onOpenAsTab={onOpenAsTab} onOpenFile={onOpenFile} /> : null}
       {agents.map((section) => (
         <SectionBlock key={section.id} section={section} label="Other agents here" now={now} onOpenNode={onOpenNode} />
       ))}

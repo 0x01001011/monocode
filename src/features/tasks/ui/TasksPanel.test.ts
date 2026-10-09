@@ -3,6 +3,7 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskBoard } from "../hooks/useTaskBoard";
+import type { FlowPhase } from "../model/flow";
 import type { StatusCard } from "../model/statusCard";
 import type { BoardNode, BoardSection } from "../model/taskBoard";
 import { TasksPanel } from "./TasksPanel";
@@ -355,5 +356,65 @@ describe("TasksPanel running task", () => {
     const open = container.querySelectorAll('[role="treeitem"][aria-expanded="true"]');
     expect(open).toHaveLength(1);
     expect(open[0].textContent).toContain("Step 5 title");
+  });
+});
+
+const FLOW: FlowPhase[] = [
+  { id: "spec", label: "Spec", status: "done", path: "docs/specs/alpha.md" },
+  { id: "plan", label: "Plan", status: "done", detail: "5 tasks", path: "docs/plans/alpha.md" },
+  { id: "build", label: "Build", status: "running", detail: "3 of 5" },
+  { id: "check", label: "Check", status: "pending" },
+];
+
+describe("TasksPanel flow strip", () => {
+  const strip = () => container.querySelector("ol[aria-label='Superpowers flow']");
+
+  it("sits under the progress line and above the legend and the tree", () => {
+    render({ board: board({ plan: plan(), flow: FLOW }) });
+    const list = strip();
+    expect(list).not.toBeNull();
+    click(button("What the symbols mean"));
+    const legend = container.querySelector("ul[aria-label='Symbol legend']");
+    const tree = container.querySelector("[role=tree]");
+    const progress = Array.from(container.querySelectorAll("div")).find((d) => d.textContent?.startsWith("3 of 5") && d.children.length === 0);
+    expect(progress).toBeDefined();
+    const before = (a: Element | null | undefined, b: Element | null) =>
+      Boolean(a && b && a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(before(progress, list)).toBe(true);
+    expect(before(list, legend)).toBe(true);
+    expect(before(list, tree)).toBe(true);
+  });
+
+  it("is absent without phases", () => {
+    render({ board: board({ plan: plan(), flow: [] }) });
+    expect(strip()).toBeNull();
+  });
+
+  it("opens the spec and the plan through onOpenFile with the path as written", () => {
+    const onOpenFile = vi.fn();
+    render({ board: board({ plan: plan(), flow: FLOW }), onOpenFile });
+    click(button("Spec"));
+    click(button("Plan"));
+    expect(onOpenFile.mock.calls).toEqual([["docs/specs/alpha.md"], ["docs/plans/alpha.md"]]);
+  });
+
+  it("shows no file buttons when the host cannot open files", () => {
+    render({ board: board({ plan: plan(), flow: FLOW }) });
+    expect(strip()?.querySelectorAll("button")).toHaveLength(0);
+  });
+
+  it("follows a status change", () => {
+    render({ board: board({ plan: plan(), flow: FLOW }) });
+    expect(strip()?.textContent).toContain("3 of 5");
+    render({
+      board: board({
+        plan: plan(),
+        flow: FLOW.map((p) => (p.id === "build" ? { ...p, status: "done" as const, detail: "5 of 5" } : p)),
+      }),
+    });
+    const build = Array.from(strip()?.querySelectorAll("li") ?? []).find((li) => li.textContent?.includes("Build"));
+    expect(build?.querySelector("[role=img]")?.getAttribute("aria-label")).toBe("done");
+    expect(build?.textContent).toContain("5 of 5");
+    expect(strip()?.querySelector("[aria-current=step]")?.textContent).toContain("Check");
   });
 });

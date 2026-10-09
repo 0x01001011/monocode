@@ -5,7 +5,7 @@ import { expect, test, type Page } from "@playwright/test";
 // measured by compositing text and glyphs over their real backgrounds (canvas
 // resolves color-mix and alpha, so the numbers are what the user sees).
 
-const STATES = ["needs-you", "struggling", "quiet", "running", "done"] as const;
+const STATES = ["needs-you", "struggling", "quiet", "running", "done", "failed check"] as const;
 const THEMES: [theme: "dark" | "light", palette: "default" | "colorblind" | "high-contrast"][] = [
   ["dark", "default"],
   ["light", "default"],
@@ -154,6 +154,25 @@ test.describe("tasks panel accessibility", () => {
   }
 });
 
+test.describe("tasks panel flow strip", () => {
+  test("is measured: four phases, the running one is current, spec and plan are buttons", async ({ page }) => {
+    await page.goto("/tests/browser/tasks-panel.html");
+    await page.evaluate(() => window.showTasks("running"));
+    const list = page.getByRole("list", { name: "Superpowers flow" });
+    await expect(list.getByRole("listitem")).toHaveCount(4);
+    await expect(list.locator('[aria-current="step"]')).toContainText("Build");
+    await expect(list.getByRole("button")).toHaveText(["Spec", "Plan"]);
+  });
+
+  test("the failed check variant shows the failed glyph and its detail", async ({ page }) => {
+    await page.goto("/tests/browser/tasks-panel.html");
+    await page.evaluate(() => window.showTasks("failed check"));
+    const check = page.getByRole("list", { name: "Superpowers flow" }).getByRole("listitem").nth(3);
+    await expect(check).toContainText("tests failed 2m ago");
+    await expect(check.getByRole("img", { name: "failed" })).toBeVisible();
+  });
+});
+
 test.describe("tasks panel widths", () => {
   for (const width of WIDTHS) {
     for (const theme of ["dark", "light"] as const) {
@@ -173,6 +192,26 @@ test.describe("tasks panel widths", () => {
         });
         expect(over.scrollWidth).toBeLessThanOrEqual(over.clientWidth);
         expect(over.clientWidth).toBeGreaterThan(0);
+
+        // The flow strip wraps onto more lines instead of running past the column.
+        const strip = await page.evaluate(() => {
+          const list = document.querySelector('ol[aria-label="Superpowers flow"]');
+          const column = document.getElementById("root")!.getBoundingClientRect();
+          const items = Array.from(list?.querySelectorAll("li") ?? []).map((li) => li.getBoundingClientRect());
+          return {
+            count: items.length,
+            right: Math.max(...items.map((r) => r.right)),
+            left: Math.min(...items.map((r) => r.left)),
+            columnLeft: column.left,
+            columnRight: column.right,
+            scrollWidth: list?.scrollWidth ?? 0,
+            clientWidth: list?.clientWidth ?? 0,
+          };
+        });
+        expect(strip.count).toBe(4);
+        expect(strip.right).toBeLessThanOrEqual(strip.columnRight + 0.5);
+        expect(strip.left).toBeGreaterThanOrEqual(strip.columnLeft - 0.5);
+        expect(strip.scrollWidth).toBeLessThanOrEqual(strip.clientWidth);
       });
     }
   }

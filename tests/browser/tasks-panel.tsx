@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import type { TaskBoard } from "../../src/features/tasks/hooks/useTaskBoard";
+import type { FlowPhase } from "../../src/features/tasks/model/flow";
 import type { StatusCard } from "../../src/features/tasks/model/statusCard";
 import type { BoardNode, BoardSection } from "../../src/features/tasks/model/taskBoard";
 import { TasksPanel } from "../../src/features/tasks/ui/TasksPanel";
@@ -97,10 +98,27 @@ const CARDS: Record<string, StatusCard> = {
   },
 };
 
-function board(card: StatusCard): TaskBoard {
+const FLOW: FlowPhase[] = [
+  { id: "spec", label: "Spec", status: "done", path: "docs/superpowers/specs/alpha-design.md" },
+  { id: "plan", label: "Plan", status: "done", detail: "6 tasks", path: "docs/superpowers/plans/alpha.md" },
+  { id: "build", label: "Build", status: "running", detail: "3 of 6, 2 subagents working" },
+  { id: "check", label: "Check", status: "pending" },
+];
+
+// The struggling state: Build is on a high fix round and the last test run failed.
+const FAILED_CHECK_FLOW: FlowPhase[] = FLOW.map((phase) =>
+  phase.id === "build"
+    ? { ...phase, status: "attention", detail: "3 of 6" }
+    : phase.id === "check"
+      ? { ...phase, status: "failed", detail: "tests failed 2m ago" }
+      : phase,
+);
+
+function board(card: StatusCard, flow: FlowPhase[] = FLOW): TaskBoard {
   return {
     sections: [plan],
     plan,
+    flow,
     statusCard: card,
     workspaces: [],
     selectWorkspace: () => {},
@@ -119,7 +137,17 @@ declare global {
 }
 
 window.showTasks = (state) => {
-  root.render(<TasksPanel board={board(CARDS[state])} now={NOW} onAction={() => {}} onOpenAsTab={() => {}} />);
+  const failedCheck = state === "failed check";
+  const card = failedCheck ? CARDS.struggling : CARDS[state];
+  root.render(
+    <TasksPanel
+      board={board(card, failedCheck ? FAILED_CHECK_FLOW : FLOW)}
+      now={NOW}
+      onAction={() => {}}
+      onOpenAsTab={() => {}}
+      onOpenFile={() => {}}
+    />,
+  );
 };
 
 window.setTheme = (theme, palette = "default") => {

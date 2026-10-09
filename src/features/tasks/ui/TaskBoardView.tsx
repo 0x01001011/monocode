@@ -6,6 +6,7 @@ import { planFilePath } from "../model/planRoot";
 import { progressLine } from "../model/progress";
 import type { StatusAction, StatusCard, StatusKind, StatusSessionInput } from "../model/statusCard";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
+import { FlowStrip } from "./FlowStrip";
 import { actionLabel } from "./StatusCard";
 import { TaskBoardNotes } from "./TaskBoardNotes";
 import { TaskRow } from "./TaskBoardRows";
@@ -174,6 +175,11 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
               {progressLine(plan, now)}
             </span>
           </div>
+          {board.flow.length > 0 ? (
+            <div className="mt-1 -ml-1">
+              <FlowStrip phases={board.flow} {...(onOpenPlan ? { onOpenPath: (path: string) => onOpenPlan(planFilePath(planCwd, path)) } : {})} />
+            </div>
+          ) : null}
           {actions.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {actions.map((action) => (

@@ -3,6 +3,7 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskBoard } from "../hooks/useTaskBoard";
+import type { FlowPhase } from "../model/flow";
 import type { StatusCard } from "../model/statusCard";
 import type { BoardNode, BoardSection } from "../model/taskBoard";
 import { TaskBoardView } from "./TaskBoardView";
@@ -472,5 +473,52 @@ describe("TaskBoardView", () => {
       click(buttons("Review decisions")[0]);
       expect(scrolled[0].options).toEqual({ block: "start", behavior: "auto" });
     });
+  });
+});
+
+describe("TaskBoardView flow strip", () => {
+  const FLOW: FlowPhase[] = [
+    { id: "spec", label: "Spec", status: "done", path: "docs/specs/alpha.md" },
+    { id: "plan", label: "Plan", status: "done", detail: "4 tasks", path: PLAN_PATH },
+    { id: "build", label: "Build", status: "running", detail: "2 of 4" },
+    { id: "check", label: "Check", status: "pending" },
+  ];
+  const strip = () => container.querySelector("ol[aria-label='Superpowers flow']");
+
+  it("sits in the header under the plan title and progress line", () => {
+    hook.board = board({ flow: FLOW });
+    render();
+    const list = strip();
+    expect(list).not.toBeNull();
+    expect(container.querySelector("header")?.contains(list)).toBe(true);
+    const progress = Array.from(container.querySelectorAll("header span")).find((s) => s.textContent?.startsWith("Alpha plan · "));
+    expect(progress).toBeDefined();
+    expect(progress!.compareDocumentPosition(list!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelector("table")!.compareDocumentPosition(list!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+
+  it("is absent without phases", () => {
+    render();
+    expect(strip()).toBeNull();
+  });
+
+  it("opens the spec and the plan resolved against the plan root", () => {
+    hook.board = board({ flow: FLOW });
+    const onOpenPlan = vi.fn();
+    render({ onOpenPlan, planCwd: "/wt/mc-1" });
+    const inStrip = (name: string) => Array.from(strip()!.querySelectorAll("button")).find((b) => b.textContent?.trim() === name);
+    click(inStrip("Spec"));
+    click(inStrip("Plan"));
+    expect(onOpenPlan.mock.calls).toEqual([["/wt/mc-1/docs/specs/alpha.md"], [`/wt/mc-1/${PLAN_PATH}`]]);
+  });
+
+  it("updates when build finishes", () => {
+    hook.board = board({ flow: FLOW });
+    render();
+    expect(strip()?.querySelector("[aria-current=step]")?.textContent).toContain("Build");
+    hook.board = board({ flow: FLOW.map((p) => (p.id === "build" ? { ...p, status: "done" as const, detail: "4 of 4" } : p)) });
+    render();
+    expect(strip()?.querySelector("[aria-current=step]")?.textContent).toContain("Check");
+    expect(strip()?.textContent).toContain("4 of 4");
   });
 });
