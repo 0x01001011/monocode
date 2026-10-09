@@ -217,4 +217,117 @@ describe("TaskTree", () => {
     press(a, "ArrowLeft");
     expect(onToggle).toHaveBeenCalledWith("a");
   });
+
+  it("does not swallow Escape, Tab or modified keys", () => {
+    const seen: string[] = [];
+    const listener = (e: KeyboardEvent) => seen.push(e.key);
+    window.addEventListener("keydown", listener);
+    try {
+      render({ nodes: [node("a", { summary: "x" }), node("b")] });
+      const [a] = items();
+      focus(a);
+      for (const key of ["Escape", "Tab"]) {
+        const ev = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+        act(() => {
+          a.dispatchEvent(ev);
+        });
+        expect(ev.defaultPrevented, key).toBe(false);
+      }
+      expect(seen).toEqual(["Escape", "Tab"]);
+      const alt = new KeyboardEvent("keydown", { key: "ArrowLeft", altKey: true, bubbles: true, cancelable: true });
+      act(() => {
+        a.dispatchEvent(alt);
+      });
+      expect(alt.defaultPrevented).toBe(false);
+      press(a, "ArrowRight");
+      const ctrl = new KeyboardEvent("keydown", { key: "ArrowLeft", ctrlKey: true, bubbles: true, cancelable: true });
+      act(() => {
+        a.dispatchEvent(ctrl);
+      });
+      expect(a.getAttribute("aria-expanded")).toBe("true");
+    } finally {
+      window.removeEventListener("keydown", listener);
+    }
+  });
+
+  it("a nested treeitem key event does not run the parent handler", () => {
+    render({
+      nodes: [node("a", { children: [node("a1")] }), node("b")],
+      expandedIds: new Set(["a"]),
+    });
+    const [a, a1] = items();
+    focus(a1);
+    press(a1, "ArrowDown");
+    // Only the child's handler ran: focus moved once, to b (not twice).
+    expect(document.activeElement).toBe(items()[2]);
+    expect(a.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("a steps-only node has no chevron and no aria-expanded", () => {
+    render({ nodes: [node("a", { steps: [{ text: "s", done: false }] })] });
+    expect(items()[0].hasAttribute("aria-expanded")).toBe(false);
+    expect(container.querySelector("[data-chevron]")).toBeNull();
+  });
+
+  it("stage rows are not openable", () => {
+    const onOpen = vi.fn();
+    render({
+      onOpen,
+      nodes: [
+        node("a", {
+          status: "running",
+          startedAt: 0,
+          stages: [{ kind: "implement", label: "Code written", status: "done" }],
+        }),
+      ],
+      expandedIds: new Set(["a"]),
+    });
+    const stage = items()[1];
+    expect(stage.textContent).toContain("Code written");
+    focus(stage);
+    press(stage, "Enter");
+    expect(onOpen).not.toHaveBeenCalled();
+    act(() => {
+      stage.querySelector<HTMLElement>("[data-row]")?.click();
+    });
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("clicking an expandable row toggles it; a plain row opens", () => {
+    const onOpen = vi.fn();
+    const nodes = [node("a", { summary: "More" }), node("b")];
+    render({ nodes, onOpen });
+    const [a, b] = items();
+    act(() => {
+      a.querySelector<HTMLElement>("[data-row]")?.click();
+    });
+    expect(a.getAttribute("aria-expanded")).toBe("true");
+    expect(onOpen).not.toHaveBeenCalled();
+    act(() => {
+      b.querySelector<HTMLElement>("[data-row]")?.click();
+    });
+    expect(onOpen).toHaveBeenCalledWith(nodes[1]);
+  });
+
+  it("left arrow on a collapsed root item does nothing", () => {
+    render({ nodes: [node("a", { summary: "x" }), node("b")] });
+    const a = items()[0];
+    focus(a);
+    press(a, "ArrowLeft");
+    expect(document.activeElement).toBe(a);
+    expect(a.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("collapsing the parent of the focused child moves the tab stop and focus to the parent", () => {
+    const nodes = [node("a", { children: [node("a1")] }), node("b")];
+    render({ nodes, expandedIds: new Set(["a"]) });
+    const a1 = items()[1];
+    focus(a1);
+    expect(a1.tabIndex).toBe(0);
+    render({ nodes, expandedIds: new Set() });
+    const [a, b] = items();
+    expect(a.tabIndex).toBe(0);
+    expect(b.tabIndex).toBe(-1);
+    expect(document.activeElement).toBe(a);
+  });
 });

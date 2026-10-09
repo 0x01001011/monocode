@@ -1,4 +1,5 @@
 import {
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -43,8 +44,17 @@ function childrenOf(node: BoardNode): { node: BoardNode; openable: boolean }[] {
   ];
 }
 
+// Only content the sidebar renders earns a chevron; `steps` belong to the full tab.
 function canExpand(node: BoardNode): boolean {
-  return Boolean(node.summary || node.stages?.length || node.children?.length || node.steps?.length);
+  return Boolean(node.summary || node.stages?.length || node.children?.length);
+}
+
+function parentIndex(nodes: BoardNode[], parentId?: string, out = new Map<string, string | undefined>()) {
+  for (const node of nodes) {
+    out.set(node.id, parentId);
+    parentIndex(childrenOf(node).map((c) => c.node), node.id, out);
+  }
+  return out;
 }
 
 function glyphFor(node: BoardNode): GlyphKind {
@@ -91,7 +101,22 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
   };
 
   const visible = flatten(nodes.map((node) => ({ node, openable: true })), expanded, undefined, 0, []);
-  const tabId = visible.some((e) => e.node.id === activeId) ? activeId : visible[0]?.node.id;
+  const visibleIds = new Set(visible.map((e) => e.node.id));
+  let tabId: string | undefined = activeId;
+  if (tabId !== undefined && !visibleIds.has(tabId)) {
+    const parents = parentIndex(nodes);
+    while (tabId !== undefined && !visibleIds.has(tabId)) tabId = parents.get(tabId);
+  }
+  tabId ??= visible[0]?.node.id;
+
+  // When a collapse removes the focused row, keep focus inside the tree on the ancestor.
+  const treeRef = useRef<HTMLUListElement>(null);
+  const focusInside = useRef(false);
+  useLayoutEffect(() => {
+    if (!focusInside.current || tabId === undefined) return;
+    if (treeRef.current?.contains(document.activeElement)) return;
+    refs.current.get(tabId)?.focus();
+  });
 
   const focusEntry = (entry: Entry | undefined) => {
     if (!entry) return;
@@ -100,7 +125,8 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLLIElement>, entry: Entry) => {
-    event.stopPropagation();
+    if (event.target !== event.currentTarget) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
     const index = visible.indexOf(entry);
     const { node } = entry;
     const isExpandable = canExpand(node);
@@ -219,7 +245,21 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
     });
 
   return (
-    <ul role="tree" aria-label={label} className="m-0 list-none p-0">
+    <ul
+      ref={treeRef}
+      role="tree"
+      aria-label={label}
+      className="m-0 list-none p-0"
+      onFocus={() => {
+        focusInside.current = true;
+      }}
+      onBlur={(e) => {
+        // A removed row may blur with no target; only a real move out ends "inside".
+        if (e.target.isConnected && !treeRef.current?.contains(e.relatedTarget as Node | null)) {
+          focusInside.current = false;
+        }
+      }}
+    >
       {renderRows(nodes.map((node) => ({ node, openable: true })), undefined, 0)}
     </ul>
   );
