@@ -115,6 +115,21 @@ pub fn parse_pr_url(url: &str) -> Option<(String, u32)> {
 /// Records `branch` as one the chat worked on. No-op for no branch, a detached
 /// HEAD, the repo's default branch or a checkout without a GitHub remote.
 pub fn note_branch(conn: &Connection, session_id: &str, cwd: &str, branch: Option<&str>) {
+    note_branch_as(conn, session_id, cwd, branch, "save");
+}
+
+/// `note_branch` for a branch seen through git trace2 events.
+pub fn note_branch_trace(conn: &Connection, session_id: &str, cwd: &str, branch: Option<&str>) {
+    note_branch_as(conn, session_id, cwd, branch, "trace2");
+}
+
+fn note_branch_as(
+    conn: &Connection,
+    session_id: &str,
+    cwd: &str,
+    branch: Option<&str>,
+    source: &str,
+) {
     let Some(name) = usable_branch(branch) else {
         return;
     };
@@ -126,15 +141,28 @@ pub fn note_branch(conn: &Connection, session_id: &str, cwd: &str, branch: Optio
     if repo_facts_for(&root).default_branch.as_deref() == Some(name) {
         return;
     }
-    note_branch_with(conn, session_id, cwd, branch, repo_slug_for);
+    note_branch_with_source(conn, session_id, cwd, branch, source, repo_slug_for);
 }
 
 /// `note_branch` with the repo lookup injected so tests need no git.
+#[cfg(test)]
 pub fn note_branch_with(
     conn: &Connection,
     session_id: &str,
     cwd: &str,
     branch: Option<&str>,
+    resolve: impl Fn(&Path) -> Option<String>,
+) {
+    note_branch_with_source(conn, session_id, cwd, branch, "save", resolve);
+}
+
+/// `note_branch_with` that also names the signal (`save`, `trace2`) behind it.
+pub fn note_branch_with_source(
+    conn: &Connection,
+    session_id: &str,
+    cwd: &str,
+    branch: Option<&str>,
+    source: &str,
     resolve: impl Fn(&Path) -> Option<String>,
 ) {
     let Some(name) = usable_branch(branch) else {
@@ -143,7 +171,7 @@ pub fn note_branch_with(
     let Some(repo) = resolve(&crate::fs::expand_home(cwd)) else {
         return;
     };
-    if let Err(err) = pr_store::record_branch(conn, session_id, &repo, name, "save", now_millis()) {
+    if let Err(err) = pr_store::record_branch(conn, session_id, &repo, name, source, now_millis()) {
         eprintln!("[pr_attribution] could not record branch {name} for {session_id}: {err}");
     }
 }
@@ -346,6 +374,16 @@ mod tests {
             .query_row("SELECT source FROM session_branches", [], |r| r.get(0))
             .unwrap();
         assert_eq!(source, "save");
+    }
+
+    #[test]
+    fn note_branch_with_source_records_the_given_source() {
+        let conn = conn();
+        note_branch_with_source(&conn, "s1", "/work", Some("feat/a"), "trace2", repo);
+        let source: String = conn
+            .query_row("SELECT source FROM session_branches", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(source, "trace2");
     }
 
     #[test]

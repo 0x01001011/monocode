@@ -230,7 +230,9 @@ pub fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     )
 }
 
-/// Upsert: keeps `first_seen`, bumps `last_seen`.
+/// Upsert: keeps `first_seen`, bumps `last_seen`. A `trace2` sighting upgrades
+/// the row's source so "git activity is observed for this chat" stays visible
+/// even when a save recorded the branch first.
 pub fn record_branch(
     conn: &Connection,
     session_id: &str,
@@ -243,7 +245,8 @@ pub fn record_branch(
         "INSERT INTO session_branches (session_id, repo, branch, source, first_seen, last_seen)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5)
          ON CONFLICT (session_id, repo, branch)
-         DO UPDATE SET last_seen = MAX(last_seen, excluded.last_seen)",
+         DO UPDATE SET last_seen = MAX(last_seen, excluded.last_seen),
+                       source = CASE WHEN excluded.source = 'trace2' THEN 'trace2' ELSE source END",
         params![session_id, repo, branch, source, now],
     )?;
     Ok(())
@@ -445,6 +448,22 @@ mod tests {
                 .unwrap();
             assert_eq!(n, 1, "{table} missing");
         }
+    }
+
+    #[test]
+    fn record_branch_upgrades_source_to_trace2_but_never_back() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let source = |conn: &Connection| -> String {
+            conn.query_row("SELECT source FROM session_branches", [], |r| r.get(0))
+                .unwrap()
+        };
+        record_branch(&conn, "s1", "o/r", "feat/a", "save", 1).unwrap();
+        assert_eq!(source(&conn), "save");
+        record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 2).unwrap();
+        assert_eq!(source(&conn), "trace2");
+        record_branch(&conn, "s1", "o/r", "feat/a", "save", 3).unwrap();
+        assert_eq!(source(&conn), "trace2");
     }
 
     #[test]

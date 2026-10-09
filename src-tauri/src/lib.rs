@@ -36,6 +36,7 @@ mod pasteboard;
 mod pi_usage;
 mod pr_attribution;
 mod pr_store;
+mod pr_trace;
 mod project_logo;
 mod pty;
 #[cfg(target_os = "macos")]
@@ -255,6 +256,7 @@ pub fn run() {
         .setup(|app| {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
+            pr_trace::start(app.handle());
             control::init(app.handle())?;
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
