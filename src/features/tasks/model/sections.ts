@@ -103,11 +103,35 @@ function agentNode(block: Block): BoardNode {
   };
 }
 
+const SDD_FILE = /\btask-\d+-(?:brief|report)\.md\b|\breview-\S+?\.\.\S+?\.diff\b/;
+
+/** What an agent block says about its job: its prompt, tool detail and the steps it took. */
+function agentText(block: Block): string {
+  const steps = block.agentRun?.steps ?? [];
+  return [block.text, block.tool?.detail, ...steps.flatMap((step) => [step.text, step.detail, step.preview?.path])]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join("\n");
+}
+
+/**
+ * True for an SDD implementer or reviewer: it is handed the plan workspace, a task brief or
+ * report, or a review package. An agent with nothing readable cannot be told apart, so the
+ * session that owns the plan counts it as a stage too.
+ */
+export function isSddStageAgent(block: Block, workspaceSlug: string, ownsPlan: boolean): boolean {
+  const text = agentText(block);
+  const all = [block.agentRun?.name, block.tool?.title, text].filter(Boolean).join("\n");
+  if (SDD_FILE.test(all) || all.includes(`.superpowers/sdd/${workspaceSlug}`)) return true;
+  return !text && ownsPlan;
+}
+
+/** Subagents of the transcript; `skip` leaves out the ones another section already shows. */
 export function buildAgentSection(
   blocks: readonly Block[],
   _now: number,
+  skip?: (block: Block) => boolean,
 ): BoardSection | undefined {
-  const nodes = blocks.filter(isAgentBlock).map(agentNode);
+  const nodes = blocks.filter((block) => isAgentBlock(block) && !skip?.(block)).map(agentNode);
   return nodes.length ? sectionOf("agents", "agents", "Subagents", nodes) : undefined;
 }
 

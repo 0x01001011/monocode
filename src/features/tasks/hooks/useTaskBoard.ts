@@ -14,6 +14,7 @@ import {
   buildOrchestrationSection,
   buildTodoSection,
   dropMirroredTodos,
+  isSddStageAgent,
 } from "../model/sections";
 import { deriveStatusCard, type StatusCard, type StatusSessionInput } from "../model/statusCard";
 import type { BoardSection } from "../model/taskBoard";
@@ -144,6 +145,14 @@ export function useTaskBoard(input: Input): TaskBoard {
 
   const data = loaded?.cwd === planCwd ? loaded : undefined;
   const plan = data?.plan;
+  const slug = data?.selected;
+
+  // Only sessions working in the plan root can run the plan; the active one is not assumed.
+  const planOwnerIds = useStable(
+    sessions.filter((s) => s.workCwd !== undefined && sameProjectPath(s.workCwd, planCwd)).map((s) => s.id),
+  );
+
+  const ownsPlan = sessionId !== undefined && planOwnerIds.includes(sessionId);
 
   const sections = useStable(
     useMemo(() => {
@@ -153,16 +162,12 @@ export function useTaskBoard(input: Input): TaskBoard {
       return [
         plan,
         buildOrchestrationSection(run, now),
-        blocks ? buildAgentSection(blocks, now) : undefined,
+        // The plan's own implementers and reviewers already show as its stages.
+        blocks ? buildAgentSection(blocks, now, plan && slug ? (b) => isSddStageAgent(b, slug, ownsPlan) : undefined) : undefined,
         todos,
       ].filter((s): s is BoardSection => s !== undefined);
       // `clock` re-derives times as polls complete.
-    }, [visible, plan, run, blocks, clock]),
-  );
-
-  // Only sessions working in the plan root can run the plan; the active one is not assumed.
-  const planOwnerIds = useStable(
-    sessions.filter((s) => s.workCwd !== undefined && sameProjectPath(s.workCwd, planCwd)).map((s) => s.id),
+    }, [visible, plan, slug, ownsPlan, run, blocks, clock]),
   );
 
   // A snooze changes the card at once, without waiting for the next poll.

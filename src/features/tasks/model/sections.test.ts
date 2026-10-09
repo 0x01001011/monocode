@@ -11,6 +11,7 @@ import {
   buildOrchestrationSection,
   buildTodoSection,
   dropMirroredTodos,
+  isSddStageAgent,
 } from "./sections";
 
 const T0 = Date.UTC(2026, 9, 9, 10, 0, 0);
@@ -143,6 +144,39 @@ describe("buildAgentSection", () => {
     expect(s.nodes.map((n) => n.id)).toEqual(["b"]);
     expect(s.nodes[0].title).toBe("Do it");
     expect(buildAgentSection([other], T0)).toBeUndefined();
+  });
+});
+
+describe("SDD stage agents", () => {
+  const SLUG = "2026-10-09-tasks-panel";
+  const sdd = (id: string, text: string, extra: Partial<Block> = {}) => agentBlock(id, { text, tool: { kind: "agent", title: "Agent" }, ...extra });
+
+  it("recognises implementers and reviewers by the files they are handed", () => {
+    const marked = [
+      sdd("brief", "Implement the task in .superpowers/sdd/2026-10-09-tasks-panel/task-3-brief.md"),
+      sdd("report", "Read task-3-report.md and review it"),
+      sdd("diff", "Review the package review-423e98a..f64a336.diff"),
+      sdd("dir", "Work from /wt/.superpowers/sdd/2026-10-09-tasks-panel"),
+      sdd("step", "", {
+        agentRun: { name: "Implementer", steps: [{ id: "s", kind: "tool", text: "Read", detail: "/wt/x/task-12-brief.md" }] },
+      }),
+      sdd("detail", "", { tool: { kind: "agent", title: "Agent", detail: "see task-1-brief.md" } }),
+    ];
+    for (const block of marked) expect(isSddStageAgent(block, SLUG, false)).toBe(true);
+    expect(isSddStageAgent(sdd("other", "Explore how the sidebar renders tabs"), SLUG, true)).toBe(false);
+  });
+
+  it("an agent with nothing readable counts as a stage only in the session that owns the plan", () => {
+    const blank = sdd("blank", "", { agentRun: { name: "Subagent", steps: [] } });
+    expect(isSddStageAgent(blank, SLUG, true)).toBe(true);
+    expect(isSddStageAgent(blank, SLUG, false)).toBe(false);
+  });
+
+  it("buildAgentSection leaves out what the skip test matches", () => {
+    const blocks = [sdd("a", "task-1-brief.md"), sdd("b", "Explore the repo")];
+    const s = buildAgentSection(blocks, T0, (b) => isSddStageAgent(b, SLUG, true))!;
+    expect(s.nodes.map((n) => n.id)).toEqual(["b"]);
+    expect(buildAgentSection([sdd("a", "task-1-brief.md")], T0, (b) => isSddStageAgent(b, SLUG, true))).toBeUndefined();
   });
 });
 

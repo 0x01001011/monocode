@@ -351,6 +351,20 @@ describe("useTaskBoard", () => {
     expect(latest?.statusCard).toMatchObject({ kind: "running", sessionId: "runner", headline: "A reviewer is checking Task 1" });
   });
 
+  it("leaves the plan's implementers and reviewers out of Other agents", async () => {
+    const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+    const agent = (id: string, text: string): Block => ({
+      id,
+      role: "tool",
+      text,
+      tool: { kind: "agent", title: "Agent", status: "completed" },
+      agentRun: { name: id, steps: [] },
+    });
+    const blocks = [agent("implementer", "Do .superpowers/sdd/2026-10-05-plan/task-1-brief.md"), agent("explorer", "Explore the repo")];
+    await mount(base(fs, { activeSession: session("lead", blocks) }));
+    expect(latest?.sections.find((x) => x.source === "agents")?.nodes.map((n) => n.id)).toEqual(["explorer"]);
+  });
+
   it("keeps the status card current from the plan while hidden", async () => {
     const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
     const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
