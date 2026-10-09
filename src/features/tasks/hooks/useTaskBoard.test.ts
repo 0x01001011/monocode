@@ -226,6 +226,23 @@ describe("useTaskBoard", () => {
     expect(lists()).toBeGreaterThan(first);
   });
 
+  it("closing the panel while a session is busy adds no load; opening it loads at once", async () => {
+    const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+    const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
+    await mount(base(fs, { sessions: busy }));
+    expect(loads()).toBe(1);
+    await mount(base(fs, { sessions: busy, visible: false }));
+    await advance(0);
+    expect(loads()).toBe(1);
+    await advance(3_000);
+    expect(loads()).toBe(2);
+    await advance(14_999);
+    expect(loads()).toBe(2);
+    await mount(base(fs, { sessions: busy, visible: true }));
+    await advance(0);
+    expect(loads()).toBe(3);
+  });
+
   it("section load failure renders nothing and keeps the rest", async () => {
     const throwing: SddFs = {
       listDir: () => Promise.reject(new Error("boom")),
@@ -280,12 +297,56 @@ describe("useTaskBoard", () => {
     expect(latest?.plan?.nodes[0]?.title).toBe("Old thing");
   });
 
-  it("reloads immediately when the transcript grows", async () => {
-    const { fs, lists } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
-    await mount(base(fs, { activeSession: session("lead", []) }));
-    const before = lists();
-    await mount(base(fs, { activeSession: session("lead", [todoBlock]) }));
-    expect(lists()).toBeGreaterThan(before);
+  describe("reloads when a tool call completes", () => {
+    const text = (i: number): Block => ({ id: `text-${i}`, role: "assistant", text: `chunk ${i}`, streaming: true });
+    const doneTool = (i: number): Block => ({
+      id: `tool-${i}`,
+      role: "tool",
+      text: "",
+      tool: { kind: "execute", title: "ls", status: "completed" },
+      toolStartedAt: 1,
+      toolEndedAt: 2,
+    });
+
+    it("reloads at once when a tool completes, not when other blocks arrive", async () => {
+      const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+      await mount(base(fs, { activeSession: session("lead", []) }));
+      expect(loads()).toBe(1);
+      await mount(base(fs, { activeSession: session("lead", [text(1), todoBlock]) }));
+      await advance(0);
+      expect(loads()).toBe(1);
+      await mount(base(fs, { activeSession: session("lead", [text(1), todoBlock, doneTool(1)]) }));
+      await advance(0);
+      expect(loads()).toBe(2);
+    });
+
+    it("10 text blocks during a slow load neither cancel it nor add a load", async () => {
+      const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "Slow", 9_000), 4_000);
+      const blocks: Block[] = [];
+      await mount(base(fs, { activeSession: session("lead", [...blocks]) }));
+      for (let i = 0; i < 10; i++) {
+        blocks.push(text(i));
+        await mount(base(fs, { activeSession: session("lead", [...blocks]) }));
+        await advance(100);
+      }
+      await advance(8_000);
+      expect(latest?.plan?.nodes[0]?.title).toBe("Slow");
+      expect(loads()).toBe(1);
+    });
+
+    it("tools that complete during a load queue exactly one follow-up after it settles", async () => {
+      const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "Slow", 9_000), 4_000);
+      await mount(base(fs, { activeSession: session("lead", []) }));
+      await mount(base(fs, { activeSession: session("lead", [doneTool(1)]) }));
+      await mount(base(fs, { activeSession: session("lead", [doneTool(1), doneTool(2)]) }));
+      expect(loads()).toBe(1);
+      await advance(8_000);
+      // The first load settled with its result, then exactly one follow-up started.
+      expect(latest?.plan?.nodes[0]?.title).toBe("Slow");
+      expect(loads()).toBe(2);
+      await advance(7_999);
+      expect(loads()).toBe(2);
+    });
   });
 
   it("is safe under StrictMode and stops polling after unmount", async () => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { orchestrator } from "../../orchestration/model/orchestration";
 import { sameProjectPath } from "../../projects/model/recents";
-import type { Session } from "../../sessions/model/session";
+import type { Block, Session } from "../../sessions/model/session";
 import { buildSddSection } from "../model/sddBoard";
 import {
   findSddWorkspaces,
@@ -63,6 +63,13 @@ function useStable<T>(value: T): T {
   return useMemo(() => value, [key]);
 }
 
+/** Tool calls that have finished (they carry an end time). */
+function completedTools(blocks: readonly Block[] | undefined): number {
+  let count = 0;
+  for (const block of blocks ?? []) if (block.role === "tool" && block.toolEndedAt !== undefined) count++;
+  return count;
+}
+
 /** One load: workspace list, then the selected (else newest) workspace. Never rejects. */
 async function loadPlan(
   fs: SddFs,
@@ -93,11 +100,13 @@ export function useTaskBoard(input: Input): TaskBoard {
 
   const sessionId = activeSession?.id;
   const blocks = activeSession?.blocks;
-  // Transcript growth reloads at once only for a panel on screen; a hidden one keeps its cadence.
-  const blockCount = visible ? (blocks?.length ?? 0) : 0;
+  // A completed tool call reloads at once, only for a panel on screen; a hidden one keeps its cadence.
+  const toolsDone = visible ? completedTools(blocks) : 0;
   const anyBusy = sessions.some((s) => s.busy);
   const polling = visible || anyBusy;
   const interval = visible ? pollVisible : pollHidden;
+  const intervalRef = useRef(interval);
+  intervalRef.current = interval;
 
   const [loaded, setLoaded] = useState<Loaded>();
   const [choice, setChoice] = useState<{ cwd: string; slug: string }>();
@@ -105,10 +114,29 @@ export function useTaskBoard(input: Input): TaskBoard {
   const request = useRef(0);
   const wanted = choice?.cwd === planCwd ? choice.slug : undefined;
 
+  // Asks the running poll loop for a fresh load: at once when idle, else one follow-up
+  // after the load in flight settles. Never cancels a load. Unset while not polling.
+  const kick = useRef<(() => void) | undefined>(undefined);
+  // These run before the poll effect, so a change that also restarts the loop finds no
+  // loop to kick (React runs every cleanup first) and adds no load of its own.
+  const seenTools = useRef({ key: "", count: 0 });
+  useEffect(() => {
+    const key = `${sessionId ?? ""}|${visible}`;
+    const seen = seenTools.current;
+    seenTools.current = { key, count: toolsDone };
+    if (seen.key === key && toolsDone > seen.count) kick.current?.();
+  }, [sessionId, visible, toolsDone]);
+  // Opening the panel refreshes at once; closing it keeps the current schedule.
+  useEffect(() => {
+    if (visible) kick.current?.();
+  }, [visible]);
+
   useEffect(() => {
     if (!polling) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight = false;
+    let queued = false;
     const load = async () => {
       const id = ++request.current;
       const next = await loadPlan(fs, planCwd, wanted, nowRef.current());
@@ -122,18 +150,36 @@ export function useTaskBoard(input: Input): TaskBoard {
     };
     // The next poll starts only after this one settles, so a slow load is never starved.
     const poll = async () => {
+      inFlight = true;
       try {
         await load();
       } finally {
-        if (!cancelled) timer = setTimeout(() => void poll(), interval);
+        inFlight = false;
+        if (!cancelled) {
+          if (queued) {
+            queued = false;
+            void poll();
+          } else {
+            timer = setTimeout(() => void poll(), intervalRef.current);
+          }
+        }
       }
+    };
+    kick.current = () => {
+      if (inFlight) {
+        queued = true;
+        return;
+      }
+      clearTimeout(timer);
+      void poll();
     };
     void poll();
     return () => {
       cancelled = true;
+      kick.current = undefined;
       clearTimeout(timer);
     };
-  }, [polling, interval, fs, planCwd, wanted, sessionId, blockCount]);
+  }, [polling, fs, planCwd, wanted, sessionId]);
 
   const selectWorkspace = useCallback(
     (slug: string) => setChoice({ cwd: planCwd, slug }),
