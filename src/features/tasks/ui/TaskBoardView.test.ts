@@ -285,16 +285,44 @@ describe("TaskBoardView", () => {
     expect(container.querySelector("tr[data-detail]")).toBeNull();
   });
 
-  it("an unfinished task's steps are never ticked", () => {
+  it("the detail heading counts ticked steps and unticked steps read not ticked", () => {
     render();
     click(buttons("Show details for Task 3")[0]);
     const detail = container.querySelector("tr[data-detail=task-3]");
+    expect(detail?.textContent).toContain("Plan steps · 0 of 1");
     expect(detail?.textContent).toContain("Wire it up");
     expect(detail?.querySelectorAll("[aria-label=done]")).toHaveLength(0);
-    // Briefs do not record step progress: the mark says so instead of "not done".
-    expect(detail?.querySelectorAll('[aria-label="status unknown"]')).toHaveLength(1);
-    expect(detail?.querySelectorAll('[aria-label="not done"]')).toHaveLength(0);
+    expect(detail?.querySelectorAll('[aria-label="not ticked"]')).toHaveLength(1);
+    expect(detail?.querySelectorAll('[aria-label="status unknown"]')).toHaveLength(0);
     expect(buttons("Open review")).toHaveLength(0);
+  });
+
+  it("a running task with some ticked steps shows the count and each mark", () => {
+    const mixed = task(3, {
+      status: "running",
+      endedAt: undefined,
+      steps: [
+        { text: "One", done: true },
+        { text: "Two", done: false },
+        { text: "Three", done: true },
+      ],
+    });
+    const p = plan({ nodes: [mixed], total: 1, done: 0 });
+    hook.board = board({ plan: p, sections: [p] });
+    render();
+    click(buttons("Show details for Task 3")[0]);
+    const detail = container.querySelector("tr[data-detail=task-3]");
+    expect(detail?.textContent).toContain("Plan steps · 2 of 3");
+    expect(detail?.querySelectorAll("[aria-label=done]")).toHaveLength(2);
+    expect(detail?.querySelectorAll('[aria-label="not ticked"]')).toHaveLength(1);
+  });
+
+  it("a done task's steps are all ticked and the heading says so", () => {
+    render();
+    click(buttons("Show details for Task 2")[0]);
+    const detail = container.querySelector("tr[data-detail=task-2]");
+    expect(detail?.textContent).toContain("Plan steps · 2 of 2");
+    expect(detail?.querySelectorAll('[aria-label="not ticked"]')).toHaveLength(0);
   });
 
   it("shows the transcript button for a transcript target", () => {

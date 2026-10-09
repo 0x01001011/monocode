@@ -67,8 +67,7 @@ function StepMark({ done }: { done: boolean }) {
       <Check className="size-2.5" strokeWidth={2.5} aria-hidden="true" />
     </span>
   ) : (
-    // A brief does not record which steps finished, so an unfinished task's steps are unknown.
-    <span role="img" aria-label="status unknown" title="status unknown" className="size-3.5 shrink-0 rounded-[3px] border border-muted" />
+    <span role="img" aria-label="not ticked" className="size-3.5 shrink-0 rounded-[3px] border border-muted" />
   );
 }
 
@@ -99,7 +98,9 @@ function Detail({ node, section, id, onOpenNode }: Pick<RowProps, "node" | "sect
         </div>
         {node.steps?.length ? (
           <div className="mt-1.5">
-            <div className="text-[11.5px] text-muted">Plan steps</div>
+            <div className="text-[11.5px] text-muted">
+              Plan steps · {node.steps.filter((step) => step.done).length} of {node.steps.length}
+            </div>
             <ul aria-label={`Plan steps for ${taskName(node)}`} className="m-0 list-none p-0">
               {node.steps.map((step, i) => (
                 <li key={i} className="flex min-h-6 items-center gap-2 text-[12.5px] text-content/85">

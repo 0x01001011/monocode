@@ -82,11 +82,12 @@ const KIND_CLASS: Record<GlyphKind, string> = {
   issues: CELL,
 };
 
-export function TaskGlyph({ kind, small = false }: { kind: GlyphKind; small?: boolean }) {
+/** `label` replaces the kind's default name, e.g. "not ticked" for the ring on a plan step. */
+export function TaskGlyph({ kind, small = false, label }: { kind: GlyphKind; small?: boolean; label?: string }) {
   return (
     <span
       role="img"
-      aria-label={LABELS[kind]}
+      aria-label={label ?? LABELS[kind]}
       className={`${KIND_CLASS[kind]}${small ? " scale-[0.82]" : ""}`}
     >
       <Mark kind={kind} />
