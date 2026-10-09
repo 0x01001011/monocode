@@ -92,6 +92,7 @@ describe("loadSddSnapshot", () => {
         `${DIR}/task-1-brief.md`,
         `${DIR}/task-1-report.md`,
         `${DIR}/task-2-brief.md`,
+        "/proj/p.md",
       ].sort(),
     );
     expect(lists()).toBe(1);
@@ -126,5 +127,89 @@ describe("loadSddSnapshot", () => {
     const { fs } = fakeFs({ [`${dir}/task-1-brief.md`]: { text: "### Task 1: One\n" } });
     const snap = await loadSddSnapshot(fs, { dir, slug: "s", ledgerMtimeMs: 0 });
     expect(snap.mtimes).toEqual({});
+  });
+});
+
+describe("loadSddSnapshot plan file", () => {
+  const DIR = `${ROOT}/2026-10-09-demo`;
+  const ref = { dir: DIR, slug: "2026-10-09-demo", ledgerMtimeMs: 1 };
+  const PLAN = "### Task 1: One\n- [ ] a\n";
+  const ledger = (planPath: string) => ({ [`${DIR}/progress.md`]: { text: `# SDD ledger — plan: ${planPath}\n`, mtimeMs: 1 } });
+  const reads = (log: string[], path: string) => log.filter((p) => p === path).length;
+
+  it("reads a relative plan path once, against the root that holds .superpowers", async () => {
+    const { fs, reads: log } = fakeFs({ ...ledger("docs/plan.md"), "/proj/docs/plan.md": { text: PLAN } });
+    const snap = await loadSddSnapshot(fs, ref);
+    expect(snap.planText).toBe(PLAN);
+    expect(reads(log, "/proj/docs/plan.md")).toBe(1);
+  });
+
+  it("reads an absolute plan path inside the root", async () => {
+    const { fs } = fakeFs({ ...ledger("/proj/docs/plan.md"), "/proj/docs/plan.md": { text: PLAN } });
+    expect((await loadSddSnapshot(fs, ref)).planText).toBe(PLAN);
+  });
+
+  it("finds the root of a worktree workspace", async () => {
+    const dir = "/wt/mc-1/.superpowers/sdd/s";
+    const { fs } = fakeFs({
+      [`${dir}/progress.md`]: { text: "# SDD ledger — plan: docs/plan.md\n", mtimeMs: 1 },
+      "/wt/mc-1/docs/plan.md": { text: PLAN },
+    });
+    expect((await loadSddSnapshot(fs, { dir, slug: "s", ledgerMtimeMs: 1 })).planText).toBe(PLAN);
+  });
+
+  it.each([
+    ["parent segment", "../secrets.md"],
+    ["nested parent segment", "docs/../../x.md"],
+    ["scheme", "https://example.com/plan.md"],
+    ["remote scheme", "remote://host/plan.md"],
+    ["home", "~/plan.md"],
+    ["absolute outside the root", "/etc/passwd"],
+    ["absolute in a sibling of the root", "/proj-other/plan.md"],
+  ])("never reads an unsafe path: %s", async (_name, planPath) => {
+    const tree: Tree = { ...ledger(planPath), "/etc/passwd": { text: "x" }, "/secrets.md": { text: "x" } };
+    const { fs, reads: log } = fakeFs(tree);
+    const snap = await loadSddSnapshot(fs, ref);
+    expect(snap.planText).toBeUndefined();
+    expect(log).toEqual([`${DIR}/progress.md`]);
+  });
+
+  it("reads no plan when the ledger names none or is missing", async () => {
+    const none = fakeFs({ [`${DIR}/progress.md`]: { text: "# SDD ledger\nTask 1: complete (commits a..b)\n", mtimeMs: 1 } });
+    expect((await loadSddSnapshot(none.fs, ref)).planText).toBeUndefined();
+    expect(none.reads).toEqual([`${DIR}/progress.md`]);
+    const missing = fakeFs({ [`${DIR}/task-1-brief.md`]: { text: "### Task 1: A" } });
+    expect((await loadSddSnapshot(missing.fs, ref)).planText).toBeUndefined();
+  });
+
+  it("tolerates a missing or failing plan file", async () => {
+    const { fs } = fakeFs(ledger("docs/missing.md"));
+    const snap = await loadSddSnapshot(fs, ref);
+    expect(snap.planText).toBeUndefined();
+    expect(snap.ledgerText).toContain("plan: docs/missing.md");
+  });
+
+  it("tolerates readText throwing something that is not an Error", async () => {
+    const { fs } = fakeFs({ ...ledger("docs/plan.md"), "/proj/docs/plan.md": { text: PLAN } });
+    const real = fs.readText;
+    fs.readText = async (path) => {
+      if (path.endsWith("plan.md")) throw "denied";
+      return real(path);
+    };
+    expect((await loadSddSnapshot(fs, ref)).planText).toBeUndefined();
+  });
+
+  it("skips a plan file over 512 KB and keeps one at the limit", async () => {
+    const big = fakeFs({ ...ledger("docs/plan.md"), "/proj/docs/plan.md": { text: "x".repeat(512 * 1024 + 1) } });
+    expect((await loadSddSnapshot(big.fs, ref)).planText).toBeUndefined();
+    const edge = fakeFs({ ...ledger("docs/plan.md"), "/proj/docs/plan.md": { text: "x".repeat(512 * 1024) } });
+    expect((await loadSddSnapshot(edge.fs, ref)).planText).toHaveLength(512 * 1024);
+  });
+
+  it("skips the plan when the workspace is not under .superpowers/sdd", async () => {
+    const dir = "/elsewhere/ws";
+    const { fs, reads: log } = fakeFs({ [`${dir}/progress.md`]: { text: "# SDD ledger — plan: docs/plan.md\n", mtimeMs: 1 } });
+    expect((await loadSddSnapshot(fs, { dir, slug: "ws", ledgerMtimeMs: 1 })).planText).toBeUndefined();
+    expect(log).toEqual([`${dir}/progress.md`]);
   });
 });

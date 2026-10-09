@@ -6,12 +6,15 @@ import {
   type LedgerTask,
   type ParsedLedger,
 } from "./sddLedger";
-import type { BoardNode, BoardSection, BoardStage, BoardStatus } from "./taskBoard";
+import { MAX_PLAN_TASKS, parsePlan, type PlanTask } from "./planFile";
+import type { BoardNode, BoardSection, BoardStage, BoardStatus, BoardStep } from "./taskBoard";
 
 export type SddSnapshot = {
   slug: string;
   dir: string;
   ledgerText: string;
+  /** The plan file the ledger names (every task and step, with the ticks), when it could be read. */
+  planText?: string;
   briefs: Record<number, string>;
   reports: Record<number, string>;
   /** File name (`task-2-report.md`) to mtime in ms; unknown files are absent. */
@@ -259,6 +262,18 @@ function buildFinalReview(ledger: ParsedLedger): BoardNode {
 }
 
 /**
+ * A task's steps: the plan file's when it lists any for the task, else the brief's. Done when
+ * the task is done, else when the plan file ticks the step; a brief has no ticks.
+ */
+function stepsFor(taskDone: boolean, planTask: PlanTask | undefined, brief: BriefInfo | undefined): BoardStep[] | undefined {
+  if (planTask && planTask.steps.length > 0) {
+    return planTask.steps.map((step) => ({ text: step.text, done: taskDone || step.done }));
+  }
+  if (brief) return brief.steps.map((text) => ({ text: text.replace(STEP_LABEL, ""), done: taskDone }));
+  return undefined;
+}
+
+/**
  * Builds the Tasks panel section for one SDD workspace. Pure: all times come
  * from the snapshot's mtimes, so `now` is accepted for signature parity with the
  * other builders but nothing here reads the clock.
@@ -281,7 +296,14 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     ...Object.keys(snapshot.reports),
     ...ledger.tasks.map((t) => t.n),
   ].map(Number);
-  const total = seen.length ? Math.max(...seen) : 0;
+  const seenMax = seen.length ? Math.max(...seen) : 0;
+  // The plan file lists tasks the controller has not reached. Numbers outside 1..200 are not
+  // taken as tasks, so a typo cannot make the board grow without bound.
+  const parsedPlan = snapshot.planText !== undefined ? parsePlan(snapshot.planText) : undefined;
+  const planTasks = new Map<number, PlanTask>(
+    (parsedPlan?.tasks ?? []).filter((t) => t.n >= 1 && t.n <= MAX_PLAN_TASKS).map((t) => [t.n, t]),
+  );
+  const total = Math.max(seenMax, ...planTasks.keys());
 
   const briefTimes = Object.entries(mtimes).filter(([name]) => BRIEF_FILE.test(name));
   const firstBriefAt = briefTimes.length ? Math.min(...briefTimes.map(([, ms]) => ms)) : undefined;
@@ -292,6 +314,7 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
   for (let n = 1; n <= total; n++) {
     const task = ledgerTasks.get(n);
     const brief = briefs.get(n);
+    const planTask = planTasks.get(n);
     const report = snapshot.reports[n];
     const reportState = report !== undefined ? reportStatus(report) : undefined;
     // Briefs alone are not evidence (they may all be extracted up front). Once the
@@ -302,7 +325,8 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     let status: BoardStatus = "pending";
     if (task?.complete) {
       status = "done";
-    } else if (hasSignal && !runningTaken) {
+    } else if (hasSignal && !runningTaken && n <= seenMax) {
+      // Past the last task the controller has seen, a task is not started: it only has a plan entry.
       runningTaken = true;
       status =
         reportState === "BLOCKED"
@@ -326,11 +350,12 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
       (task?.fixes.length ?? 0) > 0 ||
       status === "done" ||
       (report !== undefined && status !== "blocked");
+    const steps = stepsFor(status === "done", planTask, brief);
     const reportName = `task-${n}-report.md`;
     const briefName = `task-${n}-brief.md`;
     nodes.push({
       id: `task-${n}`,
-      title: brief?.title ?? `Task ${n}`,
+      title: brief?.title ?? (planTask?.title || `Task ${n}`),
       index: n,
       status,
       startedAt,
@@ -349,14 +374,7 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
             }),
           }
         : {}),
-      ...(brief
-        ? {
-            steps: brief.steps.map((text) => ({
-              text: text.replace(STEP_LABEL, ""),
-              done: status === "done",
-            })),
-          }
-        : {}),
+      ...(steps ? { steps } : {}),
       ...(task?.complete?.commits ? { commits: task.complete.commits } : {}),
       ...(task && task.fixes.length > 0 ? { fixRounds: maxRound } : {}),
       ...(report !== undefined
@@ -367,6 +385,7 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     });
   }
 
+  const allSteps = nodes.flatMap((x) => x.steps ?? []);
   return {
     source: "sdd",
     id: `sdd:${snapshot.slug}`,
@@ -378,6 +397,10 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     decisions: ledger.rulings,
     minors: ledger.minors,
     parked: ledger.parked,
+    // Counted only from a plan file that was read and lists steps; otherwise they are unknown.
+    ...(parsedPlan && planTasks.size > 0 && allSteps.length > 0
+      ? { steps: { done: allSteps.filter((x) => x.done).length, total: allSteps.length } }
+      : {}),
     ...(ledger.planPath ? { planPath: ledger.planPath } : {}),
     ...(ledger.specPath ? { specPath: ledger.specPath } : {}),
     finalReview: buildFinalReview(ledger),

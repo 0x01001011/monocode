@@ -3,6 +3,8 @@ import { StrictMode, act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block, Session } from "../../sessions/model/session";
+import { CWD, PLAN_PATH, fixtureFs, ledgerUpTo } from "../flow.integration.fixtures";
+import { planOverview } from "../model/overview";
 import type { SddFs } from "../model/sddWorkspace";
 import * as sections from "../model/sections";
 import { clearSnoozes, snoozeSession } from "../model/taskSnooze";
@@ -628,6 +630,91 @@ describe("useTaskBoard", () => {
       await mount(flowInput(fs, [testRun("cargo test")]));
       expect(latest?.flow).not.toBe(before);
       expect(latest?.flow.find((p) => p.id === "check")?.detail).toBe("tests passed 4m ago");
+    });
+  });
+
+  describe("plan file", () => {
+    const planTask = (n: number, ...steps: string[]) => `### Task ${n}: Plan title ${n}\n\n${steps.join("\n")}\n`;
+    /** Ten tasks of three steps; the fixture has briefs for only eight. Task 7 has one step ticked. */
+    const planText = [
+      "# Skills index plan",
+      ...Array.from({ length: 10 }, (_, i) =>
+        planTask(i + 1, `- [${i === 6 ? "x" : " "}] **Step 1: first**`, "- [ ] second", "- [ ] third"),
+      ),
+    ].join("\n");
+    /** The real skills-index workspace, plus the plan file the ledger names at `<root>/<plan>`. */
+    const withPlanFile = (text: string | undefined): SddFs => {
+      const real = fixtureFs({ transform: ledgerUpTo("Task 6: complete") });
+      return {
+        ...real,
+        async readText(path) {
+          if (path === `${CWD}/${PLAN_PATH}`) {
+            if (text === undefined) throw new Error(`ENOENT ${path}`);
+            return text;
+          }
+          return real.readText(path);
+        },
+      };
+    };
+
+    it("lists the plan's tasks beyond the briefs as pending, with their steps and totals", async () => {
+      await mount(base(withPlanFile(planText), { projectCwd: CWD }));
+      const plan = latest?.plan;
+      expect(plan?.total).toBe(10);
+      expect(plan?.done).toBe(6);
+      expect(plan?.nodes).toHaveLength(10);
+      expect(plan?.nodes.slice(6, 8).map((n) => n.status)).toEqual(["running", "pending"]);
+      const extras = plan!.nodes.slice(8);
+      expect(extras.map((n) => [n.id, n.status, n.title])).toEqual([
+        ["task-9", "pending", "Plan title 9"],
+        ["task-10", "pending", "Plan title 10"],
+      ]);
+      for (const extra of extras) {
+        expect(extra.steps).toEqual([
+          { text: "first", done: false },
+          { text: "second", done: false },
+          { text: "third", done: false },
+        ]);
+        expect(extra.stages).toBeUndefined();
+        expect(extra.target).toBeUndefined();
+      }
+      // The running task's own brief title wins; its tick comes from the plan file.
+      expect(plan?.nodes[6]?.steps?.[0]).toEqual({ text: "first", done: true });
+      // 6 done tasks x 3 steps, plus task 7's one tick, over 10 x 3 steps.
+      expect(plan?.steps).toEqual({ done: 19, total: 30 });
+      expect(planOverview(plan!)).toMatchObject({ left: 5, steps: { done: 19, total: 30 }, current: { label: "Task 7" } });
+    });
+
+    it("does not call the plan finished while its later tasks are pending", async () => {
+      const real = fixtureFs({
+        transform: (name, text) =>
+          name === "progress.md" ? `${text}\nTask 8: complete (commits fd0b3b3..abc1234, review clean)\n` : text,
+      });
+      const fs: SddFs = { ...real, readText: async (path) => (path === `${CWD}/${PLAN_PATH}` ? planText : real.readText(path)) };
+      await mount(base(fs, { projectCwd: CWD, sessions: [{ id: "s", title: "s", busy: false, needsInput: false }] }));
+      expect(latest?.plan).toMatchObject({ done: 8, total: 10 });
+      expect(latest?.statusCard.kind).not.toBe("done");
+      expect(latest?.statusCard.headline).not.toMatch(/finished/i);
+      expect(latest?.flow.map((p) => [p.id, p.status, p.detail])).toContainEqual(["build", "running", "8 of 10"]);
+      expect(latest?.flow.find((p) => p.id === "plan")?.detail).toBe("10 tasks");
+    });
+
+    it("shows the briefs' tasks and no step totals when the plan file is missing", async () => {
+      await mount(base(withPlanFile(undefined), { projectCwd: CWD }));
+      expect(latest?.plan?.total).toBe(8);
+      expect(latest?.plan?.nodes).toHaveLength(8);
+      expect(latest?.plan?.steps).toBeUndefined();
+    });
+
+    it("picks up a step ticked between polls", async () => {
+      let text = planText;
+      const real = withPlanFile(planText);
+      const fs: SddFs = { ...real, readText: async (path) => (path === `${CWD}/${PLAN_PATH}` ? text : real.readText(path)) };
+      await mount(base(fs, { projectCwd: CWD }));
+      expect(latest?.plan?.steps).toEqual({ done: 19, total: 30 });
+      text = text.replace(/(### Task 9:.*\n\n)- \[ \]/, "$1- [x]");
+      await advance(3_000);
+      expect(latest?.plan?.steps?.done).toBe(20);
     });
   });
 });

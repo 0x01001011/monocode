@@ -522,3 +522,169 @@ describe("buildSddSection", () => {
     expect(section.nodes).toEqual([]);
   });
 });
+
+describe("buildSddSection with a plan file", () => {
+  const withPlan = (planText: string, overrides: Parameters<typeof fixtureSnapshot>[0] = {}): SddSnapshot => ({
+    ...fixtureSnapshot(overrides),
+    planText,
+  });
+  const taskBlock = (n: number, title: string, ...steps: string[]) =>
+    `### Task ${n}: ${title}\n${steps.join("\n")}\n`;
+  /** A ten-task plan: the fixture has briefs for only eight. */
+  const tenTasks = (extra: Record<number, string[]> = {}) =>
+    Array.from({ length: 10 }, (_, i) => taskBlock(i + 1, `Plan title ${i + 1}`, ...(extra[i + 1] ?? ["- [ ] **Step 1: one**", "- [ ] two"]))).join("\n");
+
+  it("lists tasks that only the plan has, pending, with titles and steps and nothing started", () => {
+    const section = buildSddSection(withPlan(tenTasks({ 9: ["- [ ] nine a", "- [x] nine b"] }), { ledgerText: ledgerThroughTask6() }), NOW);
+    expect(section.total).toBe(10);
+    expect(section.nodes).toHaveLength(10);
+    expect(section.done).toBe(6);
+    for (const n of [9, 10]) {
+      const extra = node(section, n);
+      expect(extra.status).toBe("pending");
+      expect(extra.id).toBe(`task-${n}`);
+      expect(extra.stages).toBeUndefined();
+      expect(extra.target).toBeUndefined();
+      expect(extra.startedAt).toBeUndefined();
+      expect(extra.endedAt).toBeUndefined();
+      expect(extra.summary).toBeUndefined();
+    }
+    expect(node(section, 9).title).toBe("Plan title 9");
+    expect(node(section, 9).steps).toEqual([
+      { text: "nine a", done: false },
+      { text: "nine b", done: true },
+    ]);
+    expect(node(section, 10).steps).toEqual([
+      { text: "one", done: false },
+      { text: "two", done: false },
+    ]);
+  });
+
+  it("does not start a plan-only task, even when every task seen is done", () => {
+    const all8 = `${read("progress.md")}\nTask 8: complete (commits fd0b3b3..abc1234, review clean)\n`;
+    const section = buildSddSection(withPlan(tenTasks(), { ledgerText: all8 }), NOW);
+    expect(section.nodes.slice(0, 8).every((n) => n.status === "done")).toBe(true);
+    expect(node(section, 9).status).toBe("pending");
+    expect(node(section, 10).status).toBe("pending");
+    expect(section.nodes.some((n) => n.status === "running")).toBe(false);
+    expect(section.done).toBe(8);
+    expect(section.total).toBe(10);
+  });
+
+  it("keeps the running rule for tasks the controller has seen", () => {
+    const section = buildSddSection(withPlan(tenTasks(), { ledgerText: ledgerThroughTask6() }), NOW);
+    expect(node(section, 7).status).toBe("running");
+    expect(node(section, 8).status).toBe("pending");
+    expect(node(section, 7).stages!.length).toBeGreaterThan(0);
+  });
+
+  it("total never shrinks below the briefs when the plan has fewer tasks", () => {
+    const section = buildSddSection(withPlan(taskBlock(1, "Only one", "- [ ] a")), NOW);
+    expect(section.total).toBe(8);
+    expect(section.nodes).toHaveLength(8);
+  });
+
+  it("titles: brief first, then the plan, then the task number", () => {
+    const section = buildSddSection(withPlan(tenTasks(), { skipBriefs: [3, 4] }), NOW);
+    expect(node(section, 2).title).toBe("Watcher, event, frontend invalidation");
+    expect(node(section, 3).title).toBe("Plan title 3");
+    const bare = buildSddSection(
+      withPlan(taskBlock(1, "One", "- [ ] a") + taskBlock(10, "Ten", "- [ ] z"), { skipBriefs: [3] }),
+      NOW,
+    );
+    expect(node(bare, 3).title).toBe("Task 3");
+    expect(node(bare, 10).title).toBe("Ten");
+    expect(node(bare, 9).title).toBe("Task 9");
+  });
+
+  it("steps come from the plan when it has them, else from the brief", () => {
+    const plan = taskBlock(1, "One", "- [ ] plan step a", "- [ ] plan step b") + taskBlock(2, "Two");
+    const section = buildSddSection(withPlan(plan), NOW);
+    expect(node(section, 1).steps!.map((s) => s.text)).toEqual(["plan step a", "plan step b"]);
+    expect(node(section, 2).steps).toHaveLength(5);
+    expect(node(section, 2).steps![0].text.startsWith("Rust test")).toBe(true);
+  });
+
+  it("a step is done when its task is done, else when the plan ticks it, never otherwise", () => {
+    const plan = [
+      taskBlock(5, "Done task", "- [ ] unticked in a done task", "- [x] ticked"),
+      taskBlock(6, "Running task", "- [x] **Step 1: ticked**", "- [ ] not yet", "- [X] ticked upper"),
+      taskBlock(8, "Pending task", "- [x] ticked ahead", "- [ ] open"),
+    ].join("\n");
+    const section = buildSddSection(withPlan(plan, { ledgerText: ledgerThroughTask6() }), NOW);
+    expect(node(section, 5).status).toBe("done");
+    expect(node(section, 5).steps!.map((s) => s.done)).toEqual([true, true]);
+    expect(node(section, 7).status).toBe("running");
+    const six = buildSddSection(
+      withPlan(plan, { ledgerText: ledgerThroughTask6().split("\n").filter((l) => !l.startsWith("Task 6:")).join("\n") }),
+      NOW,
+    );
+    expect(node(six, 6).status).toBe("running");
+    expect(node(six, 6).steps).toEqual([
+      { text: "ticked", done: true },
+      { text: "not yet", done: false },
+      { text: "ticked upper", done: true },
+    ]);
+    expect(node(six, 8).steps!.map((s) => s.done)).toEqual([true, false]);
+  });
+
+  it("brief steps stay unticked unless the task is done, even with a plan file", () => {
+    const section = buildSddSection(withPlan(taskBlock(1, "One"), { ledgerText: ledgerThroughTask6() }), NOW);
+    expect(node(section, 7).steps!.every((s) => !s.done)).toBe(true);
+    expect(node(section, 5).steps!.every((s) => s.done)).toBe(true);
+  });
+
+  it("section.steps counts every task's steps, a done task all done", () => {
+    const plan = [
+      taskBlock(1, "A", "- [ ] a1", "- [ ] a2", "- [ ] a3"),
+      taskBlock(2, "B", "- [x] b1", "- [ ] b2"),
+      taskBlock(9, "C", "- [x] c1", "- [ ] c2"),
+    ].join("\n");
+    const section = buildSddSection(withPlan(plan, { ledgerText: ledgerThroughTask6() }), NOW);
+    const all = section.nodes.flatMap((n) => n.steps ?? []);
+    expect(section.steps).toEqual({ done: all.filter((s) => s.done).length, total: all.length });
+    // Task 1 is done: its 3 plan steps count as done even though the plan leaves them unticked.
+    expect(node(section, 1).steps!.every((s) => s.done)).toBe(true);
+    expect(section.steps!.total).toBeGreaterThanOrEqual(7);
+    expect(section.steps!.done).toBeLessThan(section.steps!.total);
+  });
+
+  it("has no section.steps without a plan file, or when the file lists no tasks or steps", () => {
+    expect(buildSddSection(fixtureSnapshot(), NOW).steps).toBeUndefined();
+    expect("steps" in buildSddSection(fixtureSnapshot(), NOW)).toBe(false);
+    expect(buildSddSection(withPlan("just prose"), NOW).steps).toBeUndefined();
+    const noBoxes = buildSddSection(
+      { ...withPlan("### Task 1: A\n"), briefs: {}, reports: {}, ledgerText: "" },
+      NOW,
+    );
+    expect(noBoxes.nodes).toHaveLength(1);
+    expect(noBoxes.steps).toBeUndefined();
+  });
+
+  it("builds the whole board from a plan alone", () => {
+    const section = buildSddSection(
+      { slug: "s", dir: "/x", ledgerText: "", briefs: {}, reports: {}, mtimes: {}, reviews: [], planText: tenTasks() },
+      NOW,
+    );
+    expect(section.total).toBe(10);
+    expect(section.done).toBe(0);
+    expect(section.nodes.every((n) => n.status === "pending")).toBe(true);
+    expect(section.steps).toEqual({ done: 0, total: 20 });
+  });
+
+  it("tolerates numbering gaps and ignores absurd task numbers", () => {
+    const plan = taskBlock(1, "One", "- [ ] a") + taskBlock(4, "Four", "- [ ] d") + taskBlock(900_000, "Huge", "- [ ] z");
+    const section = buildSddSection(
+      { slug: "s", dir: "/x", ledgerText: "", briefs: {}, reports: {}, mtimes: {}, reviews: [], planText: plan },
+      NOW,
+    );
+    expect(section.nodes.map((n) => n.title)).toEqual(["One", "Task 2", "Task 3", "Four"]);
+  });
+
+  it("is unchanged by a plan file for everything but titles and steps", () => {
+    const without = buildSddSection(fixtureSnapshot(), NOW);
+    const withIt = buildSddSection(withPlan("# P\n"), NOW);
+    expect(withIt).toEqual(without);
+  });
+});
+
