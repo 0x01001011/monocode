@@ -146,3 +146,55 @@ it("clears the output and copies it as text", async () => {
   );
   expect(container.querySelector("[data-console-errors]")).toBeNull();
 });
+
+// --- width presets ----------------------------------------------------------
+
+const radio = (label: string) =>
+  container.querySelector<HTMLButtonElement>(`[role="radio"][aria-label="${label}"]`);
+const stage = () => container.querySelector<HTMLElement>("[data-preview-stage]")!;
+
+it("offers Full, Tablet and Phone widths as a labelled radio group, defaulting to Full", async () => {
+  await mount();
+  const group = container.querySelector('[role="radiogroup"]')!;
+  expect(group.getAttribute("aria-label")).toBe("Preview width");
+  expect(radio("Full width")?.getAttribute("aria-checked")).toBe("true");
+  expect(radio("Tablet width, 768 pixels")?.getAttribute("aria-checked")).toBe("false");
+  expect(radio("Phone width, 375 pixels")?.getAttribute("aria-checked")).toBe("false");
+  expect(stage().style.maxWidth).toBe("");
+});
+
+it("narrows the page to the chosen device width and back", async () => {
+  await mount();
+  act(() => radio("Phone width, 375 pixels")!.click());
+  expect(radio("Phone width, 375 pixels")!.getAttribute("aria-checked")).toBe("true");
+  expect(radio("Full width")!.getAttribute("aria-checked")).toBe("false");
+  expect(stage().style.maxWidth).toBe("375px");
+  expect(stage().getAttribute("data-width")).toBe("phone");
+  act(() => radio("Tablet width, 768 pixels")!.click());
+  expect(stage().style.maxWidth).toBe("768px");
+  act(() => radio("Full width")!.click());
+  expect(stage().style.maxWidth).toBe("");
+});
+
+it("keeps the same page when the width changes, instead of reopening it", async () => {
+  await mount();
+  const before = container.querySelector("iframe");
+  act(() => radio("Phone width, 375 pixels")!.click());
+  expect(container.querySelector("iframe")).toBe(before);
+  expect(vi.mocked(invoke).mock.calls.filter(([c]) => c === "preview_open")).toHaveLength(1);
+});
+
+it("lets the arrow keys move between widths, as a radio group should", async () => {
+  await mount();
+  const full = radio("Full width")!;
+  act(() => {
+    full.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(radio("Tablet width, 768 pixels")!.getAttribute("aria-checked")).toBe("true");
+  act(() => {
+    radio("Tablet width, 768 pixels")!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+    );
+  });
+  expect(radio("Full width")!.getAttribute("aria-checked")).toBe("true");
+});
