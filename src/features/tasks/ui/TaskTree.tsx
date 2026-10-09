@@ -105,6 +105,9 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
 
   const visible = flatten(nodes.map((node) => ({ node, openable: true })), expanded, undefined, 0, []);
   const visibleIds = new Set(visible.map((e) => e.node.id));
+  // One lookup per render instead of a scan per row; the first entry for an id wins.
+  const entryById = new Map<string, Entry>();
+  for (const entry of visible) if (!entryById.has(entry.node.id)) entryById.set(entry.node.id, entry);
   let tabId: string | undefined = activeId;
   if (tabId !== undefined && !visibleIds.has(tabId)) {
     const parents = parentIndex(nodes);
@@ -170,7 +173,7 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
     depth: number,
   ): ReactElement[] =>
     items.map(({ node, openable }) => {
-      const entry = visible.find((e) => e.node.id === node.id) ?? { node, parentId, depth, openable };
+      const entry = entryById.get(node.id) ?? { node, parentId, depth, openable };
       const isExpandable = canExpand(node);
       const isOpen = isExpandable && expanded(node.id);
       const glyph = glyphFor(node);
@@ -180,7 +183,7 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
       const titleTone = running
         ? "font-semibold text-content"
         : node.status === "pending"
-          ? "text-content/55"
+          ? "text-muted"
           : "text-content/85";
       return (
         <li
@@ -196,41 +199,41 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
           onFocus={(e) => {
             if (e.target === e.currentTarget) setActiveId(node.id);
           }}
-          className="list-none outline-none [&:focus-visible>[data-row]]:outline-2 [&:focus-visible>[data-row]]:-outline-offset-1 [&:focus-visible>[data-row]]:outline-accent"
+          className="list-none outline-none [&:focus-visible>[data-row]]:outline-2 [&:focus-visible>[data-row]]:-outline-offset-1 [&:focus-visible>[data-row]]:outline-focus"
         >
           <div
             data-row
             onClick={() => (isExpandable ? toggle(node.id) : openable && onOpen?.(node))}
             className={`mx-1 flex items-center gap-2 rounded-md py-0.5 pr-2 pl-1.5 text-[12.5px] hover:bg-selection-subtle ${
               depth > 0 ? "min-h-6" : "min-h-6.5"
-            } ${running ? "bg-accent/11" : warn ? "bg-skill/11" : ""}`}
+            } ${isExpandable || openable ? "cursor-pointer" : ""} ${running ? "bg-accent/11" : warn ? "bg-warning/6" : ""}`}
           >
-            <span data-chevron={isExpandable ? "" : undefined} aria-hidden="true" className="grid w-3 shrink-0 place-items-center text-content/66">
+            <span data-chevron={isExpandable ? "" : undefined} aria-hidden="true" className="grid w-3 shrink-0 place-items-center text-muted">
               {isExpandable ? (
                 isOpen ? <ChevronDown className="size-3" strokeWidth={2} /> : <ChevronRight className="size-3" strokeWidth={2} />
               ) : null}
             </span>
             <TaskGlyph kind={glyph} small={depth > 0} />
             {node.index !== undefined ? (
-              <span className="w-3 shrink-0 text-right text-[11.5px] text-content/55 tabular-nums">{node.index}</span>
+              <span className="w-3 shrink-0 text-right text-[11.5px] text-muted tabular-nums">{node.index}</span>
             ) : null}
             <span title={node.title} className={`min-w-0 flex-1 truncate ${titleTone}`}>
               {node.title}
             </span>
             {(node.fixRounds ?? 0) >= STRUGGLING_FROM_ROUND ? (
-              <span className="text-[11.5px] whitespace-nowrap text-skill">
+              <span className="text-[11.5px] whitespace-nowrap text-warning">
                 fix {Math.min(node.fixRounds ?? 0, MAX_FIX_ROUNDS)} of {MAX_FIX_ROUNDS}
               </span>
             ) : null}
             {node.status === "blocked" ? (
-              <span data-tag="blocked" className="text-[11.5px] whitespace-nowrap text-skill">
+              <span data-tag="blocked" className="text-[11.5px] whitespace-nowrap text-warning">
                 blocked
               </span>
             ) : null}
             {duration !== undefined ? (
               <span
                 data-duration
-                className={`text-[11.5px] tabular-nums ${running ? "text-content" : "text-content/66"}`}
+                className={`text-[11.5px] tabular-nums ${running ? "text-content" : "text-muted"}`}
               >
                 {duration}
               </span>
@@ -239,7 +242,7 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
           {isOpen ? (
             <>
               {node.summary ? (
-                <div className="pr-3 pb-1.5 pl-[46px] text-[11.5px] leading-[1.45] text-content/55">{node.summary}</div>
+                <div className="pr-3 pb-1.5 pl-[46px] text-[11.5px] leading-[1.45] text-muted">{node.summary}</div>
               ) : null}
               {childrenOf(node).length > 0 ? (
                 <ul role="group" className="pl-5">

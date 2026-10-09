@@ -17,8 +17,8 @@ type Props = {
 };
 
 const PREVIEW_NOTES = 3;
-const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
-const SMALL_BUTTON = `min-h-6 rounded-md px-2 text-[11.5px] text-content/66 hover:bg-selection-subtle ${FOCUS}`;
+const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+const SMALL_BUTTON = `min-h-6 rounded-md px-2 text-[11.5px] text-muted hover:bg-selection-subtle ${FOCUS}`;
 
 const LEGEND: [GlyphKind, string][] = [
   ["done", "Done"],
@@ -33,7 +33,7 @@ const LEGEND: [GlyphKind, string][] = [
 
 function Legend() {
   return (
-    <ul aria-label="Symbol legend" className="m-0 mx-3 mb-1 list-none rounded-md bg-selection-subtle p-2 text-[11.5px] text-content/66">
+    <ul aria-label="Symbol legend" className="m-0 mx-3 mb-1 list-none rounded-md bg-selection-subtle p-2 text-[11.5px] text-muted">
       {LEGEND.map(([kind, text]) => (
         <li key={kind} className="flex min-h-6 items-center gap-2">
           <TaskGlyph kind={kind} small />
@@ -63,31 +63,31 @@ function NoteSection({ title, notes, open, onToggle, explainer }: {
         onClick={onToggle}
         className={`mx-1 flex min-h-6.5 w-[calc(100%-8px)] items-center gap-2 rounded-md pr-2 pl-1.5 text-left text-[12.5px] hover:bg-selection-subtle ${FOCUS}`}
       >
-        <span aria-hidden="true" className="grid w-3 shrink-0 place-items-center text-content/66">
+        <span aria-hidden="true" className="grid w-3 shrink-0 place-items-center text-muted">
           {open ? <ChevronDown className="size-3" strokeWidth={2} /> : <ChevronRight className="size-3" strokeWidth={2} />}
         </span>
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        <span aria-hidden="true" className="text-[11.5px] text-content/66 tabular-nums">
+        <span aria-hidden="true" className="text-[11.5px] text-muted tabular-nums">
           {notes.length}
         </span>
       </button>
       {open ? (
         <>
-          {explainer ? <div className="pr-3 pb-1.5 pl-8 text-[11.5px] leading-[1.45] text-content/55">{explainer}</div> : null}
+          {explainer ? <div className="pr-3 pb-1.5 pl-8 text-[11.5px] leading-[1.45] text-muted">{explainer}</div> : null}
           <ul className="m-0 list-none p-0">
             {shown.map((note, i) => (
               <li key={i} className="flex gap-2 py-1 pr-3 pl-8 text-[12.5px] leading-[1.4]">
                 <span className="min-w-0 flex-1">{note.text}</span>
-                {note.parked ? <span className="text-[11.5px] whitespace-nowrap text-content/55">parked</span> : null}
+                {note.parked ? <span className="text-[11.5px] whitespace-nowrap text-muted">parked</span> : null}
                 {note.taskIndex !== undefined ? (
-                  <span className="text-[11.5px] whitespace-nowrap text-content/55">Task {note.taskIndex}</span>
+                  <span className="text-[11.5px] whitespace-nowrap text-muted">Task {note.taskIndex}</span>
                 ) : null}
               </li>
             ))}
           </ul>
           {notes.length > PREVIEW_NOTES ? (
             <div className="pb-1.5 pl-8">
-              <button type="button" onClick={() => setAll(!all)} className={`${SMALL_BUTTON} text-accent`}>
+              <button type="button" onClick={() => setAll(!all)} className={`${SMALL_BUTTON} text-focus`}>
                 {all ? "Show fewer" : `Show all ${notes.length}`}
               </button>
             </div>
@@ -144,7 +144,7 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab }: Pick<Props, "b
           Open as tab
         </button>
       </div>
-      <div className="px-3 pb-1.5 text-[11.5px] text-content/66 tabular-nums">{progressLine(plan, now)}</div>
+      <div className="px-3 pb-1.5 text-[11.5px] text-muted tabular-nums">{progressLine(plan, now)}</div>
       {legend ? <Legend /> : null}
       <TaskTree
         nodes={nodes}
@@ -155,7 +155,7 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab }: Pick<Props, "b
         onToggle={onToggle}
       />
       {final?.status === "pending" ? (
-        <div className="pt-1.5 pl-8 text-[11.5px] text-content/55">Then one last review of the whole branch.</div>
+        <div className="pt-1.5 pl-8 text-[11.5px] text-muted">Then one last review of the whole branch.</div>
       ) : null}
       <div className="mt-2.5">
         <NoteSection
@@ -179,7 +179,7 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab }: Pick<Props, "b
 function SectionBlock({ section, label, now, onOpenNode }: { section: BoardSection; label: string; now: number; onOpenNode: Props["onOpenNode"] }) {
   return (
     <div>
-      <div className="px-3 pt-2.5 pb-0.5 text-[11.5px] text-content/55 tabular-nums">
+      <div className="px-3 pt-2.5 pb-0.5 text-[11.5px] text-muted tabular-nums">
         {label}
         {section.source === "agents" ? "" : ` · ${section.done} of ${section.total}`}
       </div>
@@ -192,10 +192,10 @@ function EmptyState() {
   return (
     <div className="px-4 pt-3.5 pb-4.5 leading-normal">
       <h3 className="m-0 mb-1.5 text-[14px] font-semibold">Nothing to track yet</h3>
-      <p className="m-0 mb-2.5 text-[12.5px] text-content/66">
+      <p className="m-0 mb-2.5 text-[12.5px] text-muted">
         When the agent works through a plan or hands work to other agents, each task shows up here with its status and time.
       </p>
-      <ul className="m-0 pl-4 text-[12.5px] text-content/66">
+      <ul className="m-0 pl-4 text-[12.5px] text-muted">
         <li>Plans run with superpowers</li>
         <li>Todo lists the agent writes</li>
         <li>Subagents and orchestration workers</li>
@@ -228,7 +228,7 @@ export function TasksPanel({ board, now, onAction, onOpenNode, onOpenAsTab }: Pr
     <div className="flex min-h-0 flex-1 flex-col overflow-auto pt-0.5 pb-3.5">
       <StatusCard card={card} onAction={handleAction} />
       {board.planFilesUnavailable ? (
-        <div className="px-4 pt-1 text-[11.5px] text-content/66">Plan files are not available for remote projects yet.</div>
+        <div className="px-4 pt-1 text-[11.5px] text-muted">Plan files are not available for remote projects yet.</div>
       ) : null}
       {plan ? <PlanBlock board={board} plan={plan} now={now} onOpenNode={onOpenNode} onOpenAsTab={onOpenAsTab} /> : null}
       {agents.map((section) => (
@@ -237,7 +237,7 @@ export function TasksPanel({ board, now, onAction, onOpenNode, onOpenAsTab }: Pr
       {others.map((section) => (
         <SectionBlock key={section.id} section={section} label={section.title} now={now} onOpenNode={onOpenNode} />
       ))}
-      {empty && board.loading ? <div className="px-4 pt-3.5 text-[12.5px] text-content/66">Looking for tasks…</div> : null}
+      {empty && board.loading ? <div className="px-4 pt-3.5 text-[12.5px] text-muted">Looking for tasks…</div> : null}
       {empty && !board.loading ? <EmptyState /> : null}
     </div>
   );

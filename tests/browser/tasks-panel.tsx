@@ -47,6 +47,8 @@ const plan: BoardSection = {
   decisions: [
     { taskIndex: 2, text: "Kept password login as a fallback." },
     { taskIndex: 3, text: "Used the existing duration formatter." },
+    { taskIndex: 4, text: "Kept the poll at three seconds." },
+    { taskIndex: 5, text: "Left the legend closed by default." },
   ],
   minors: [{ taskIndex: 1, text: "A stale comment in applyBatch.test.ts." }],
   parked: [{ taskIndex: 2, text: "No boundary tests for 59_999 and 60_000." }],

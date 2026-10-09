@@ -28,8 +28,8 @@ type Props = {
 };
 
 const TICK_MS = 1000;
-const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
-const BUTTON = `min-h-6 rounded-md px-2 text-[11.5px] whitespace-nowrap text-content/66 hover:bg-selection-subtle ${FOCUS}`;
+const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+const BUTTON = `min-h-6 rounded-md px-2 text-[11.5px] whitespace-nowrap text-muted hover:bg-selection-subtle ${FOCUS}`;
 const HEADERS = ["Status", "Task", "What happened", "Time"];
 
 const HEADER_GLYPH: Record<StatusKind, GlyphKind> = {
@@ -45,7 +45,7 @@ function EmptyState({ loading }: { loading: boolean }) {
   return (
     <div className="px-4 pt-3.5 pb-4.5 leading-normal">
       <h2 className="m-0 mb-1.5 text-[14px] font-semibold">Nothing to track yet</h2>
-      <p className="m-0 text-[12.5px] text-content/66">
+      <p className="m-0 text-[12.5px] text-muted">
         {loading
           ? "Looking for tasks…"
           : "When the agent works through a plan, each task shows up here with its status and time."}
@@ -147,14 +147,14 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
             {card.reassurance ? (
               <>
                 {" · "}
-                <span className="inline-flex items-center gap-1 font-normal text-diff-add">
+                <span className="inline-flex items-center gap-1 font-normal text-success">
                   <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
                   {card.reassurance}
                 </span>
               </>
             ) : null}
           </h2>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-content/66 tabular-nums">
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted tabular-nums">
             {board.workspaces.length > 1 ? (
               <select
                 aria-label="Plan"
@@ -197,7 +197,7 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
       </header>
       <table aria-label="Plan tasks" className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-b border-stroke text-[11.5px] text-content/66">
+          <tr className="border-b border-stroke text-[11.5px] text-muted">
             {HEADERS.map((name, i) => (
               <th
                 key={name}

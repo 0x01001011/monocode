@@ -30,7 +30,7 @@ export function TaskBoardSurface({ projectCwd, planCwd = projectCwd, sessionId, 
   );
   if (remote) {
     return (
-      <div className="px-4 pt-3.5 text-[12.5px] text-content/66">
+      <div className="px-4 pt-3.5 text-[12.5px] text-muted">
         Task progress is not available for remote projects yet.
       </div>
     );

@@ -219,7 +219,7 @@ describe("TaskTree", () => {
     expect(a.textContent).not.toContain("fix 6");
     const tag = b.querySelector("[data-tag=blocked]");
     expect(tag?.textContent).toBe("blocked");
-    expect(tag?.className).toContain("text-skill");
+    expect(tag?.className).toContain("text-warning");
   });
 
   it("puts the full title on the title attribute", () => {

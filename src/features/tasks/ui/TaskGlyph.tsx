@@ -51,9 +51,9 @@ function Mark({ kind }: { kind: GlyphKind }) {
     case "done":
       return <Check className="size-2.5" strokeWidth={2.5} aria-hidden="true" />;
     case "running":
-      return <span className="size-1.5 rounded-full bg-accent" />;
+      return <span className="size-1.5 rounded-full bg-focus" />;
     case "issues":
-      return <span className="size-2 rounded-full bg-skill" />;
+      return <span className="size-2 rounded-full bg-warning" />;
     case "ask":
       return "?";
     case "struggling":
@@ -70,15 +70,15 @@ function Mark({ kind }: { kind: GlyphKind }) {
 }
 
 const KIND_CLASS: Record<GlyphKind, string> = {
-  done: `${CELL} bg-diff-add/20 text-diff-add`,
-  pending: "m-px size-3.5 shrink-0 rounded-full border border-content/45",
+  done: `${CELL} bg-success/20 text-success`,
+  pending: "m-px size-3.5 shrink-0 rounded-full border border-muted",
   running: `${CELL} bg-accent/22`,
-  ask: `${CELL} ${BOLD_MARK} rounded-[4px] bg-diff-del text-[11px] text-black/80`,
-  struggling: `${CELL} ${BOLD_MARK} bg-skill/22 text-skill`,
-  quiet: "m-px size-3.5 shrink-0 rounded-full border-[1.5px] border-skill",
-  failed: `${CELL} ${BOLD_MARK} bg-diff-del/22 text-diff-del-fg`,
-  blocked: `${CELL} ${BOLD_MARK} border-[1.5px] border-diff-del text-diff-del-fg`,
-  cancelled: `${CELL} ${BOLD_MARK} bg-content/8 text-content/55`,
+  ask: `${CELL} ${BOLD_MARK} rounded-[4px] bg-danger text-[11px] text-background-base`,
+  struggling: `${CELL} ${BOLD_MARK} bg-warning text-background-base`,
+  quiet: "m-px size-3.5 shrink-0 rounded-full border-[1.5px] border-warning",
+  failed: `${CELL} ${BOLD_MARK} bg-danger/5 text-danger`,
+  blocked: `${CELL} ${BOLD_MARK} border-[1.5px] border-danger text-danger`,
+  cancelled: `${CELL} ${BOLD_MARK} bg-content/8 text-muted`,
   issues: CELL,
 };
 
