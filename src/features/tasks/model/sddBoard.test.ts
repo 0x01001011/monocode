@@ -129,6 +129,31 @@ describe("buildSddSection", () => {
     expect(t1.summary).toBe("Passed after 2 fixes.");
   });
 
+  it("a done task whose review verdict is unknown has no summary", () => {
+    const ledger = ["Task 1: implemented (a1b2c3d); review pending", "Task 1: complete (commits 0000000..a1b2c3d)"].join("\n");
+    const t1 = node(buildSddSection(fixtureSnapshot({ ledgerText: ledger }), NOW), 1);
+    expect(t1.status).toBe("done");
+    expect(t1.summary).toBeUndefined();
+  });
+
+  it("a `review clean` complete line counts as passing the first review", () => {
+    const ledger = ["Task 1: implemented (a1b2c3d); review pending", "Task 1: complete (commits 0000000..a1b2c3d, review clean)"].join("\n");
+    expect(node(buildSddSection(fixtureSnapshot({ ledgerText: ledger }), NOW), 1).summary).toBe("Passed first review.");
+  });
+
+  it("a separate review line with Important findings reads as issues found, then fixed", () => {
+    const ledger = [
+      "Task 1: implemented (a1b2c3d); review pending",
+      "Task 1: review: spec ✅, Important x2 (a; b)",
+      "Task 1: fix round 1/5 dispatched; FIX_BASE=a1b2c3d",
+      "Task 1: fix round 1/5 (2 addressed, 0 open; commits a1b2c3d..e4f5a6b)",
+      "Task 1: complete (commits 0000000..e4f5a6b, review clean after 1 fix round)",
+    ].join("\n");
+    expect(node(buildSddSection(fixtureSnapshot({ ledgerText: ledger }), NOW), 1).summary).toBe(
+      "Review found issues. Fixed in 1 round, then passed.",
+    );
+  });
+
   it("running task past round 3 is attention", () => {
     const ledger = `${ledgerThroughTask6()}\nTask 7: fix round 3/5 dispatched\n`;
     const t7 = node(buildSddSection(fixtureSnapshot({ ledgerText: ledger }), NOW), 7);

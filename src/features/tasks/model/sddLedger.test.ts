@@ -21,13 +21,14 @@ describe("parseLedger (real fixture)", () => {
       commits: "ebb5db1..129e9e2",
       clean: true,
       parked: 0,
+      reviewClean: true,
     });
   });
 
   it("task 2 keeps the implemented verdict and one done fix round", () => {
     const t = task(2);
     expect(t?.implemented?.sha).toBe("95f86ae");
-    expect(t?.implemented?.verdict.startsWith("spec ❌")).toBe(true);
+    expect(t?.implemented?.verdict?.startsWith("spec ❌")).toBe(true);
     expect(t?.fixes).toEqual([
       {
         round: 1,
@@ -35,6 +36,7 @@ describe("parseLedger (real fixture)", () => {
         addressed: 2,
         open: 0,
         commits: "95f86ae..e704fdd",
+        base: "95f86ae",
       },
     ]);
   });
@@ -45,6 +47,7 @@ describe("parseLedger (real fixture)", () => {
     expect(complete?.commits).toBeUndefined();
     expect(complete?.clean).toBe(true);
     expect(complete?.parked).toBe(0);
+    expect(complete?.reviewClean).toBe(false);
   });
 
   it("collects rulings with and without a Task prefix", () => {
@@ -78,7 +81,91 @@ describe("parseLedger (real fixture)", () => {
   });
 });
 
+describe("parseLedger (controller formats fixture)", () => {
+  const ledger = parseLedger(
+    readFileSync(join(process.cwd(), "test-fixtures/sdd/controller-formats/progress.md"), "utf8"),
+  );
+  const task = (n: number) => ledger.tasks.find((t) => t.n === n);
+
+  it("reads `implemented (sha); review pending` as implemented with no verdict yet", () => {
+    expect(task(1)?.implemented).toEqual({ sha: "2b33c9d" });
+    expect(task(5)?.implemented).toEqual({ sha: "f7ded6c" });
+  });
+
+  it("reads a bare `implemented (sha)` and the old `; review:` form", () => {
+    expect(task(3)?.implemented).toEqual({ sha: "423e98a" });
+    expect(task(2)?.implemented).toEqual({ sha: "cbe0ed2", verdict: "spec ✅" });
+  });
+
+  it("a separate `Task N: review:` line sets the verdict", () => {
+    expect(task(4)?.implemented?.sha).toBe("f64a336");
+    expect(task(4)?.implemented?.verdict).toMatch(/^spec ❌ \(DONE_WITH_CONCERNS vs spec\), Important x2/);
+  });
+
+  it("keeps the commits of a fix round whose finding holds parentheses", () => {
+    expect(task(4)?.fixes).toEqual([
+      { round: 1, state: "done", addressed: 3, open: 1, commits: "f64a336..bd63c32", base: "f64a336" },
+      { round: 2, state: "done", addressed: 2, open: 0, commits: "bd63c32..7c2c240", base: "bd63c32" },
+    ]);
+  });
+
+  it("a fix round whose code is in but whose re-review is pending stays dispatched with its sha", () => {
+    expect(task(5)?.fixes).toEqual([{ round: 1, state: "dispatched", base: "f7ded6c", implementedSha: "4220ff1" }]);
+  });
+
+  it("a parked line is a parked note with its full text, not a ruling", () => {
+    expect(ledger.parked).toEqual([
+      {
+        taskIndex: 2,
+        text: "no boundary tests for 59_999 and 60_000 — Ruling: the final review decides whether they are worth adding",
+      },
+    ]);
+    expect(ledger.rulings.map((r) => r.text)).not.toContain("the final review decides whether they are worth adding");
+    expect(ledger.rulings).toHaveLength(3);
+    expect(task(2)?.complete).toMatchObject({ parked: 1, clean: false });
+  });
+
+  it("records whether the complete line says the review was clean", () => {
+    expect(task(1)?.complete?.reviewClean).toBe(true);
+    expect(task(3)?.complete?.reviewClean).toBe(false);
+    expect(task(4)?.complete?.reviewClean).toBe(true);
+  });
+
+  it("reads the final review and a dispatched wave", () => {
+    expect(ledger.final.review).toContain("Ready with fixes");
+    expect(ledger.final.fixWave).toBe("dispatched");
+  });
+});
+
 describe("parseLedger (unit)", () => {
+  it("a ruling inside a task line keeps the task's state change", () => {
+    const l = parseLedger("Task 2: implemented (abc1234); review: spec ✅. Ruling: keep the cache — cost: none");
+    expect(l.tasks[0].implemented).toEqual({ sha: "abc1234", verdict: "spec ✅. Ruling: keep the cache — cost: none" });
+    expect(l.rulings).toEqual([{ taskIndex: 2, text: "keep the cache — cost: none" }]);
+  });
+
+  it("takes the sha as the first token of an implemented line's parentheses", () => {
+    const l = parseLedger("Task 3: implemented (423e98a, by a fresh agent); review pending");
+    expect(l.tasks[0].implemented).toEqual({ sha: "423e98a" });
+  });
+
+  it("a later `review:` line overrides nothing but the verdict", () => {
+    const l = parseLedger(["Task 6: review: spec ✅", "Task 6: implemented (abc1234); review pending"].join("\n"));
+    expect(l.tasks[0].implemented).toEqual({ sha: "abc1234", verdict: "spec ✅" });
+  });
+
+  it("a FINAL REVIEW line that mentions a Ruling stays the final review", () => {
+    const l = parseLedger("FINAL REVIEW (opus, a1b2c3d..d4e5f6a): Ready to merge. Ruling: none needed");
+    expect(l.final.review).toBe("(opus, a1b2c3d..d4e5f6a): Ready to merge. Ruling: none needed");
+    expect(l.rulings).toEqual([]);
+  });
+
+  it("a minor line that mentions a Ruling stays a minor", () => {
+    const l = parseLedger("Task 3: minor (deferred): the Ruling: x is untested");
+    expect(l.minors).toEqual([{ taskIndex: 3, text: "the Ruling: x is untested" }]);
+    expect(l.rulings).toEqual([]);
+  });
+
   it("returns empty collections for empty text", () => {
     expect(parseLedger("")).toEqual({
       planPath: undefined,
@@ -107,17 +194,18 @@ describe("parseLedger (unit)", () => {
   it("tracks a dispatched fix round and parked notes", () => {
     const l = parseLedger(
       [
-        "Task 4: fix round 2/5 dispatched; FIX_BASE=abc",
+        "Task 4: fix round 2/5 dispatched; FIX_BASE=abc1234",
         "Task 4: parked — needs a human",
         "Task 4: complete (commits a..b, review 2 parked)",
       ].join("\n"),
     );
-    expect(l.tasks[0].fixes).toEqual([{ round: 2, state: "dispatched" }]);
+    expect(l.tasks[0].fixes).toEqual([{ round: 2, state: "dispatched", base: "abc1234" }]);
     expect(l.parked).toEqual([{ taskIndex: 4, text: "needs a human" }]);
     expect(l.tasks[0].complete).toEqual({
       commits: "a..b",
       clean: false,
       parked: 2,
+      reviewClean: false,
     });
   });
 

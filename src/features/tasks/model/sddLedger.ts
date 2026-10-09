@@ -4,13 +4,19 @@ export type LedgerFix = {
   addressed?: number;
   open?: number;
   commits?: string;
+  /** `FIX_BASE=<sha>` from the dispatch line: the re-review package starts here. */
+  base?: string;
+  /** `fix round R/5 implemented (<sha>)`: the fix is in and its re-review is pending. */
+  implementedSha?: string;
 };
 
 export type LedgerTask = {
   n: number;
-  implemented?: { sha: string; verdict: string };
+  /** `verdict` is absent until the review returns (`review pending`, or no review part yet). */
+  implemented?: { sha?: string; verdict?: string };
   fixes: LedgerFix[];
-  complete?: { commits?: string; clean: boolean; parked: number };
+  /** `clean` means nothing was parked; `reviewClean` that the line says `review clean`. */
+  complete?: { commits?: string; clean: boolean; parked: number; reviewClean: boolean };
 };
 
 export type LedgerNote = { taskIndex?: number; text: string };
@@ -32,10 +38,18 @@ export type ReportStatus =
 const HEADER = /^#\s*SDD ledger\s*[—–-]+\s*plan:\s*(.+?)\s*$/;
 const TASK_LINE = /^Task\s+(\d+):\s*(.*)$/;
 const RULING = /\bRuling\b[^:]*:\s*(.*)$/;
-const IMPLEMENTED = /^implemented\s*\(([^)]+)\);\s*review:\s*(.*)$/;
+const LEADING_RULING = /^Ruling\b/;
+// `implemented (sha)`, optionally followed by `; review: <verdict>` or `; review pending`.
+// The sha is the first token inside the parentheses; a note may follow it.
+const IMPLEMENTED =
+  /^implemented\s*\(\s*([^)\s,;]+)[^)]*\)(?:\s*;\s*review(?::\s*(.*)|\s+pending\b.*))?/;
+const REVIEW = /^review:\s*(.+)$/;
 const FIX_DISPATCHED = /^fix round\s+(\d+)\/\d+\s+dispatched/;
-const FIX_DONE =
-  /^fix round\s+(\d+)\/\d+\s*\((\d+)\s+addressed,\s*(\d+)\s+open\b([^)]*)\)/;
+const FIX_IMPLEMENTED = /^fix round\s+(\d+)\/\d+\s+implemented\s*\(\s*([0-9a-f]{4,40})/;
+const FIX_BASE = /\bFIX_BASE=([0-9a-f]{4,40})/;
+// Finding one-liners may hold parentheses, so the rest runs to the end of the line.
+const FIX_DONE = /^fix round\s+(\d+)\/\d+\s*\((\d+)\s+addressed,\s*(\d+)\s+open\b(.*)$/;
+const ALL_COMMITS = /commits\s+([^\s,;)]+)/g;
 const MINOR = /^minor\b[^:]*:\s*(.*)$/;
 const PARKED = /^parked\s*[—–-]+\s*(.*)$/;
 const COMPLETE = /^complete\b\s*(.*)$/;
@@ -59,6 +73,7 @@ function parseComplete(rest: string): NonNullable<LedgerTask["complete"]> {
     ...(commits ? { commits } : {}),
     clean: !rest.includes("parked"),
     parked: parkedCount ? Number(parkedCount[1]) : 0,
+    reviewClean: /\breview clean\b/.test(rest),
   };
 }
 
@@ -66,26 +81,45 @@ function parseComplete(rest: string): NonNullable<LedgerTask["complete"]> {
 function applyTaskLine(task: LedgerTask, rest: string): boolean {
   const implemented = IMPLEMENTED.exec(rest);
   if (implemented) {
+    const verdict = implemented[2]?.trim();
     task.implemented = {
+      ...task.implemented,
       sha: implemented[1].trim(),
-      verdict: implemented[2].trim(),
+      ...(verdict ? { verdict } : {}),
     };
+    return true;
+  }
+  const review = REVIEW.exec(rest);
+  if (review) {
+    task.implemented = { ...task.implemented, verdict: review[1].trim() };
     return true;
   }
   const dispatched = FIX_DISPATCHED.exec(rest);
   if (dispatched) {
-    upsertFix(task, { round: Number(dispatched[1]), state: "dispatched" });
+    const base = FIX_BASE.exec(rest)?.[1];
+    upsertFix(task, { round: Number(dispatched[1]), state: "dispatched", ...(base ? { base } : {}) });
+    return true;
+  }
+  const fixIn = FIX_IMPLEMENTED.exec(rest);
+  if (fixIn) {
+    const round = Number(fixIn[1]);
+    const prev = task.fixes.find((f) => f.round === round);
+    upsertFix(task, { round, state: "dispatched", ...prev, implementedSha: fixIn[2] });
     return true;
   }
   const done = FIX_DONE.exec(rest);
   if (done) {
-    const commits = COMMITS.exec(done[4])?.[1];
+    // The last `commits a..b` on the line: earlier text is the finding.
+    const commits = [...done[4].matchAll(ALL_COMMITS)].pop()?.[1];
+    const round = Number(done[1]);
+    const base = task.fixes.find((f) => f.round === round)?.base;
     upsertFix(task, {
-      round: Number(done[1]),
+      round,
       state: "done",
       addressed: Number(done[2]),
       open: Number(done[3]),
       ...(commits ? { commits } : {}),
+      ...(base ? { base } : {}),
     });
     return true;
   }
@@ -122,16 +156,10 @@ export function parseLedger(text: string): ParsedLedger {
     }
 
     const taskMatch = TASK_LINE.exec(line);
-    const taskIndex = taskMatch ? Number(taskMatch[1]) : undefined;
-
-    const ruling = RULING.exec(line);
-    if (ruling) {
-      ledger.rulings.push(note(taskIndex, ruling[1]));
-      continue;
-    }
-
-    if (taskMatch && taskIndex !== undefined) {
+    if (taskMatch) {
+      const taskIndex = Number(taskMatch[1]);
       const rest = taskMatch[2];
+      // Minor and parked lines keep their whole text, even when it mentions a Ruling.
       const minor = MINOR.exec(rest);
       if (minor) {
         ledger.minors.push(note(taskIndex, minor[1]));
@@ -142,6 +170,9 @@ export function parseLedger(text: string): ParsedLedger {
         ledger.parked.push(note(taskIndex, parked[1]));
         continue;
       }
+      const ruling = RULING.exec(rest);
+      if (ruling) ledger.rulings.push(note(taskIndex, ruling[1]));
+      if (LEADING_RULING.test(rest)) continue;
       // Only register a task once one of its lines is understood.
       const task = byNumber.get(taskIndex) ?? { n: taskIndex, fixes: [] };
       if (applyTaskLine(task, rest)) byNumber.set(taskIndex, task);
@@ -154,8 +185,13 @@ export function parseLedger(text: string): ParsedLedger {
       continue;
     }
     const wave = FINAL_WAVE.exec(line);
-    if (wave)
+    if (wave) {
       ledger.final.fixWave = wave[1].toLowerCase() as "dispatched" | "complete";
+      continue;
+    }
+
+    const ruling = RULING.exec(line);
+    if (ruling) ledger.rulings.push(note(undefined, ruling[1]));
   }
 
   ledger.tasks = [...byNumber.values()].sort((a, b) => a.n - b.n);

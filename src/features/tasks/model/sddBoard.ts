@@ -43,11 +43,17 @@ function reviewFoundIssues(verdict: string): boolean {
   return verdict.startsWith("spec ❌") || ISSUE_WORDS.test(verdict);
 }
 
-function summaryFor(task: LedgerTask | undefined): string {
+/** Undefined when nothing says how the review went: the panel never invents an outcome. */
+function summaryFor(task: LedgerTask | undefined): string | undefined {
   const rounds = task?.fixes.length ?? 0;
-  if (rounds === 0) return "Passed first review.";
-  const verdict = task?.implemented?.verdict ?? "";
-  return reviewFoundIssues(verdict)
+  const verdict = task?.implemented?.verdict;
+  if (rounds === 0) {
+    if (verdict !== undefined) {
+      return reviewFoundIssues(verdict) ? "Review found issues, then passed." : "Passed first review.";
+    }
+    return task?.complete?.reviewClean ? "Passed first review." : undefined;
+  }
+  return verdict !== undefined && reviewFoundIssues(verdict)
     ? `Review found issues. Fixed in ${plural(rounds, "round", "rounds")}, then passed.`
     : `Passed after ${plural(rounds, "fix", "fixes")}.`;
 }
@@ -98,7 +104,7 @@ function stagesFor(
     stages.push({
       kind: "review",
       label: "Review",
-      status: !verdict && !done ? "running" : reviewFoundIssues(verdict) ? "attention" : "done",
+      status: !verdict && !done ? "running" : verdict && reviewFoundIssues(verdict) ? "attention" : "done",
       ...(verdict ? { verdict } : {}),
       startedAt: latest(packagesFor(reviews, implemented.sha)),
     });
@@ -268,7 +274,7 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
       status,
       startedAt,
       endedAt,
-      ...(status === "done" ? { summary: summaryFor(task) } : {}),
+      ...(status === "done" && summaryFor(task) ? { summary: summaryFor(task) } : {}),
       ...(started ? { stages: stagesFor(task, status, startedAt, reportAt, reviews, implementDone) } : {}),
       ...(brief
         ? {
