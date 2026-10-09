@@ -1243,11 +1243,16 @@ mod tests {
         );
         let first = scan_root(&root.0, "user", "agents");
         assert_eq!(first[0].description, "aaaa");
-        std::fs::write(
-            root.0.join("memo-same/SKILL.md"),
-            "---\nname: memo-same\ndescription: bbbb\n---\n",
-        )
-        .unwrap();
+        let skill_md = root.0.join("memo-same/SKILL.md");
+        std::fs::write(&skill_md, "---\nname: memo-same\ndescription: bbbb\n---\n").unwrap();
+        // The memo keys on (mtime, length); a rewrite within one clock tick (coarse on
+        // Windows) would otherwise keep the old mtime, so move it forward explicitly.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&skill_md)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(5))
+            .unwrap();
         let second = scan_root(&root.0, "user", "agents");
         assert_eq!(second[0].description, "bbbb");
     }

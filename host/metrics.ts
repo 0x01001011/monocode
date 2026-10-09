@@ -1,12 +1,15 @@
 import { execFile } from "node:child_process";
 import { readFile, readdir, statfs } from "node:fs/promises";
 import { cpus, freemem, homedir, totalmem } from "node:os";
-import { join } from "node:path";
+import { posix } from "node:path";
 import { promisify } from "node:util";
 import type {
   HostGpuMetrics,
   HostMetrics,
 } from "../src/features/connections/model/protocol";
+
+/** Linux sysfs paths are POSIX; do not let Windows separators leak into them. */
+const join = posix.join;
 
 const run = promisify(execFile);
 
