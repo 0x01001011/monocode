@@ -19,6 +19,7 @@ import {
   previewLogKey,
   subscribePreviewLogs,
 } from "../previewLogs";
+import { previewHeightCss } from "../previewHeight";
 import { HtmlFrame, type HtmlFrameSource } from "./HtmlFrame";
 
 type Width = "full" | "tablet" | "phone";
@@ -69,11 +70,14 @@ export function HtmlPreview({
   const [expanded, setExpanded] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [width, setWidth] = useState<Width>("full");
+  const [contentHeight, setContentHeight] = useState<number>();
   const logKey = previewLogKey(source);
   const logs = useSyncExternalStore(
     (listener) => subscribePreviewLogs(logKey, listener),
     () => getPreviewLogs(logKey),
   );
+  // Another page starts with the standard height until it reports its own.
+  useEffect(() => setContentHeight(undefined), [logKey]);
   const errors = logs.filter((entry) => entry.level === "error").length;
 
   useEffect(() => {
@@ -94,11 +98,13 @@ export function HtmlPreview({
     <div
       data-html-preview-root
       data-expanded={expanded || undefined}
+      data-content-height={contentHeight}
       className={
         expanded
           ? "fixed inset-3 z-50 flex flex-col overflow-hidden rounded-xl border border-content/15 bg-background-base shadow-2xl"
-          : "flex h-[min(70vh,720px)] flex-col overflow-hidden rounded-lg border border-content/10"
+          : "flex flex-col overflow-hidden rounded-lg border border-content/10 transition-[height] duration-150 motion-reduce:transition-none"
       }
+      style={expanded ? undefined : { height: previewHeightCss(contentHeight) }}
     >
       <div className="flex h-8 shrink-0 items-center justify-between gap-0.5 border-b border-content/10 bg-content/5 px-1.5">
         <div
@@ -186,6 +192,7 @@ export function HtmlPreview({
             title={title}
             version={version}
             reloadKey={reload}
+            onHeight={setContentHeight}
           />
         </div>
       </div>

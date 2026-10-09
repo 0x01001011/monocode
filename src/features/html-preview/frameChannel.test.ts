@@ -148,4 +148,19 @@ describe("parseFrameMessage", () => {
       expect(parseFrameMessage(msg({ type: "copy", text }), name)).toBeNull();
     });
   });
+
+  describe("height", () => {
+    it("accepts a content height and clamps it", () => {
+      expect(parseFrameMessage(msg({ type: "height", h: 316.4 }), name)).toEqual({ type: "height", h: 316 });
+      expect(parseFrameMessage(msg({ type: "height", h: -4 }), name)).toEqual({ type: "height", h: 0 });
+      expect(parseFrameMessage(msg({ type: "height", h: 9_999_999 }), name)).toEqual({ type: "height", h: 100_000 });
+    });
+
+    it.each([undefined, null, "300", Number.NaN, Number.POSITIVE_INFINITY, {}])(
+      "rejects %j",
+      (h) => {
+        expect(parseFrameMessage(msg({ type: "height", h }), name)).toBeNull();
+      },
+    );
+  });
 });

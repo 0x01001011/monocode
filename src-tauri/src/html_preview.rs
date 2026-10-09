@@ -99,6 +99,19 @@ const BOOTSTRAP: &str = concat!(
     // asks the host, which writes only after a real click or key press.
     "try{Object.defineProperty(navigator,\"clipboard\",{configurable:true,value:{",
     "writeText:function(t){send({type:\"copy\",text:String(t).slice(0,100000)});return Promise.resolve()}}})}catch(x){}",
+    // The page's content height, for fitting small pages. The root element's
+    // own box is used: scrollHeight is never less than the viewport, so a short
+    // page could not say it is short. Reports only changes, on the next frame.
+    "var hv=-1,hq=0;",
+    "function hrep(){hq=0;var d=document.documentElement,b=document.body;",
+    "var h=Math.ceil(Math.max(d?d.getBoundingClientRect().height:0,b?b.scrollHeight:0));",
+    "if(h!==hv){hv=h;send({type:\"height\",h:h})}}",
+    "function hqueue(){if(!hq)hq=requestAnimationFrame(hrep)}",
+    "document.addEventListener(\"DOMContentLoaded\",function(){",
+    "if(window.ResizeObserver){var ro=new ResizeObserver(hqueue);ro.observe(document.documentElement);if(document.body)ro.observe(document.body)}",
+    "if(window.MutationObserver&&document.body)new MutationObserver(hqueue).observe(document.body,{childList:true,subtree:true,attributes:true,characterData:true});",
+    "hqueue()});",
+    "window.addEventListener(\"load\",hqueue);window.addEventListener(\"resize\",hqueue);",
     "send({type:\"ready\"})",
     "})();</script>"
 );

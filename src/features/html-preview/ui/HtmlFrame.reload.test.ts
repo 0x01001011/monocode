@@ -229,3 +229,31 @@ it("ignores scroll reports from a page that is not on screen yet", async () => {
   say(c.win, third, { type: "ready" });
   expect(c.posted).toEqual([]);
 });
+
+// --- content height ----------------------------------------------------------
+
+it("reports the content height of the page on screen, not of one still loading", async () => {
+  const seen: number[] = [];
+  await act(async () =>
+    root.render(
+      createElement(HtmlFrame, {
+        source: { kind: "file", path: "/repo/site/index.html" },
+        title: "Site",
+        onHeight: (h: number) => seen.push(h),
+      }),
+    ),
+  );
+  await act(async () => {});
+  const [first] = frames();
+  const a = fakeWindow(first);
+  say(a.win, first, { type: "height", h: 420 });
+  load(first);
+  act(() => emit("tok1"));
+  const next = frames()[1];
+  const b = fakeWindow(next);
+  say(b.win, next, { type: "height", h: 90 });
+  expect(seen).toEqual([420]);
+  load(next);
+  say(b.win, next, { type: "height", h: 95 });
+  expect(seen).toEqual([420, 95]);
+});

@@ -18,7 +18,10 @@ function bootstrap(): string {
 
 const NONCE = "mc:browsertest";
 
-async function open(page: Page, { name = NONCE, pageScript = "" } = {}) {
+async function open(
+  page: Page,
+  { name = NONCE, pageScript = "", waitFor = "#field" } = {},
+) {
   await page.route("**/preview-test/page.html", (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -60,7 +63,7 @@ async function open(page: Page, { name = NONCE, pageScript = "" } = {}) {
   );
   await page.goto("/preview-test/host.html");
   const frame = page.frameLocator("#f");
-  await expect(frame.locator("#field")).toBeVisible();
+  await expect(frame.locator(waitFor)).toBeAttached();
   return frame;
 }
 
@@ -246,4 +249,47 @@ test("navigator.clipboard.writeText in a page reaches the host instead of failin
   await expect.poll(async () => (await msgs(page)).find((m) => m.type === "copy")?.text).toBe("copied text");
   // The page's own promise resolved, so its UI can say 'Copied'.
   await expect.poll(() => frame.locator("body").evaluate(() => document.title)).toBe("ok");
+});
+
+const heights = async (page: Page) =>
+  (await msgs(page)).filter((m) => m.type === "height") as unknown as { h: number }[];
+
+test("a page reports its content height, and again when it grows", async ({ page }) => {
+  const frame = await open(page, {
+    pageScript: `document.body.style.margin = "0";
+      document.getElementById("field").remove(); document.querySelectorAll("a").forEach((a) => a.remove());
+      const box = document.createElement("div"); box.id = "box"; box.style.height = "300px"; document.body.append(box);`,
+    waitFor: "#box",
+  });
+  await expect.poll(async () => (await heights(page)).map((m) => m.h)).toContain(300);
+  await frame.locator("#box").evaluate((el) => { (el as HTMLElement).style.height = "520px"; });
+  await expect.poll(async () => (await heights(page)).map((m) => m.h)).toContain(520);
+  // Reports only change, so a settled page is quiet.
+  const count = (await heights(page)).length;
+  await page.waitForTimeout(400);
+  expect((await heights(page)).length).toBe(count);
+});
+
+test("a page that fills the viewport does not grow its own frame", async ({ page }) => {
+  await open(page, {
+    pageScript: `document.body.style.margin = "0"; document.body.style.minHeight = "100vh";`,
+  });
+  await page.waitForTimeout(600);
+  const reported = await heights(page);
+  // The frame is 300px tall; a viewport-filling page reports that and stops.
+  expect(reported.length).toBeGreaterThan(0);
+  expect(Math.max(...reported.map((m) => m.h))).toBeLessThanOrEqual(300);
+  expect(reported.length).toBeLessThanOrEqual(3);
+});
+
+test("a short page reports its own height, not the height of the frame around it", async ({ page }) => {
+  await open(page, {
+    pageScript: `document.body.style.margin = "0";
+      document.getElementById("field").remove(); document.querySelectorAll("a").forEach((a) => a.remove());
+      const box = document.createElement("div"); box.id = "box"; box.style.height = "90px"; document.body.append(box);`,
+    waitFor: "#box",
+  });
+  // The frame is 300px tall; reporting 300 would make shrinking impossible.
+  await expect.poll(async () => (await heights(page)).map((m) => m.h)).toContain(90);
+  expect((await heights(page)).every((m) => m.h <= 90)).toBe(true);
 });

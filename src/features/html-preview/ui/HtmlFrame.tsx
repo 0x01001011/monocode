@@ -51,6 +51,7 @@ export function HtmlFrame({
   title,
   version,
   reloadKey,
+  onHeight,
 }: {
   source: HtmlFrameSource;
   title: string;
@@ -58,6 +59,8 @@ export function HtmlFrame({
   version?: number;
   /** Bumped by a Reload control; reloads the page without reopening the preview. */
   reloadKey?: number;
+  /** The content height the page on screen reports, in pixels. */
+  onHeight?: (height: number) => void;
 }) {
   const sourceKey = previewLogKey(source);
   const logKey = sourceKey;
@@ -69,6 +72,8 @@ export function HtmlFrame({
   const [frames, setFrames] = useState<Buffered[]>([]);
   const nextId = useRef(0);
   const elements = useRef(new Map<number, HTMLIFrameElement>());
+  const onHeightRef = useRef(onHeight);
+  onHeightRef.current = onHeight;
   const lastOpen = useRef(0);
   const lastCopy = useRef(0);
   // Where the page on screen is scrolled, to hand to the page that replaces it.
@@ -167,6 +172,10 @@ export function HtmlFrame({
       const message = parseFrameMessage(event.data, frameName);
       if (message?.type === "console") {
         recordPreviewLog(logKey, message.level, message.text);
+        return;
+      }
+      if (message?.type === "height") {
+        if (frameId === shownRef.current) onHeightRef.current?.(message.h);
         return;
       }
       if (message?.type === "scroll") {

@@ -198,3 +198,48 @@ it("lets the arrow keys move between widths, as a radio group should", async () 
   });
   expect(radio("Full width")!.getAttribute("aria-checked")).toBe("true");
 });
+
+// --- fit to content -----------------------------------------------------------
+
+it("sizes the preview to the page once the page reports its height", async () => {
+  await mount();
+  const outer = container.querySelector<HTMLElement>("[data-html-preview-root]")!;
+  expect(outer.getAttribute("data-content-height")).toBeNull();
+  const iframe = container.querySelector("iframe")!;
+  const framed = {} as Window;
+  Object.defineProperty(iframe, "contentWindow", { value: framed });
+  await act(async () => {
+    window.dispatchEvent(
+      Object.assign(
+        new MessageEvent("message", {
+          data: { mcp: 1, n: iframe.getAttribute("name"), type: "height", h: 300 },
+        }),
+        { source: framed },
+      ),
+    );
+  });
+  // (The CSS itself is covered by previewHeightCss's own tests; happy-dom
+  // cannot parse min() values, so assert on what the component computed from.)
+  expect(outer.getAttribute("data-content-height")).toBe("300");
+});
+
+it("fills the reader again when expanded, whatever the page reported", async () => {
+  await mount();
+  const iframe = container.querySelector("iframe")!;
+  const framed = {} as Window;
+  Object.defineProperty(iframe, "contentWindow", { value: framed });
+  await act(async () => {
+    window.dispatchEvent(
+      Object.assign(
+        new MessageEvent("message", {
+          data: { mcp: 1, n: iframe.getAttribute("name"), type: "height", h: 300 },
+        }),
+        { source: framed },
+      ),
+    );
+  });
+  act(() => button("Expand preview")!.click());
+  const outer = container.querySelector<HTMLElement>("[data-html-preview-root]")!;
+  // Expanded, it fills the reader: no fitted height is applied.
+  expect(outer.getAttribute("style")).toBeNull();
+});
