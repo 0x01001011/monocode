@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { basename } from "../../../platform/tauri/fs";
 import { parentPath } from "../../../shared/lib/paths";
 import { newFrameName, parseFrameMessage } from "../frameChannel";
@@ -19,6 +20,9 @@ export type HtmlFrameSource =
  * it cannot reach Tauri IPC, app storage or this document. Never add
  * `allow-same-origin`; on Windows it would hand the page a working IPC channel.
  */
+/** Links from a page open at most this often. */
+const OPEN_COOLDOWN_MS = 750;
+
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-downloads";
 
 /** Live, sandboxed view of an HTML file (with its folder) or an artifact. */
@@ -39,6 +43,7 @@ export function HtmlFrame({
   const [reload, setReload] = useState(0);
   const tokenRef = useRef<string | null>(null);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const lastOpen = useRef(0);
   // The page reads this from window.name to address its messages to us.
   const [frameName] = useState(newFrameName);
 
@@ -97,6 +102,16 @@ export function HtmlFrame({
       // The frame's origin is "null", so the window is the only identity check.
       if (!frame || event.source !== frame.contentWindow) return;
       const message = parseFrameMessage(event.data, frameName);
+      if (message?.type === "open") {
+        // Only on the heels of a real click or key press, and not in bursts: a
+        // page's own script can post this message too.
+        const now = Date.now();
+        if (now - lastOpen.current < OPEN_COOLDOWN_MS) return;
+        if (navigator.userActivation?.isActive !== true) return;
+        lastOpen.current = now;
+        void openUrl(message.url).catch(() => undefined);
+        return;
+      }
       if (message?.type === "escape") {
         // Keys pressed inside the page never reach this window; hand them back.
         frame.blur();

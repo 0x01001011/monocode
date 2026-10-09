@@ -4,10 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { HtmlFrame } from "./HtmlFrame";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -17,6 +19,7 @@ beforeEach(() => {
     command === "preview_open" ? "tok1" : undefined,
   );
   vi.mocked(listen).mockResolvedValue(() => {});
+  vi.mocked(openUrl).mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -78,4 +81,43 @@ it("ignores messages that are not from this frame with this nonce", async () => 
   await post(framed, { mcp: 1, n: nonce, type: "unknown" }); // not in the allowlist
   window.removeEventListener("keydown", seen);
   expect(seen).not.toHaveBeenCalled();
+});
+
+const activation = (isActive: boolean | undefined) =>
+  vi.stubGlobal("navigator", {
+    ...navigator,
+    ...(isActive === undefined ? {} : { userActivation: { isActive } }),
+  });
+
+it("opens a link the page asked for in the system browser after a real click", async () => {
+  activation(true);
+  const { iframe, framed } = await mount();
+  const nonce = iframe.getAttribute("name")!;
+  await post(framed, { mcp: 1, n: nonce, type: "open", url: "https://example.com/docs" });
+  expect(openUrl).toHaveBeenCalledTimes(1);
+  expect(openUrl).toHaveBeenCalledWith("https://example.com/docs");
+});
+
+it.each([false, undefined] as const)(
+  "does not open links without recent user activation (isActive: %s)",
+  async (state) => {
+    activation(state);
+    const { iframe, framed } = await mount();
+    const nonce = iframe.getAttribute("name")!;
+    await post(framed, { mcp: 1, n: nonce, type: "open", url: "https://example.com/" });
+    expect(openUrl).not.toHaveBeenCalled();
+  },
+);
+
+it("does not open dangerous schemes or a burst of links", async () => {
+  activation(true);
+  const { iframe, framed } = await mount();
+  const nonce = iframe.getAttribute("name")!;
+  await post(framed, { mcp: 1, n: nonce, type: "open", url: "javascript:alert(1)" });
+  await post(framed, { mcp: 1, n: nonce, type: "open", url: "file:///etc/passwd" });
+  expect(openUrl).not.toHaveBeenCalled();
+  await post(framed, { mcp: 1, n: nonce, type: "open", url: "https://a.example/" });
+  await post(framed, { mcp: 1, n: nonce, type: "open", url: "https://b.example/" });
+  await post(framed, { mcp: 1, n: nonce, type: "open", url: "https://c.example/" });
+  expect(openUrl).toHaveBeenCalledTimes(1);
 });

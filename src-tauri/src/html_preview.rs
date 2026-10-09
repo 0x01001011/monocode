@@ -50,6 +50,18 @@ const BOOTSTRAP: &str = concat!(
     // This listener runs before the page's own, so wait until dispatch is
     // over: a page that handled Escape (preventDefault) keeps it.
     "setTimeout(function(){if(!e.defaultPrevented)send({type:\"escape\"})},0)});",
+    // On window, so it runs after the page's own click handlers and a page
+    // that handled the click (preventDefault) keeps it. Links to the preview's
+    // own origin are the page's business; web and mail links go to the host,
+    // because a sandboxed frame cannot open them and the app's CSP would turn
+    // the navigation into a dead frame.
+    "window.addEventListener(\"click\",function(e){",
+    "if(e.defaultPrevented)return;",
+    "var t=e.target,a=t&&t.closest?t.closest(\"a[href]\"):null;if(!a)return;",
+    "var u;try{u=new URL(a.href)}catch(x){return}",
+    "if(u.protocol!==\"https:\"&&u.protocol!==\"http:\"&&u.protocol!==\"mailto:\")return;",
+    "if(u.origin===location.origin)return;",
+    "e.preventDefault();send({type:\"open\",url:u.href})});",
     "send({type:\"ready\"})",
     "})();</script>"
 );

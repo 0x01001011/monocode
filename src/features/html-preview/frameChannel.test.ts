@@ -35,4 +35,42 @@ describe("parseFrameMessage", () => {
     expect(parsed).toEqual({ type: "escape" });
     expect(parsed).not.toBe(data);
   });
+
+  describe("open", () => {
+    it("accepts web and mail links and returns the normalized URL", () => {
+      expect(
+        parseFrameMessage(msg({ type: "open", url: "https://example.com/a b?x=1#top" }), name),
+      ).toEqual({ type: "open", url: "https://example.com/a%20b?x=1#top" });
+      expect(
+        parseFrameMessage(msg({ type: "open", url: "http://example.com/" }), name),
+      ).toEqual({ type: "open", url: "http://example.com/" });
+      expect(
+        parseFrameMessage(msg({ type: "open", url: "mailto:a@example.com" }), name),
+      ).toEqual({ type: "open", url: "mailto:a@example.com" });
+    });
+
+    it.each([
+      "javascript:alert(1)",
+      "file:///etc/passwd",
+      "data:text/html,<p>x</p>",
+      "ipc://localhost/cmd",
+      "tauri://localhost/",
+      "asset://localhost/x",
+      "preview://localhost/tok/index.html",
+      "/relative/path",
+      "example.com",
+      "https://",
+      "",
+      `https://example.com/${"a".repeat(3000)}`,
+    ])("rejects %j", (url) => {
+      expect(parseFrameMessage(msg({ type: "open", url }), name)).toBeNull();
+    });
+
+    it.each([undefined, null, 5, {}, ["https://example.com"]])(
+      "rejects a non-string url: %j",
+      (url) => {
+        expect(parseFrameMessage(msg({ type: "open", url }), name)).toBeNull();
+      },
+    );
+  });
 });

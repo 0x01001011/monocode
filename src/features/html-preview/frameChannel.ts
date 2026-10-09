@@ -4,7 +4,27 @@
  * untrusted: only own properties are read, only allowlisted types pass, and a
  * fresh object is returned instead of the page's own.
  */
-export type FrameMessage = { type: "ready" } | { type: "escape" };
+export type FrameMessage =
+  | { type: "ready" }
+  | { type: "escape" }
+  | { type: "open"; url: string };
+
+/** Links a page may ask the app to open; everything else (javascript:, file:, app schemes) is dropped. */
+const OPEN_PROTOCOLS = new Set(["https:", "http:", "mailto:"]);
+const MAX_URL_LENGTH = 2048;
+
+function openMessage(url: unknown): FrameMessage | null {
+  if (typeof url !== "string" || !url || url.length > MAX_URL_LENGTH) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (!OPEN_PROTOCOLS.has(parsed.protocol)) return null;
+  if (parsed.protocol !== "mailto:" && !parsed.hostname) return null;
+  return { type: "open", url: parsed.href };
+}
 
 const own = (record: object, key: string): unknown =>
   Object.prototype.hasOwnProperty.call(record, key)
@@ -24,6 +44,8 @@ export function parseFrameMessage(
       return { type: "ready" };
     case "escape":
       return { type: "escape" };
+    case "open":
+      return openMessage(own(data, "url"));
     default:
       return null;
   }
