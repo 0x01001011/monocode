@@ -65,7 +65,10 @@ export function glyphFor(node: BoardNode): GlyphKind {
 export function durationLabel(node: BoardNode, now: number): string | undefined {
   if (node.status === "pending") return undefined;
   if (node.startedAt === undefined) return NO_DURATION;
-  if (node.status === "running") return formatDuration(now - node.startedAt, true);
+  // An attention task is still being worked on until it has an end; blocked has no clock.
+  if (node.status === "running" || (node.status === "attention" && node.endedAt === undefined)) {
+    return formatDuration(now - node.startedAt, true);
+  }
   return formatDuration(node.endedAt === undefined ? undefined : node.endedAt - node.startedAt, false);
 }
 
@@ -216,7 +219,12 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle }: P
             </span>
             {(node.fixRounds ?? 0) >= STRUGGLING_FROM_ROUND ? (
               <span className="text-[11.5px] whitespace-nowrap text-skill">
-                fix {node.fixRounds} of {MAX_FIX_ROUNDS}
+                fix {Math.min(node.fixRounds ?? 0, MAX_FIX_ROUNDS)} of {MAX_FIX_ROUNDS}
+              </span>
+            ) : null}
+            {node.status === "blocked" ? (
+              <span data-tag="blocked" className="text-[11.5px] whitespace-nowrap text-skill">
+                blocked
               </span>
             ) : null}
             {duration !== undefined ? (

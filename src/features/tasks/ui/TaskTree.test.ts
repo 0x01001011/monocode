@@ -198,6 +198,30 @@ describe("TaskTree", () => {
     expect(b.textContent).not.toContain("fix 2 of 5");
   });
 
+  it("an unfinished attention task ticks from its start; a blocked one with no end shows a dash", () => {
+    render({
+      nodes: [
+        node("a", { status: "attention", fixRounds: 3, startedAt: 100_000 - 74_000 }),
+        node("b", { status: "blocked", startedAt: 10_000 }),
+        node("c", { status: "attention", startedAt: 0, endedAt: 3 * 60_000 }),
+      ],
+    });
+    const [a, b, c] = items().map((el) => el.querySelector("[data-duration]")?.textContent);
+    expect(a).toBe("1m 14s");
+    expect(b).toBe("—");
+    expect(c).toBe("3m");
+  });
+
+  it("the fix tag is clamped at 5 of 5, and a blocked task gets an amber blocked tag", () => {
+    render({ nodes: [node("a", { status: "attention", fixRounds: 6 }), node("b", { status: "blocked" })] });
+    const [a, b] = items();
+    expect(a.textContent).toContain("fix 5 of 5");
+    expect(a.textContent).not.toContain("fix 6");
+    const tag = b.querySelector("[data-tag=blocked]");
+    expect(tag?.textContent).toBe("blocked");
+    expect(tag?.className).toContain("text-skill");
+  });
+
   it("puts the full title on the title attribute", () => {
     render({ nodes: [node("a", { title: "A very long task title" })] });
     expect(container.querySelector("[title='A very long task title']")).not.toBeNull();
