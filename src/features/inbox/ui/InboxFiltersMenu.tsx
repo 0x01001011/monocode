@@ -318,7 +318,7 @@ export function InboxFiltersMenu({
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <div className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-content/40">
+    <div className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
       {children}
     </div>
   );

@@ -139,7 +139,7 @@ export function WorkspaceIdentity({ worktree }: { worktree: boolean }) {
     <div
       title={`Workspace: ${label}`}
       aria-label={`Workspace ${label}`}
-      className="-ml-1.5 flex h-6 min-w-0 shrink-0 items-center gap-1.5 px-1.5 text-[12px] text-content/45"
+      className="-ml-1.5 flex h-6 min-w-0 shrink-0 items-center gap-1.5 px-1.5 text-[12px] text-muted"
     >
       <Icon className="size-3.5 shrink-0" />
       <span className="truncate">{label}</span>
@@ -283,7 +283,7 @@ function WorkspaceModePicker({
             }
             setOpen(true);
           }}
-          className="-ml-1.5 flex h-6 min-w-0 max-w-48 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-content/55 hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content disabled:opacity-40 disabled:hover:bg-transparent active:scale-[0.97]"
+          className="-ml-1.5 flex h-6 min-w-0 max-w-48 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-muted hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content disabled:opacity-40 disabled:hover:bg-transparent active:scale-[0.97]"
         >
           <Icon className="size-3.5 shrink-0" />
           <span className="truncate">{label}</span>
@@ -302,10 +302,10 @@ function WorkspaceModePicker({
           data-workspace-picker
           className="overflow-hidden p-1.5"
         >
-          <div className="flex items-center justify-between gap-3 px-2 py-1 text-[11px] font-medium text-content/45">
+          <div className="flex items-center justify-between gap-3 px-2 py-1 text-[11px] font-medium text-muted">
             <span>Workspace</span>
             {shortcut ? (
-              <kbd className="font-sans text-[10px] font-normal text-content/35">
+              <kbd className="font-sans text-[10px] font-normal text-muted">
                 {shortcut}
               </kbd>
             ) : null}
@@ -330,7 +330,7 @@ function WorkspaceModePicker({
                 mode === value ? "bg-selection text-content" : "text-content/80"
               }`}
             >
-              <RowIcon className="size-4 shrink-0 text-content/55" />
+              <RowIcon className="size-4 shrink-0 text-muted" />
               <span className="flex-1">{text}</span>
               {mode === value ? <Check className="size-3.5" /> : null}
             </button>
@@ -360,9 +360,9 @@ function WorkspaceModePicker({
                 worktreeMenu ? "bg-selection text-content" : ""
               }`}
             >
-              <FolderTree className="size-4 shrink-0 text-content/55" />
+              <FolderTree className="size-4 shrink-0 text-muted" />
               <span className="flex-1">Existing worktree…</span>
-              <ChevronRight className="size-3.5 shrink-0 text-content/45" />
+              <ChevronRight className="size-3.5 shrink-0 text-muted" />
             </button>
           ) : null}
           {onOpenSettings ? (
@@ -380,7 +380,7 @@ function WorkspaceModePicker({
                 className="flex h-full w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-content/65 hover:bg-content/8 hover:text-content active:scale-[0.98]"
               >
                 <Settings
-                  className="size-4 shrink-0 text-content/45"
+                  className="size-4 shrink-0 text-muted"
                   strokeWidth={1.75}
                 />
                 <span className="flex-1">Worktree settings</span>
@@ -412,7 +412,7 @@ function WorkspaceModePicker({
           }}
         >
           {!data && !loadError ? (
-            <p className="flex items-center gap-2 px-2 py-3 text-[12px] text-content/50">
+            <p className="flex items-center gap-2 px-2 py-3 text-[12px] text-muted">
               <Loader className="size-3.5 animate-spin" />
               Loading worktrees…
             </p>
@@ -430,22 +430,22 @@ function WorkspaceModePicker({
                 className="flex min-h-11 w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-content/80 hover:bg-content/8 hover:text-content disabled:opacity-40"
               >
                 {busyPath === tree.path ? (
-                  <Loader className="size-4 shrink-0 animate-spin text-content/55" />
+                  <Loader className="size-4 shrink-0 animate-spin text-muted" />
                 ) : (
-                  <FolderTree className="size-4 shrink-0 text-content/55" />
+                  <FolderTree className="size-4 shrink-0 text-muted" />
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px]">
                     {tree.branch ?? `Detached ${tree.head.slice(0, 7)}`}
                   </span>
-                  <span className="block truncate font-mono text-[10px] text-content/40">
+                  <span className="block truncate font-mono text-[10px] text-muted">
                     {prettyCwd(tree.path)}
                   </span>
                 </span>
               </button>
             ))}
             {data && worktrees.length === 0 ? (
-              <p className="px-2 py-3 text-[12px] text-content/50">
+              <p className="px-2 py-3 text-[12px] text-muted">
                 No existing worktrees
               </p>
             ) : null}
@@ -453,7 +453,7 @@ function WorkspaceModePicker({
           {pickError || loadError ? (
             <p
               role="alert"
-              className="border-t border-stroke px-2 py-2 text-[11px] text-red-400"
+              className="border-t border-stroke px-2 py-2 text-[11px] text-danger"
             >
               {pickError || loadError}
             </p>
@@ -552,7 +552,7 @@ export function WorktreeBasePicker({
           aria-label="Worktree base branch"
           className="flex flex-col overflow-hidden"
         >
-          <label className="flex shrink-0 items-center gap-2 border-b border-stroke px-2 py-2.5 text-content/50">
+          <label className="flex shrink-0 items-center gap-2 border-b border-stroke px-2 py-2.5 text-muted">
             <Search className="size-3.5 shrink-0" />
             <input
               ref={search}
@@ -583,7 +583,7 @@ export function WorktreeBasePicker({
                   dismiss();
                 }
               }}
-              className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/40"
+              className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
             />
           </label>
           <div
@@ -616,7 +616,7 @@ export function WorktreeBasePicker({
                   {selectedRow ? (
                     <Check className="size-3.5 shrink-0" />
                   ) : (
-                    <GitBranch className="size-3.5 shrink-0 text-content/45" />
+                    <GitBranch className="size-3.5 shrink-0 text-muted" />
                   )}
                   <span
                     className={`min-w-0 flex-1 truncate ${selectedRow ? "font-medium" : ""}`}
@@ -627,7 +627,7 @@ export function WorktreeBasePicker({
               );
             })}
             {rows.length === 0 ? (
-              <p className="px-2 py-3 text-[12px] text-content/45">
+              <p className="px-2 py-3 text-[12px] text-muted">
                 No matching branches
               </p>
             ) : null}

@@ -70,7 +70,7 @@ export function MonoProjects({
             aria-label={`Remove ${project.name}`}
             title={`Remove ${project.name}`}
             onClick={() => removeMonoProject(monoId, project.path)}
-            className="grid size-5 shrink-0 place-items-center rounded text-content/45 opacity-0 hover:bg-content/8 hover:text-content focus-visible:opacity-100 group-hover:opacity-100"
+            className="hit-area grid size-5 shrink-0 place-items-center rounded text-muted opacity-0 hover:bg-content/8 hover:text-content focus-visible:opacity-100 group-hover:opacity-100"
           >
             <X className="size-3" strokeWidth={1.75} />
           </button>
@@ -82,7 +82,7 @@ export function MonoProjects({
         aria-haspopup="dialog"
         aria-expanded={adding}
         onClick={() => setAdding((open) => !open)}
-        className="-ml-1 flex h-7 w-fit items-center gap-1.5 rounded-md px-1 text-content/45 hover:bg-content/6 hover:text-content aria-expanded:bg-content/6 aria-expanded:text-content"
+        className="-ml-1 flex h-7 w-fit items-center gap-1.5 rounded-md px-1 text-muted hover:bg-content/6 hover:text-content aria-expanded:bg-content/6 aria-expanded:text-content"
       >
         <Plus className="size-3 shrink-0" strokeWidth={1.75} />
         Add project

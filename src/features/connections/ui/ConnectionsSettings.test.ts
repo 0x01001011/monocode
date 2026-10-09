@@ -131,6 +131,16 @@ it("starts SSH setup from Settings and makes the machine available after native 
   ).toBeNull();
 });
 
+it("sets the SSH heading one step below the section title", async () => {
+  await render();
+  await act(async () => button("Add machine").click());
+  const sshHeading = [...container.querySelectorAll("h3")].find(
+    (heading) => heading.textContent === "Connect through SSH",
+  )!;
+  expect(sshHeading.className).toContain("text-[13px]");
+  expect(sshHeading.className).not.toContain("text-[14px]");
+});
+
 it("requires an explicit host trust answer and forwards secrets only to the native prompt", async () => {
   state.prompt = {
     id: "trust",

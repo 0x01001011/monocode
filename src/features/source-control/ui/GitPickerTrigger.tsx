@@ -28,7 +28,7 @@ export function GitPickerTrigger({
     <button
       type="button"
       {...props}
-      className={`-ml-1.5 flex h-6 min-w-0 max-w-64 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-content/55 hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content disabled:hover:bg-transparent disabled:hover:text-content/55 active:scale-[0.97] ${dimWhenDisabled ? "disabled:opacity-40" : ""}`}
+      className={`-ml-1.5 flex h-6 min-w-0 max-w-64 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-muted hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content disabled:hover:bg-transparent disabled:hover:text-muted active:scale-[0.97] ${dimWhenDisabled ? "disabled:opacity-40" : ""}`}
     >
       <Icon className="size-3.5 shrink-0" />
       <span className="relative min-w-0 flex-1 truncate">
@@ -43,7 +43,7 @@ export function GitPickerTrigger({
         )}
       </span>
       {worktree && (
-        <span className="shrink-0 rounded bg-content/8 px-1 text-[10px] text-content/45">
+        <span className="shrink-0 rounded bg-content/8 px-1 text-[10px] text-muted">
           Worktree
         </span>
       )}

@@ -262,7 +262,7 @@ function TabHarnesses({
       })}
       {extra > 0 ? (
         <span
-          className={`pl-0.5 text-[10px] leading-none ${dimmed ? "text-content/50" : "text-content"}`}
+          className={`pl-0.5 text-[10px] leading-none ${dimmed ? "text-muted" : "text-content"}`}
         >
           +{extra}
         </span>
@@ -298,10 +298,13 @@ function TitleTabItem({
 }) {
   const { headline, meta, tooltip } = tabCopy(tab);
   const fileIcon = tab.files[0];
-  const accessibleTooltip =
-    (tab.doneHarnesses?.length ?? 0) > 0
-      ? `${tooltip} · Response complete`
-      : tooltip;
+  const accessibleTooltip = [
+    tooltip,
+    (tab.doneHarnesses?.length ?? 0) > 0 ? "Response complete" : null,
+    tab.dirty ? "Unsaved changes" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div
@@ -337,6 +340,7 @@ function TitleTabItem({
         type="button"
         title={accessibleTooltip}
         aria-label={accessibleTooltip}
+        aria-current={active ? "page" : undefined}
         data-tauri-drag-region="false"
         onClick={() => {
           if (sortable.consumeClick()) return;
@@ -345,12 +349,12 @@ function TitleTabItem({
         onDoubleClick={() => {
           if (tab.previewFileId) onPinFile?.(tab.previewFileId);
         }}
-        className={`relative flex h-7.5 min-w-0 flex-1 cursor-default items-center gap-1.5 self-center rounded-md px-2 text-left ${
+        className={`relative flex h-7.5 min-w-0 flex-1 cursor-default items-center gap-1.5 self-center rounded-md px-2 text-left focus-visible:focus-ring-inset ${
           closable ? "pr-7" : "pr-2.5"
         } ${
           active
             ? "bg-selection text-content"
-            : "text-content/50 hover:bg-content/5 hover:text-content"
+            : "text-muted hover:bg-content/5 hover:text-content"
         }`}
       >
         {tab.harnesses.length > 0 ? (
@@ -363,7 +367,7 @@ function TitleTabItem({
         ) : tab.terminal || !fileIcon ? (
           <Terminal
             className={`size-3.5 shrink-0 ${
-              active ? "text-content" : "text-content/55"
+              active ? "text-content" : "text-muted"
             }`}
             strokeWidth={1.75}
           />
@@ -388,12 +392,12 @@ function TitleTabItem({
               <span
                 className="size-1.5 shrink-0 rounded-full bg-content/70"
                 title="Unsaved changes"
-                aria-label="Unsaved changes"
+                aria-hidden="true"
               />
             ) : null}
           </span>
           {meta ? (
-            <TabLabel className="hidden text-[10px] leading-tight text-content/45 @min-[11rem]:block">
+            <TabLabel className="hidden text-[10px] leading-tight text-muted @min-[11rem]:block">
               {meta}
             </TabLabel>
           ) : null}
@@ -402,7 +406,7 @@ function TitleTabItem({
       {closable ? (
         <button
           type="button"
-          title="Close Tab"
+          title="Close tab"
           aria-label={`Close ${headline}`}
           data-no-drag
           data-tauri-drag-region="false"
@@ -411,7 +415,7 @@ function TitleTabItem({
             e.stopPropagation();
             onClose(tab.id);
           }}
-          className="absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-content/50 opacity-0 hover:bg-content/10 hover:text-content group-hover:opacity-100"
+          className="hit-area absolute right-1 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted opacity-0 hover:bg-content/10 hover:text-content focus-visible:opacity-100 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100"
         >
           <X className="size-3" strokeWidth={1.75} />
         </button>
@@ -510,7 +514,7 @@ export function IconButton({
             ? "text-accent hover:bg-content/10"
             : active
               ? "text-content hover:bg-content/10"
-              : "text-content/50 hover:bg-content/10 hover:text-content"
+              : "text-muted hover:bg-content/10 hover:text-content"
       }`}
     >
       {children}
@@ -965,7 +969,7 @@ function TitleBarComponent({
           onNewTerminal={onNewTerminal}
           buttonClassName="flex h-full min-w-0 max-w-64 shrink items-center gap-2 px-6 text-left text-sm font-medium leading-tight"
         >
-          <span className="min-w-0 truncate text-content/50">No project</span>
+          <span className="min-w-0 truncate text-muted">No project</span>
         </CwdPicker>
       ) : null}
 
@@ -1076,7 +1080,7 @@ function TitleBarComponent({
 
         {!IS_MAC && !IS_WIN ? (
           <div className="flex min-w-0 flex-1 items-center justify-center px-4">
-            <span className="pointer-events-none truncate text-[11.5px] font-medium text-content/40 select-none">
+            <span className="pointer-events-none truncate text-[11.5px] font-medium text-muted select-none">
               {systemTitle}
             </span>
           </div>
@@ -1120,7 +1124,7 @@ function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
       <span
         data-mono-status={state.status}
         className={`shrink-0 text-[12px] ${
-          state.status === "needs-you" ? "text-accent" : "text-content/45"
+          state.status === "needs-you" ? "text-accent" : "text-muted"
         }`}
       >
         {MONO_STATUS_LABEL[state.status]}

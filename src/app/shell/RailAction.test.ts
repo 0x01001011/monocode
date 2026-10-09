@@ -42,3 +42,31 @@ it("opens Inbox context actions from the keyboard without navigating", () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("sets badge text on the accent fill with the on-accent ink", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(RailAction, {
+          label: "Inbox",
+          icon: Inbox,
+          badge: 3,
+          onClick: vi.fn(),
+        }),
+      ),
+    );
+    const badge = container.querySelector<HTMLElement>("[aria-hidden]")!;
+    expect(badge.textContent).toBe("3");
+    expect(badge.classList).toContain("bg-accent");
+    expect(badge.classList).toContain("text-accent-foreground");
+    expect(badge.classList).not.toContain("text-white");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

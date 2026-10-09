@@ -51,7 +51,7 @@ function duration(ms: number): string {
 const OUTCOME: Record<HabitRun["outcome"], { label: string; dot: string }> = {
   posted: { label: "Messaged you", dot: "bg-[var(--mono-color)]" },
   quiet: { label: "Nothing to report", dot: "bg-content/25" },
-  failed: { label: "Couldn't finish", dot: "bg-red-500/70" },
+  failed: { label: "Couldn't finish", dot: "bg-danger/70" },
 };
 
 /** One habit up close: what it does, when, and how its recent runs went. */
@@ -132,7 +132,7 @@ export function HabitPage({
         <Section title="Recent runs">
           {runningSince != null ? <RunningRow since={runningSince} /> : null}
           {runs.length === 0 && runningSince == null ? (
-            <p className="px-2 py-3 text-[12px] text-content/40">
+            <p className="px-2 py-3 text-[12px] text-muted">
               It hasn't run yet.
             </p>
           ) : (
@@ -151,7 +151,7 @@ export function HabitPage({
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center">
-      <dt className="flex h-7 items-center text-content/45">{label}</dt>
+      <dt className="flex h-7 items-center text-muted">{label}</dt>
       <dd className="min-w-0 truncate text-content/85">{children}</dd>
     </div>
   );
@@ -160,7 +160,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="border-t border-stroke px-2 pb-4 pt-3">
-      <h4 className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wide text-content/40">
+      <h4 className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wide text-muted">
         {title}
       </h4>
       {children}
@@ -190,7 +190,7 @@ function RunningRow({ since }: { since: number }) {
     <div className="flex items-center gap-2.5 rounded-md px-2 py-2 text-[12px]">
       <span className="size-2 shrink-0 animate-pulse rounded-full bg-[var(--mono-color)]" />
       <span className="flex-1 text-content/85">Running now</span>
-      <span className="text-content/40">
+      <span className="text-muted">
         <RunningFor since={since} />
       </span>
     </div>
@@ -219,7 +219,7 @@ function RunRow({ run, cwd }: { run: HabitRun; cwd: string }) {
         <span className="min-w-0 flex-1 truncate text-content/85">
           {outcome.label}
         </span>
-        <span className="shrink-0 tabular-nums text-content/40">
+        <span className="shrink-0 tabular-nums text-muted">
           {when(run.at)}
           {run.durationMs ? ` · ${duration(run.durationMs)}` : ""}
         </span>
@@ -235,7 +235,7 @@ function RunRow({ run, cwd }: { run: HabitRun; cwd: string }) {
               cwd={cwd}
             />
           ) : (
-            <p className="whitespace-pre-wrap text-red-500/80">{run.error}</p>
+            <p className="whitespace-pre-wrap text-danger">{run.error}</p>
           )}
         </div>
       ) : null}

@@ -53,9 +53,11 @@ import {
   readTextFile,
   subscribeGitChanged,
   writeTextFile,
+  isSaveConflict,
   type GitFileDiffKind,
 } from "../../../platform/tauri/fs";
-import { syncWatchedMtime, watchFile } from "../model/fileWatch";
+import { describeFileError } from "../model/fileErrors";
+import { syncWatchedMtime, watchedMtime, watchFile } from "../model/fileWatch";
 import { filePreviewKind } from "../model/filePreview";
 import { HtmlFrame } from "../../html-preview/ui/HtmlFrame";
 import { isRemoteProjectPath } from "../../projects/model/recents";
@@ -173,6 +175,9 @@ export function FileEditor({
   const loadGeneration = useRef(0);
   const dirtyRef = useRef(false);
   const pendingDiskRef = useRef(false);
+  // Set after a save was refused because the file changed on disk; the next
+  // save is then an explicit overwrite.
+  const overwriteRef = useRef(false);
   const eolRef = useRef<LineEnding>("\n");
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
@@ -182,6 +187,7 @@ export function FileEditor({
     // and restore the file's own line endings on save. Feeding CRLF text
     // into the LF document doubles every line (see editorDoc.ts).
     eolRef.current = detectLineEnding(raw);
+    overwriteRef.current = false;
     const content = normalizeLineBreaks(raw);
     setLoadState((current) => {
       if (current.status === "ready" && current.content === content) {
@@ -347,18 +353,29 @@ export function FileEditor({
       setSaveState({ status: "saving" });
       const serializedContent = restoreLineEnding(content, eolRef.current);
       const operation = saveQueue.current.then(() =>
-        writeTextFile(path, serializedContent),
+        writeTextFile(
+          path,
+          serializedContent,
+          overwriteRef.current ? undefined : watchedMtime(path),
+        ),
       );
       saveQueue.current = operation.catch(() => {});
       try {
         await operation;
+        overwriteRef.current = false;
         await syncWatchedMtime(path);
         notifyGitChanged();
         if (generation === saveGeneration.current) {
           setSaveState({ status: "saved" });
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const conflict = isSaveConflict(error);
+        if (conflict) overwriteRef.current = true;
+        const message = conflict
+          ? "This file changed on disk after it was opened. Save again to overwrite it."
+          : error instanceof Error
+            ? error.message
+            : String(error);
         if (generation === saveGeneration.current) {
           setSaveState({ status: "error", message });
         }
@@ -423,7 +440,7 @@ export function FileEditor({
 
   if (loadState.status === "loading") {
     return (
-      <div className="grid h-full place-items-center text-[12px] text-content/45">
+      <div className="grid h-full place-items-center text-[12px] text-muted">
         Opening {basename(path)}…
       </div>
     );
@@ -433,13 +450,27 @@ export function FileEditor({
     return (
       <div className="grid h-full place-items-center p-6">
         <div className="max-w-md text-center">
-          <AlertCircle className="mx-auto mb-3 size-5 text-red-400" />
+          <AlertCircle className="mx-auto mb-3 size-5 text-danger" />
           <p className="text-[13px] text-content">
             Couldn’t open {basename(path)}
           </p>
-          <p className="mt-1 text-[12px] leading-5 text-content/50">
-            {loadState.message}
-          </p>
+          {(() => {
+            const info = describeFileError(loadState.message);
+            return info.hint ? (
+              <>
+                <p className="mt-1 text-[12px] leading-5 text-muted">
+                  {info.hint}
+                </p>
+                <p className="mt-1 break-words font-mono text-[11px] text-faint">
+                  {info.detail}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-[12px] leading-5 text-muted">
+                {info.detail}
+              </p>
+            );
+          })()}
           <button
             type="button"
             onClick={() => setReloadKey((value) => value + 1)}
@@ -507,7 +538,7 @@ export function FileEditor({
                 onDirtyChange={dirtyChange}
                 onErrorCountChange={errorCountChange}
                 onSave={save}
-                canAutosave={() => !pendingDiskRef.current}
+                canAutosave={() => !pendingDiskRef.current && !overwriteRef.current}
                 onStageGit={
                   showDiff && gitDiff?.kind === "unstaged"
                     ? stageGit
@@ -531,13 +562,13 @@ export function FileEditor({
           onDirtyChange={dirtyChange}
           onErrorCountChange={errorCountChange}
           onSave={save}
-          canAutosave={() => !pendingDiskRef.current}
+          canAutosave={() => !pendingDiskRef.current && !overwriteRef.current}
           onStageGit={
             showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined
           }
         />
       )}
-      <footer className="flex h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-content/40">
+      <footer className="flex h-6 shrink-0 items-center border-t border-stroke px-2.5 font-mono text-[10.5px] text-muted">
         <span className="min-w-0 flex-1 truncate" title={path}>
           {relativePath}
         </span>
@@ -547,7 +578,7 @@ export function FileEditor({
           <span>Saved</span>
         ) : saveState.status === "error" ? (
           <span
-            className="max-w-64 truncate text-red-400"
+            className="max-w-64 truncate text-danger"
             title={saveState.message}
           >
             Save failed: {saveState.message}
@@ -1113,7 +1144,7 @@ function DiffChunkNav({
         >
           <ChevronUp className="size-3.5" strokeWidth={1.75} />
         </button>
-        <span className="min-w-10 px-0.5 text-center font-mono text-[10.5px] font-medium tabular-nums text-content/55 select-none">
+        <span className="min-w-10 px-0.5 text-center font-mono text-[10.5px] font-medium tabular-nums text-muted select-none">
           {total === 0 ? "0/0" : `${index + 1}/${total}`}
         </span>
         <button

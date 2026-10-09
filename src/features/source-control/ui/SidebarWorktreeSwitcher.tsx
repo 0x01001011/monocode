@@ -186,10 +186,10 @@ export function SidebarWorktreeSwitcher({
             aria-label={
               creating ? "Creating worktree" : "Switching working copy"
             }
-            className="size-3.5 shrink-0 animate-spin text-content/45"
+            className="size-3.5 shrink-0 animate-spin text-muted"
           />
         ) : (
-          <ChevronsUpDown className="size-3.5 shrink-0 text-content/45" />
+          <ChevronsUpDown className="size-3.5 shrink-0 text-muted" />
         )}
       </button>
       {open ? (
@@ -206,7 +206,7 @@ export function SidebarWorktreeSwitcher({
           aria-label="Working copies"
           className="flex flex-col overflow-hidden"
         >
-          <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-content/45 focus-within:text-content/70">
+          <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-muted focus-within:text-content/70">
             <Search className="size-4 shrink-0" strokeWidth={1.75} />
             <span className="sr-only">Search working copies</span>
             <input
@@ -241,7 +241,7 @@ export function SidebarWorktreeSwitcher({
                   else if (canCreate) void create();
                 }
               }}
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35 disabled:opacity-60"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-muted disabled:opacity-60"
             />
           </label>
           <div
@@ -250,7 +250,7 @@ export function SidebarWorktreeSwitcher({
             className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5"
           >
             {!data && !error ? (
-              <div className="flex items-center gap-2 p-2 text-[12px] text-content/50">
+              <div className="flex items-center gap-2 p-2 text-[12px] text-muted">
                 <Loader className="size-3.5 animate-spin" />
                 Loading working copies…
               </div>
@@ -277,15 +277,15 @@ export function SidebarWorktreeSwitcher({
                   }`}
                 >
                   {tree.isMain ? (
-                    <GitBranch className="size-3.5 shrink-0 text-content/50" />
+                    <GitBranch className="size-3.5 shrink-0 text-muted" />
                   ) : (
-                    <FolderTree className="size-3.5 shrink-0 text-content/50" />
+                    <FolderTree className="size-3.5 shrink-0 text-muted" />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[12px]">
                       {tree.label}
                     </span>
-                    <span className="block truncate text-[10px] text-content/40">
+                    <span className="block truncate text-[10px] text-muted">
                       {tree.detail}
                     </span>
                   </span>
@@ -295,13 +295,13 @@ export function SidebarWorktreeSwitcher({
               );
             })}
             {data && rows.length === 0 ? (
-              <p className="px-2.5 py-5 text-center text-[12px] text-content/45">
+              <p className="px-2.5 py-5 text-center text-[12px] text-muted">
                 No matching working copies
               </p>
             ) : null}
           </div>
           {creationError || switchError || error ? (
-            <p role="alert" className="px-2 py-2 text-[11px] text-red-400">
+            <p role="alert" className="px-2 py-2 text-[11px] text-danger">
               {creationError || switchError || error}
             </p>
           ) : null}
@@ -339,7 +339,7 @@ function OpenTabs({ stats }: { stats?: { tabs: number; busy: boolean } }) {
     <span
       title={label}
       aria-label={label}
-      className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-content/40"
+      className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-muted"
     >
       {stats.busy ? (
         <span className="size-1.5 animate-pulse rounded-full bg-accent" />

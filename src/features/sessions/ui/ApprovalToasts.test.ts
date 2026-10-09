@@ -134,3 +134,47 @@ it.each(["resume", "expiry", "category"] as const)(
     expect(visibleRequests()).toHaveLength(1);
   },
 );
+
+it("keeps one polite live region mounted before, during and after a request", async () => {
+  await act(async () => render([]));
+  const region = document.querySelector('[aria-live="polite"]')!;
+  expect(region).toBeTruthy();
+  expect(region.textContent).toBe("");
+
+  await act(async () => render([notice("work")]));
+  expect(document.querySelector('[aria-live="polite"]')).toBe(region);
+  expect(region.textContent).toBe("Codex in work needs approval");
+  expect(document.querySelectorAll('[role="status"]')).toHaveLength(0);
+  expect(
+    document.querySelector(".approval-toast")?.closest("[aria-live]"),
+  ).toBe(null);
+
+  await act(async () => render([notice("work", "question")]));
+  expect(region.textContent).toBe("Codex in work has a question");
+
+  await act(async () => render([]));
+  expect(document.querySelector('[aria-live="polite"]')).toBe(region);
+  expect(region.textContent).toBe("");
+});
+
+it("describes each Allow and Deny button with its own request", async () => {
+  await act(async () => render([notice("work"), notice("docs")]));
+  const buttons = [...document.querySelectorAll("button")].filter((item) =>
+    ["Allow", "Deny"].includes(item.textContent ?? ""),
+  );
+  expect(buttons).toHaveLength(4);
+  const described = buttons.map((item) => {
+    const id = item.getAttribute("aria-describedby")!;
+    return document.getElementById(id)?.textContent;
+  });
+  expect(described).toEqual([
+    "Request work",
+    "Request work",
+    "Request docs",
+    "Request docs",
+  ]);
+  for (const item of buttons) {
+    expect(item.className).toContain("h-7");
+    expect(item.className).toContain("text-[12px]");
+  }
+});

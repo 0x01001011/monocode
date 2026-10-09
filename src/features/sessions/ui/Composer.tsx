@@ -2600,7 +2600,7 @@ export function ComposerAction({
         title="Stop"
         aria-label="Stop"
         onClick={onStop}
-        className="grid size-6.5 place-items-center rounded-md bg-white text-black hover:bg-white/90"
+        className="composer-send primary-action grid size-6.5 place-items-center rounded-md"
       >
         <Square className="size-2.5 fill-current" strokeWidth={0} />
       </button>

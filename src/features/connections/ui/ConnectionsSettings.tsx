@@ -101,28 +101,28 @@ function MachineRow({
   return (
     <div>
       <div className="flex items-center gap-3 px-4 py-4">
-        <Internet className="size-5 shrink-0 text-content/45" />
+        <Internet className="size-5 shrink-0 text-muted" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium">{machine.name}</div>
-          <div className="mt-1 truncate text-[12px] text-content/45">
+          <div className="mt-1 truncate text-[12px] text-muted">
             {machine.ssh
               ? `SSH · ${machine.ssh.target}${machine.ssh.port ? ` · port ${machine.ssh.port}` : ""}`
               : machine.endpoint}
           </div>
-          <div className="mt-1 text-[12px] text-content/50">
+          <div className="mt-1 text-[12px] text-muted">
             {machineStatusText(state, host)}
           </div>
           {problem ? (
-            <div className="mt-1 text-[11px] leading-relaxed text-content/45">
+            <div className="mt-1 text-[11px] leading-relaxed text-muted">
               {problem.hint}
             </div>
           ) : null}
           {update ? (
-            <div className="mt-1 text-[11px] text-content/45">
+            <div className="mt-1 text-[11px] text-muted">
               Updating restarts the host and interrupts active agent turns.
             </div>
           ) : null}
-          <details className="mt-2 text-[11px] text-content/45">
+          <details className="mt-2 text-[11px] text-muted">
             <summary className="cursor-pointer">Details</summary>
             <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
               <dt>State</dt>
@@ -174,7 +174,7 @@ function MachineRow({
         )}
         <button
           disabled={busy || revoking}
-          className="rounded p-2 text-content/40 hover:bg-selection hover:text-content disabled:opacity-40"
+          className="rounded p-2 text-muted hover:bg-selection hover:text-content disabled:opacity-40"
           aria-label={`Remove ${machine.name}`}
           title="Remove connection…"
           onClick={onRemove}
@@ -194,7 +194,7 @@ function SignInNotice({ url }: { url: string }) {
     <div
       role="group"
       aria-label="Sign-in approval"
-      className="flex flex-col gap-2 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3"
+      className="flex flex-col gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3"
     >
       <p className="text-[13px] font-medium text-content">
         Waiting for sign-in approval
@@ -427,7 +427,7 @@ export function ConnectionsSettings() {
           <h2 className="text-[13px] font-semibold text-content">
             Your machines
           </h2>
-          <p className="mt-1 text-[12px] leading-relaxed text-content/45">
+          <p className="mt-1 text-[12px] leading-relaxed text-muted">
             Run agents on another computer and return to them from your laptop.
             The host keeps working when you close MonoCode here.
           </p>
@@ -508,7 +508,7 @@ export function ConnectionsSettings() {
                       Remove from this desktop only
                     </button>
                     <button
-                      className="px-3 py-2 text-[13px] text-content/50"
+                      className="px-3 py-2 text-[13px] text-muted"
                       disabled={revoking}
                       onClick={() => setRemoving(undefined)}
                     >
@@ -521,7 +521,7 @@ export function ConnectionsSettings() {
           ))}
         </div>
       ) : loaded && !adding ? (
-        <div className="rounded-xl border border-dashed border-content/15 px-5 py-8 text-center text-[13px] text-content/45">
+        <div className="rounded-xl border border-dashed border-content/15 px-5 py-8 text-center text-[13px] text-muted">
           Add your always-on Windows, Mac, or Linux machine to get started.
         </div>
       ) : null}
@@ -534,7 +534,7 @@ export function ConnectionsSettings() {
           }}
         >
           <div className="flex items-center justify-between">
-            <h3 className="text-[14px] font-medium">Connect through SSH</h3>
+            <h3 className="text-[13px] font-medium">Connect through SSH</h3>
             <span className="rounded bg-selection px-2 py-1 text-[11px] text-content/60">
               SSH
             </span>
@@ -554,11 +554,11 @@ export function ConnectionsSettings() {
               aria-invalid={form.targetError ? true : undefined}
             />
             {form.targetError ? (
-              <span role="alert" className="text-[12px] text-red-400">
+              <span role="alert" className="text-[12px] text-danger">
                 {form.targetError}
               </span>
             ) : form.warning ? (
-              <span role="status" className="text-[12px] text-amber-400">
+              <span role="status" className="text-[12px] text-warning">
                 {form.warning}
               </span>
             ) : null}
@@ -578,7 +578,7 @@ export function ConnectionsSettings() {
             />
           </label>
           <details
-            className="text-[12px] text-content/50"
+            className="text-[12px] text-muted"
             open={form.portError ? true : undefined}
           >
             <summary className="cursor-pointer">Advanced</summary>
@@ -596,20 +596,20 @@ export function ConnectionsSettings() {
                 aria-invalid={form.portError ? true : undefined}
               />
               {form.portError ? (
-                <span role="alert" className="text-red-400">
+                <span role="alert" className="text-danger">
                   {form.portError}
                 </span>
               ) : null}
             </label>
           </details>
-          <p className="text-[12px] leading-relaxed text-content/45">
+          <p className="text-[12px] leading-relaxed text-muted">
             MonoCode installs and starts its background host, then connects
             securely. Your SSH keys and config are used automatically. Enable
             SSH on the host and sign in to Codex or Claude Code there. On
             Windows and Mac, keep the host’s desktop account signed in and the
             machine awake. Locking the desktop is fine.
           </p>
-          <p className="text-[12px] leading-relaxed text-content/45">
+          <p className="text-[12px] leading-relaxed text-muted">
             On Linux, setup installs a systemd user service and turns on
             lingering for your account (
             <code className="rounded bg-content/10 px-1">
@@ -623,7 +623,7 @@ export function ConnectionsSettings() {
             <button
               type="button"
               disabled={busy}
-              className="px-3 py-2 text-[13px] text-content/50"
+              className="px-3 py-2 text-[13px] text-muted"
               onClick={() => setAdding(false)}
             >
               Cancel
@@ -688,7 +688,7 @@ export function ConnectionsSettings() {
           )}
           <button
             type="button"
-            className="self-start text-[12px] text-content/50 hover:text-content"
+            className="self-start text-[12px] text-muted hover:text-content"
             onClick={() => {
               if (jobId)
                 void invoke("remote_ssh_cancel", { jobId }).catch((reason) =>
@@ -703,13 +703,13 @@ export function ConnectionsSettings() {
       {problem && (
         <div
           role="alert"
-          className="flex flex-col gap-2 whitespace-pre-wrap break-words rounded-lg bg-red-500/5 p-3 text-[12px] leading-relaxed text-red-400"
+          className="flex flex-col gap-2 whitespace-pre-wrap break-words rounded-lg bg-danger/5 p-3 text-[12px] leading-relaxed text-danger"
         >
           {explained ? (
             <>
               <p className="text-[13px] font-medium">{explained.title}</p>
               <p>{explained.hint}</p>
-              <p className="text-red-400/70">{rawMessage}</p>
+              <p className="text-danger">{rawMessage}</p>
               {explained.kind === "needs-interactive-auth" &&
               (problem.ssh?.machine || (adding && form.valid)) ? (
                 <button
@@ -728,11 +728,11 @@ export function ConnectionsSettings() {
         </div>
       )}
       {notice && (
-        <p role="status" className="text-[13px] text-emerald-500">
+        <p role="status" className="text-[13px] text-success">
           {notice}
         </p>
       )}
-      <details className="text-[12px] text-content/45">
+      <details className="text-[12px] text-muted">
         <summary className="cursor-pointer">
           Connect to an existing host by URL
         </summary>

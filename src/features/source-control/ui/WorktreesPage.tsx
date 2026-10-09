@@ -93,7 +93,7 @@ export function WorktreesPage({
         </button>
       </div>
       <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 text-[12px] text-content/50">
+        <p className="min-w-0 flex-1 text-[12px] text-muted">
           Sessions can share a worktree. Deleting one keeps its sessions by
           default and discards uncommitted changes. Its branch and commits are
           kept.
@@ -108,35 +108,35 @@ export function WorktreesPage({
           aria-label="Refresh worktrees"
           disabled={!project}
           onClick={refresh}
-          className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-content/8 px-2 text-[11px] hover:bg-content/12 disabled:opacity-40 active:scale-[0.97] ${loadError ? "text-red-400" : "text-content/65"}`}
+          className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-content/8 px-2 text-[11px] hover:bg-content/12 disabled:opacity-40 active:scale-[0.97] ${loadError ? "text-danger" : "text-content/65"}`}
         >
           <RefreshCw className="size-3.5" />
           <span>Refresh</span>
         </button>
       </div>
       {error && (
-        <p role="alert" className="break-words text-[12px] text-red-400">
+        <p role="alert" className="break-words text-[12px] text-danger">
           {error}
         </p>
       )}
       {!project ? (
-        <p className="text-[12px] text-content/50">
+        <p className="text-[12px] text-muted">
           Add a project to manage its worktrees.
         </p>
       ) : !data && loadError ? (
-        <p role="alert" className="break-words text-[12px] text-red-400">
+        <p role="alert" className="break-words text-[12px] text-danger">
           {loadError}
         </p>
       ) : !data ? (
-        <p className="flex items-center gap-2 text-[12px] text-content/50">
+        <p className="flex items-center gap-2 text-[12px] text-muted">
           <Loader className="size-4 animate-spin" />
           Loading worktrees…
         </p>
       ) : !worktrees.length ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-stroke px-4 py-8 text-center">
-          <FolderTree className="size-5 text-content/35" />
+          <FolderTree className="size-5 text-faint" />
           <p className="text-[13px] font-medium">No additional worktrees</p>
-          <p className="text-[12px] text-content/50">
+          <p className="text-[12px] text-muted">
             Create a worktree to work on another branch in a separate folder.
           </p>
         </div>
@@ -151,22 +151,22 @@ export function WorktreesPage({
                 : undefined;
             return (
               <div key={tree.path} className="flex items-start gap-3 p-4">
-                <FolderTree className="mt-0.5 size-4 shrink-0 text-content/45" />
+                <FolderTree className="mt-0.5 size-4 shrink-0 text-muted" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[13px] font-medium">
                       {projectName(tree.path)}
                     </span>
                     {pathKey(tree.path) === pathKey(project) && (
-                      <span className="text-[10px] text-content/40">
+                      <span className="text-[10px] text-muted">
                         Selected project folder
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 break-all text-[11px] text-content/40">
+                  <p className="mt-1 break-all text-[11px] text-muted">
                     {prettyCwd(tree.path)}
                   </p>
-                  <p className="mt-2 flex items-center gap-1.5 text-[11px] text-content/55">
+                  <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted">
                     <GitBranch className="size-3 shrink-0" />
                     <span className="min-w-0 break-all">
                       {tree.branch
@@ -174,11 +174,11 @@ export function WorktreesPage({
                         : `Detached at ${tree.head.slice(0, 7)}`}
                     </span>
                   </p>
-                  <p className="mt-2 flex flex-wrap gap-x-3 text-[11px] text-content/55">
+                  <p className="mt-2 flex flex-wrap gap-x-3 text-[11px] text-muted">
                     <span>
                       {count} session{count === 1 ? "" : "s"} in this worktree
                     </span>
-                    <span className={tree.dirty ? "text-amber-400" : ""}>
+                    <span className={tree.dirty ? "text-warning" : ""}>
                       {tree.missing
                         ? "Missing folder"
                         : tree.dirty == null
@@ -204,7 +204,7 @@ export function WorktreesPage({
                   onClick={() =>
                     void revealPath(tree.path).catch((e) => setError(String(e)))
                   }
-                  className="rounded-md p-1.5 text-content/40 hover:bg-content/8 hover:text-content disabled:opacity-30"
+                  className="rounded-md p-1.5 text-muted hover:bg-content/8 hover:text-content disabled:opacity-30"
                 >
                   <FolderOpen className="size-4" />
                 </button>
@@ -217,7 +217,7 @@ export function WorktreesPage({
                     setError(undefined);
                     setDeleting(tree);
                   }}
-                  className="rounded-md p-1.5 text-content/40 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-25"
+                  className="rounded-md p-1.5 text-muted hover:bg-danger/10 hover:text-danger disabled:opacity-25"
                 >
                   <Trash2 className="size-4" />
                 </button>
@@ -227,7 +227,7 @@ export function WorktreesPage({
         </div>
       )}
       {data && (
-        <p className="break-all text-[11px] text-content/40">
+        <p className="break-all text-[11px] text-muted">
           New worktrees are created in {prettyCwd(data.defaultRoot)}.
         </p>
       )}

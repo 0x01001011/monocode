@@ -222,7 +222,7 @@ export function UsageProviderChip({
       <button
         ref={trigger}
         type="button"
-        className="-mx-1 inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 text-content/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97]"
+        className="-mx-1 inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 text-muted transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97]"
         aria-label={`${providerLabel} usage details`}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -239,15 +239,15 @@ export function UsageProviderChip({
       >
         <HarnessIcon harness={iconHarness} className="size-3 shrink-0" />
         {loading ? (
-          <span className="animate-pulse text-content/35">···</span>
+          <span className="animate-pulse text-muted">···</span>
         ) : disconnected ? (
-          <span className="text-content/35">not connected</span>
+          <span className="text-muted">not connected</span>
         ) : windows.length === 0 ? (
-          <span className="text-content/35">{emptyUsageLabel(limits)}</span>
+          <span className="text-muted">{emptyUsageLabel(limits)}</span>
         ) : (
           <>
             {accounts.length > 1 && activeAccount ? (
-              <span className="max-w-24 truncate text-content/45">
+              <span className="max-w-24 truncate text-muted">
                 {activeAccount.label}
               </span>
             ) : null}
@@ -345,17 +345,17 @@ export function UsageProviderChip({
                   <h2 className="text-[13px] font-medium leading-4">
                     {providerLabel} usage
                   </h2>
-                  <p className="mt-0.5 text-[10px] leading-4 text-content/40">
+                  <p className="mt-0.5 text-[10px] leading-4 text-muted">
                     {updatedLabel(limits, now)}
                   </p>
                   {presentation?.sourceLabel ? (
-                    <p className="mt-0.5 text-[10px] leading-4 text-content/55">
+                    <p className="mt-0.5 text-[10px] leading-4 text-muted">
                       {presentation.sourceLabel}
                     </p>
                   ) : null}
                   {canManageAccounts ? (
                     <div
-                      className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-content/55"
+                      className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted"
                     >
                       {/* Keep account switching separate from email revelation. */}
                       <button
@@ -370,7 +370,7 @@ export function UsageProviderChip({
                       <ProviderAccountSubtitle
                         key={activeAccount && identityKey(activeAccount)}
                         identity={activeIdentity}
-                        className="text-content/35"
+                        className="text-muted"
                       />
                       <ChevronRight
                         className="size-2.5 shrink-0"
@@ -381,7 +381,7 @@ export function UsageProviderChip({
                   ) : null}
                 </div>
                 {limits.status === "fetching" ? (
-                  <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-content/40">
+                  <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-muted">
                     <RefreshCw
                       className="size-2.5 animate-spin"
                       strokeWidth={1.75}
@@ -393,7 +393,7 @@ export function UsageProviderChip({
               </div>
 
               {limits.status === "error" && windows.length > 0 ? (
-                <p className="mb-2 rounded-lg bg-amber-400/10 px-2.5 py-2 text-[10px] leading-4 text-amber-700 dark:text-amber-300">
+                <p className="mb-2 rounded-lg bg-warning/10 px-2.5 py-2 text-[10px] leading-4 text-warning">
                   Couldn’t refresh. Showing the last available snapshot.
                 </p>
               ) : null}
@@ -472,9 +472,9 @@ function AccountSwitchRow({
         onClick={onClick}
       >
         <span className="min-w-0 flex-1 truncate">{accountLabel}</span>
-        <span className="text-[10px] text-content/40">Switch</span>
+        <span className="text-[10px] text-muted">Switch</span>
         <ChevronRight
-          className="size-3 shrink-0 text-content/35"
+          className="size-3 shrink-0 text-muted"
           strokeWidth={1.75}
           aria-hidden
         />
@@ -512,7 +512,7 @@ function ProviderAccountPicker({
       <div className="flex h-7 items-center gap-1">
         <button
           type="button"
-          className="grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+          className="grid size-6 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
           aria-label="Back to usage"
           onClick={onBack}
         >
@@ -520,7 +520,7 @@ function ProviderAccountPicker({
         </button>
         <h2 className="text-[13px] font-medium">{providerLabel} accounts</h2>
       </div>
-      <p className="mt-1 px-1 text-[10px] leading-4 text-content/40">
+      <p className="mt-1 px-1 text-[10px] leading-4 text-muted">
         Each conversation stays pinned to the account that started it.
       </p>
       <div
@@ -557,10 +557,10 @@ function ProviderAccountPicker({
                   <span className="shrink-0 truncate">{account.label}</span>
                   <ProviderAccountSubtitle
                     identity={identity}
-                    className="text-[10px] text-content/35"
+                    className="text-[10px] text-muted"
                   />
                   {orgTag ? (
-                    <span className="max-w-[6rem] shrink-0 truncate rounded bg-content/[0.07] px-1 text-[9px] leading-4 text-content/50">
+                    <span className="max-w-[6rem] shrink-0 truncate rounded bg-content/[0.07] px-1 text-micro leading-4 text-muted">
                       {orgTag}
                     </span>
                   ) : null}
@@ -605,7 +605,7 @@ function ProviderAccountPicker({
       </div>
       <button
         type="button"
-        className="mt-2 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[11px] text-content/55 hover:bg-content/[0.07] hover:text-content"
+        className="mt-2 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[11px] text-muted hover:bg-content/[0.07] hover:text-content"
         onClick={onAdd}
       >
         <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
@@ -614,7 +614,7 @@ function ProviderAccountPicker({
       {onManage ? (
         <button
           type="button"
-          className="mt-0.5 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[11px] text-content/45 hover:bg-content/[0.07] hover:text-content"
+          className="mt-0.5 flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[11px] text-muted hover:bg-content/[0.07] hover:text-content"
           onClick={() => {
             onManage();
           }}
@@ -642,7 +642,7 @@ function SwitchSuggestion({
   return (
     <section className="mt-2 flex items-center gap-2.5 rounded-lg bg-content/[0.045] px-3 py-2.5 ring-1 ring-inset ring-content/[0.06]">
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] leading-4 text-content/45">
+        <p className="text-[10px] leading-4 text-muted">
           {exhausted ? "Out of usage" : "Running low"} · switch to
         </p>
         <p className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px]">
@@ -700,7 +700,7 @@ function AddProviderAccount({
       <div className="flex h-7 items-center gap-1">
         <button
           type="button"
-          className="grid size-6 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
+          className="grid size-6 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content disabled:opacity-40"
           aria-label="Back to accounts"
           disabled={running}
           onClick={onBack}
@@ -709,10 +709,10 @@ function AddProviderAccount({
         </button>
         <h2 className="text-[13px] font-medium">Add {providerLabel} account</h2>
       </div>
-      <p className="mt-1 px-1 text-[10px] leading-4 text-content/40">
+      <p className="mt-1 px-1 text-[10px] leading-4 text-muted">
         Give this account a local name, then finish sign-in in your browser.
       </p>
-      <label className="mt-3 block text-[10px] font-medium text-content/55">
+      <label className="mt-3 block text-[10px] font-medium text-muted">
         Account name
         <input
           autoFocus
@@ -736,7 +736,7 @@ function AddProviderAccount({
         {running ? "Waiting for browser…" : "Sign in and add account"}
       </button>
       {error ? (
-        <p className="mt-2 text-[10px] leading-4 text-red-500" role="status">
+        <p className="mt-2 text-[10px] leading-4 text-danger" role="status">
           {error}
         </p>
       ) : null}
@@ -798,7 +798,7 @@ function UsageWindowCard({
           style={{ width: `${shown}%` }}
         />
       </div>
-      <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] leading-4 text-content/40">
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] leading-4 text-muted">
         <span className="tabular-nums">
           {formatUsagePercent(showRemaining ? pct : remaining)}{" "}
           {showRemaining ? "used" : "remaining"}
@@ -864,11 +864,11 @@ function BankedResets({
         <div className="relative z-10 min-w-0">
           <div className="flex items-center gap-1.5">
             <h3 className="text-[11px] font-medium">Banked resets</h3>
-            <span className="rounded-full bg-content/[0.07] px-1.5 py-px text-[9px] font-medium tabular-nums text-content/65 ring-1 ring-inset ring-content/[0.07]">
+            <span className="rounded-full bg-content/[0.07] px-1.5 py-px text-micro font-medium tabular-nums text-content/65 ring-1 ring-inset ring-content/[0.07]">
               {count}
             </span>
           </div>
-          <p className="mt-0.5 text-[10px] leading-4 text-content/40">
+          <p className="mt-0.5 text-[10px] leading-4 text-muted">
             {count} {count === 1 ? "reset" : "resets"} available
           </p>
         </div>
@@ -1005,13 +1005,13 @@ function BankedResetRow({
         {credit?.title ?? `Banked reset ${index + 1}`}
       </h4>
       {credit?.description ? (
-        <p className="mt-0.5 text-[10px] leading-4 text-content/45">
+        <p className="mt-0.5 text-[10px] leading-4 text-muted">
           {credit.description}
         </p>
       ) : null}
       <div className="mt-1.5 flex min-h-6 items-center justify-between gap-2">
         <p
-          className="min-w-0 truncate text-[10px] tabular-nums text-content/40"
+          className="min-w-0 truncate text-[10px] tabular-nums text-muted"
           title={
             credit?.expiresAt == null
               ? undefined
@@ -1025,7 +1025,7 @@ function BankedResetRow({
               : `Expires in ${formatResetDuration(credit.expiresAt - now)}`}
         </p>
         {action === "using" ? (
-          <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] text-content/45">
+          <span className="inline-flex shrink-0 items-center gap-1.5 text-[10px] text-muted">
             <RefreshCw
               className="size-3 animate-spin"
               strokeWidth={1.75}
@@ -1037,8 +1037,8 @@ function BankedResetRow({
           <span
             className={`shrink-0 text-[10px] ${
               action === "reset"
-                ? "text-emerald-700 dark:text-emerald-300"
-                : "text-content/50"
+                ? "text-success"
+                : "text-muted"
             }`}
             role="status"
           >
@@ -1057,13 +1057,13 @@ function BankedResetRow({
       </div>
       {action === "confirming" ? (
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-content/[0.07] pt-2">
-          <p className="text-[10px] leading-4 text-content/50">
+          <p className="text-[10px] leading-4 text-muted">
             Spend this reset now?
           </p>
           <div className="flex shrink-0 gap-1">
             <button
               type="button"
-              className="h-6 rounded-md px-2 text-[10px] text-content/50 hover:bg-content/10 hover:text-content"
+              className="h-6 rounded-md px-2 text-[10px] text-muted hover:bg-content/10 hover:text-content"
               onClick={onCancel}
             >
               Cancel
@@ -1099,7 +1099,7 @@ function EmptyUsageState({
             : "Usage unavailable"}
       </p>
       {limits.error ? (
-        <p className="mx-auto mt-1 max-w-[15rem] text-[10px] leading-4 text-content/40">
+        <p className="mx-auto mt-1 max-w-[15rem] text-[10px] leading-4 text-muted">
           {limits.error}
         </p>
       ) : null}

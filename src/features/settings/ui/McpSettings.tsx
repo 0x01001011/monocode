@@ -93,7 +93,7 @@ function McpPicker<T extends string>({
           {selected?.label ?? value}
         </span>
         <ChevronDown
-          className={`size-3.5 shrink-0 text-content/50 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`size-3.5 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`}
           strokeWidth={1.75}
         />
       </button>
@@ -236,9 +236,7 @@ function AddServerModal({
         </div>
         <label className="block text-xs text-content/65">
           Name{" "}
-          <span className="text-content/40">
-            (optional for an mcpServers block)
-          </span>
+          <span className="text-muted">(optional for an mcpServers block)</span>
           <input
             value={name}
             pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
@@ -261,14 +259,14 @@ function AddServerModal({
             }
           />
         </label>
-        <p className="text-xs text-content/45">
+        <p className="text-xs text-muted">
           Paste one entry from an mcpServers block, or a single server object
           with a name above.
         </p>
         {error ? (
           <p
             role="alert"
-            className="rounded-md border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-400"
+            className="rounded-md border border-danger/30 bg-danger/10 p-2 text-xs text-danger"
           >
             {error}
           </p>
@@ -451,7 +449,7 @@ function McpConnections({
             <h2 className="text-sm font-semibold">MCP connections</h2>
             {projectPicker}
           </div>
-          <p className="mt-1 text-xs text-content/55">
+          <p className="mt-1 text-xs text-muted">
             Configured servers for the selected project and your provider
             accounts.
           </p>
@@ -480,7 +478,7 @@ function McpConnections({
                 : "Showing available providers"
             }
             onClick={() => setShowAllProviders(!showAllProviders)}
-            className={`grid size-7 place-items-center rounded-md border border-content/10 hover:bg-content/5 ${showAllProviders ? "bg-selection text-content" : "text-content/55"}`}
+            className={`grid size-7 place-items-center rounded-md border border-content/10 hover:bg-content/5 ${showAllProviders ? "bg-selection text-content" : "text-muted"}`}
           >
             <ListFilter className="size-3.5" />
           </button>
@@ -505,7 +503,7 @@ function McpConnections({
             type="button"
             aria-pressed={filter === provider}
             onClick={() => setFilter(provider)}
-            className={`inline-flex min-w-0 items-center gap-1.5 rounded-[5px] px-2.5 py-1 ${filter === provider ? "bg-selection text-content" : "text-content/50 hover:text-content"}`}
+            className={`inline-flex min-w-0 items-center gap-1.5 rounded-[5px] px-2.5 py-1 ${filter === provider ? "bg-selection text-content" : "text-muted hover:text-content"}`}
           >
             {provider === "all" ? (
               <Globe className="size-3.5" />
@@ -525,20 +523,20 @@ function McpConnections({
       {error ? (
         <p
           role="alert"
-          className="rounded-md border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400"
+          className="rounded-md border border-danger/30 bg-danger/10 p-3 text-xs text-danger"
         >
           {error}
         </p>
       ) : null}
       {claudeError && (filter === "all" || filter === "claude") ? (
-        <p className="text-xs text-content/55">
+        <p className="text-xs text-muted">
           Claude connection status unavailable: {claudeError}
         </p>
       ) : null}
       {loading ? (
-        <p className="text-sm text-content/55">Checking servers…</p>
+        <p className="text-sm text-muted">Checking servers…</p>
       ) : visible.length === 0 ? (
-        <p className="text-sm text-content/55">
+        <p className="text-sm text-muted">
           No MCP servers configured for this provider.
         </p>
       ) : (
@@ -555,13 +553,13 @@ function McpConnections({
                 <div className="text-[13px] font-medium text-content">
                   {server.name}
                 </div>
-                <div className="mt-1 text-[12px] leading-relaxed text-content/45">
+                <div className="mt-1 text-[12px] leading-relaxed text-muted">
                   {MCP_PROVIDER_LABELS[server.provider]} · {server.scope} ·{" "}
                   {server.transport || "MCP"} · {server.status}
                 </div>
                 {server.configPath ? (
                   <div
-                    className="truncate text-[11px] text-content/35"
+                    className="truncate text-[11px] text-muted"
                     title={server.configPath}
                   >
                     {server.configPath}
@@ -583,7 +581,7 @@ function McpConnections({
               {server.provider === "claude" ? (
                 <>
                   {!server.configPath ? (
-                    <label className="text-xs text-content/55">
+                    <label className="text-xs text-muted">
                       Scope{" "}
                       <select
                         aria-label={`Scope to remove ${server.name} from`}
@@ -628,7 +626,7 @@ function McpConnections({
           ))}
         </div>
       )}
-      <p className="text-xs text-content/45">
+      <p className="text-xs text-muted">
         Claude Code status comes from its CLI. Other providers show configured
         entries. Sign in opens your browser when supported.
       </p>

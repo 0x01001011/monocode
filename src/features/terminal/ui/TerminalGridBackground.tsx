@@ -528,11 +528,11 @@ export function TerminalGridBackground() {
       </div>
 
       {playing ? (
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-3 items-center px-3 py-2 font-mono text-[11px] tracking-[0.14em] text-content/50">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 grid grid-cols-3 items-center px-3 py-2 font-mono text-[11px] tracking-[0.14em] text-muted">
           <span>
             score {score}
             {game.lives ? (
-              <span className="ml-3 text-content/35">
+              <span className="ml-3 text-muted">
                 {lives > 0 ? "•".repeat(lives) : "game over"}
               </span>
             ) : null}
@@ -551,7 +551,7 @@ export function TerminalGridBackground() {
                   className={`cursor-pointer border px-2 py-1 ${
                     on
                       ? "border-content/40 bg-content/10 text-content"
-                      : "border-content/10 text-content/40 hover:border-content/25 hover:text-content/70"
+                      : "border-content/10 text-muted hover:border-content/25 hover:text-content/70"
                   }`}
                 >
                   {id}
@@ -566,8 +566,8 @@ export function TerminalGridBackground() {
               onClick={releaseControl}
               className="pointer-events-auto cursor-pointer border border-content/20 bg-background-base/70 px-2 py-1 text-content/70 hover:border-content/40 hover:text-content"
             >
-              <span className="text-content/35">[</span> release{" "}
-              <span className="text-content/35">]</span>
+              <span className="text-muted">[</span> release{" "}
+              <span className="text-muted">]</span>
             </button>
           </div>
         </div>
@@ -581,7 +581,7 @@ export function TerminalGridBackground() {
               onClick={takeControl}
               className="pointer-events-none flex cursor-pointer items-center gap-2 border border-content/25 bg-background-base/80 px-3 py-1.5 font-mono text-[11px] tracking-[0.16em] text-content/85 shadow-lg backdrop-blur-sm group-hover:pointer-events-auto hover:border-content/45 hover:bg-content/10 hover:text-content"
             >
-              <span className="text-content/40">[</span>
+              <span className="text-muted">[</span>
               take control
               <span className="text-content/25">·</span>
               {game.label}
@@ -589,7 +589,7 @@ export function TerminalGridBackground() {
                 className="inline-block h-3 w-1.5 bg-content/75 motion-safe:animate-pulse"
                 aria-hidden
               />
-              <span className="text-content/40">]</span>
+              <span className="text-muted">]</span>
             </button>
           </div>
           {GRID_GAMES.length > 1 ? (

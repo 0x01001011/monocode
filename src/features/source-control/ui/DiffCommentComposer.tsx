@@ -49,7 +49,7 @@ export function DiffCommentComposer({
       >
         <div className="mb-1.5 flex items-center gap-2 px-0.5">
           <span
-            className="min-w-0 flex-1 truncate font-mono text-[11px] text-content/55"
+            className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
             title={location}
           >
             {location}
@@ -59,7 +59,7 @@ export function DiffCommentComposer({
             title="Cancel comment"
             aria-label="Cancel comment"
             onClick={onDismiss}
-            className="grid size-5 shrink-0 place-items-center rounded text-content/45 hover:bg-content/10 hover:text-content"
+            className="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-content/10 hover:text-content"
           >
             <X className="size-3" strokeWidth={1.75} />
           </button>
@@ -80,10 +80,10 @@ export function DiffCommentComposer({
             }
           }}
           placeholder="Leave a comment…"
-          className="max-h-40 min-h-18 w-full resize-y rounded-lg border border-content/10 bg-background-base/70 px-2.5 py-2 text-[13px] leading-5 text-content outline-none placeholder:text-content/35 focus:border-content/20"
+          className="max-h-40 min-h-18 w-full resize-y rounded-lg border border-content/10 bg-background-base/70 px-2.5 py-2 text-[13px] leading-5 text-content outline-none placeholder:text-muted focus:border-content/20"
         />
         <div className="mt-2 flex items-center justify-between gap-3">
-          <span className="text-[10px] text-content/35">{MOD}↩ to add</span>
+          <span className="text-[10px] text-muted">{MOD}↩ to add</span>
           <button
             type="submit"
             disabled={!comment.trim()}

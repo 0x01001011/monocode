@@ -462,7 +462,7 @@ export function useProjectMenu({
         )}
         footer={
           menuError ? (
-            <p role="alert" className="px-2 py-1 text-xs text-red-400">
+            <p role="alert" className="px-2 py-1 text-xs text-danger">
               {menuError}
             </p>
           ) : null

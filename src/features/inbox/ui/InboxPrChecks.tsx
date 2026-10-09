@@ -49,20 +49,20 @@ function overallMark(overall: GithubPrChecksOverall): {
 } {
   switch (overall.kind) {
     case "loading":
-      return { Icon: LoaderCircle, className: "animate-spin text-content/45" };
+      return { Icon: LoaderCircle, className: "animate-spin text-muted" };
     case "error":
-      return { Icon: AlertCircle, className: "text-rose-400/90" };
+      return { Icon: AlertCircle, className: "text-danger" };
     case "fail":
-      return { Icon: CircleX, className: "text-rose-400/90" };
+      return { Icon: CircleX, className: "text-danger" };
     case "pending":
       return {
         Icon: LoaderCircle,
-        className: "animate-spin text-amber-400/70",
+        className: "animate-spin text-warning",
       };
     case "pass":
-      return { Icon: CheckCircle, className: "text-emerald-400/90" };
+      return { Icon: CheckCircle, className: "text-success" };
     case "neutral":
-      return { Icon: CircleDashed, className: "text-content/45" };
+      return { Icon: CircleDashed, className: "text-muted" };
   }
 }
 
@@ -72,17 +72,17 @@ function checkMark(state: GithubPrCheckState): {
 } {
   switch (state) {
     case "pass":
-      return { Icon: CheckCircle, className: "text-emerald-400/90" };
+      return { Icon: CheckCircle, className: "text-success" };
     case "fail":
-      return { Icon: CircleX, className: "text-rose-400/90" };
+      return { Icon: CircleX, className: "text-danger" };
     case "pending":
-      return { Icon: LoaderCircle, className: "animate-spin text-content/55" };
+      return { Icon: LoaderCircle, className: "animate-spin text-muted" };
     case "cancel":
-      return { Icon: Minus, className: "text-content/45" };
+      return { Icon: Minus, className: "text-muted" };
     case "unknown":
-      return { Icon: CircleHelp, className: "text-content/45" };
+      return { Icon: CircleHelp, className: "text-muted" };
     case "skipping":
-      return { Icon: CircleDashed, className: "text-content/40" };
+      return { Icon: CircleDashed, className: "text-muted" };
   }
 }
 
@@ -108,7 +108,7 @@ export function PrChecksTab({
       aria-label={label}
       title={label}
       onClick={onSelect}
-      className={`${TAB} ${selected ? "text-content" : "text-content/50 hover:text-content"}`}
+      className={`${TAB} ${selected ? "text-content" : "text-muted hover:text-content"}`}
     >
       <span className="leading-none">Checks</span>
       <mark.Icon
@@ -128,7 +128,7 @@ export function PrChecksTab({
 }
 
 const REFRESH_BUTTON =
-  "grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-content/45";
+  "grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted";
 
 function selectedChecksStillFailed(
   selected: readonly GithubPrCheck[],
@@ -278,7 +278,7 @@ function PrCheckRow({
             {check.name}
           </span>
           {workflow ? (
-            <span className="min-w-0 shrink-[2] truncate text-[11px] text-content/40 @max-[560px]/checks:hidden">
+            <span className="min-w-0 shrink-[2] truncate text-[11px] text-muted @max-[560px]/checks:hidden">
               {workflow}
             </span>
           ) : null}
@@ -286,7 +286,7 @@ function PrCheckRow({
         {(!repairItem || expanded) && (failureMessage || failedStep) ? (
           <span
             title={subtitle}
-            className="mt-0.5 min-w-0 truncate text-[12px] leading-relaxed text-content/55 @max-[420px]/checks:text-[11px]"
+            className="mt-0.5 min-w-0 truncate text-[12px] leading-relaxed text-muted @max-[420px]/checks:text-[11px]"
           >
             {subtitle}
           </span>
@@ -314,7 +314,7 @@ function PrCheckRow({
             aria-expanded={expanded}
             aria-controls={detailsId}
             onClick={() => setExpanded(!expanded)}
-            className={`${className} min-w-0 flex-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50`}
+            className={`${className} min-w-0 flex-1`}
           >
             {body}
           </button>
@@ -346,7 +346,7 @@ function PrCheckRow({
             </span>
           )}
         </span>
-        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-[10px] tabular-nums text-content/40 @max-[480px]/checks:hidden">
+        <span className="mr-1 w-11 shrink-0 whitespace-nowrap text-right text-[10px] tabular-nums text-muted @max-[480px]/checks:hidden">
           {duration}
         </span>
         {onFix ? (
@@ -359,7 +359,7 @@ function PrCheckRow({
             aria-expanded={fixOpen}
             aria-label={`Fix ${check.name} with AI`}
             title="Fix with AI"
-            className="grid size-7 shrink-0 place-items-center rounded-lg bg-content/[0.03] text-content/65 hover:bg-selection hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+            className="grid size-7 shrink-0 place-items-center rounded-lg bg-content/[0.03] text-content/65 hover:bg-selection hover:text-content"
           >
             <Sparkles className="size-3.5" strokeWidth={1.75} />
           </button>
@@ -373,7 +373,7 @@ function PrCheckRow({
             aria-expanded={expanded}
             aria-controls={detailsId}
             onClick={() => setExpanded(!expanded)}
-            className="grid size-7 shrink-0 place-items-center rounded-lg text-content/40 hover:bg-content/5 hover:text-content focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+            className="grid size-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-content/5 hover:text-content"
           >
             <ChevronRight
               className={`size-3 transition-transform motion-reduce:transition-none ${expanded ? "rotate-90" : ""}`}
@@ -405,7 +405,7 @@ function PrCheckRow({
           {loading && !details ? (
             <p
               role="status"
-              className="flex items-center gap-2 px-2 py-1 text-content/50"
+              className="flex items-center gap-2 px-2 py-1 text-muted"
             >
               <LoaderCircle
                 className="size-4 shrink-0 animate-spin"
@@ -439,10 +439,10 @@ function PrCheckRow({
               ) : null}
               {details.steps.length ? (
                 <details className="group/steps">
-                  <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-content/50 hover:text-content [&::-webkit-details-marker]:hidden">
+                  <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-muted hover:text-content [&::-webkit-details-marker]:hidden">
                     <ChevronRight className="size-3 transition-transform group-open/steps:rotate-90 motion-reduce:transition-none" />
                     View run steps
-                    <span className="ml-auto pl-2 text-right text-[10px] text-content/35 @max-[420px]/checks:hidden">
+                    <span className="ml-auto pl-2 text-right text-[10px] text-muted @max-[420px]/checks:hidden">
                       {describeCheckCounts(countChecks(details.steps))}
                     </span>
                   </summary>
@@ -452,7 +452,7 @@ function PrCheckRow({
                       return (
                         <li
                           key={index}
-                          className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-rose-400/5" : ""}`}
+                          className={`flex items-center gap-2 rounded px-2 py-1 ${step.state === "fail" ? "bg-danger/5" : ""}`}
                         >
                           <stepMark.Icon
                             className={`size-4 shrink-0 ${stepMark.className}`}
@@ -464,7 +464,7 @@ function PrCheckRow({
                               : {checkStateLabel(step.state)}
                             </span>
                           </span>
-                          <span className="shrink-0 tabular-nums text-content/45">
+                          <span className="shrink-0 tabular-nums text-muted">
                             {checkDuration(step.startedAt, step.completedAt)}
                           </span>
                         </li>
@@ -473,19 +473,19 @@ function PrCheckRow({
                   </ol>
                 </details>
               ) : (
-                <p className="text-content/50">
+                <p className="text-muted">
                   No steps reported for this job.
                 </p>
               )}
               {check.state === "fail" &&
               !details.annotations.length &&
               !details.notice ? (
-                <p className="mt-3 text-content/50">
+                <p className="mt-3 text-muted">
                   No error annotations reported. View the full log on GitHub.
                 </p>
               ) : null}
               {details.notice ? (
-                <p role="status" className="mt-3 text-content/50">
+                <p role="status" className="mt-3 text-muted">
                   {details.notice}
                 </p>
               ) : null}
@@ -548,7 +548,7 @@ export function InboxPrChecks({
   }, [selection, selectionValid]);
   if (loading) {
     return (
-      <div className="flex justify-center py-10 text-content/40">
+      <div className="flex justify-center py-10 text-muted">
         <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
       </div>
     );
@@ -556,7 +556,7 @@ export function InboxPrChecks({
   if (!checks && error) {
     return (
       <div className="flex flex-col items-start gap-2" data-inbox-pr-checks>
-        <p role="alert" className="text-[13px] text-content/50">
+        <p role="alert" className="text-[13px] text-muted">
           {error}
         </p>
         <button
@@ -605,11 +605,11 @@ export function InboxPrChecks({
         <div className="min-w-0">
           {rows.length ? (
             <>
-              <h2 className="text-[18px] font-medium leading-snug tracking-[-0.35px] @max-[420px]/checks:text-[16px]">
+              <h2 className="text-[18px] font-medium leading-snug tracking-[-0.35px] text-balance @max-[420px]/checks:text-[16px]">
                 {headline}
               </h2>
               {summary ? (
-                <p className="mt-1 text-[12px] text-content/55">
+                <p className="mt-1 text-[12px] text-pretty text-muted">
                   {summary.charAt(0).toUpperCase() + summary.slice(1)}.
                 </p>
               ) : null}
@@ -635,7 +635,7 @@ export function InboxPrChecks({
               aria-expanded={Boolean(
                 selection && selection.anchor === allFixRef.current,
               )}
-              className="primary-action inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+              className="primary-action inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium"
             >
               <Sparkles className="size-3.5" strokeWidth={1.75} />
               Fix all failed
@@ -685,7 +685,7 @@ export function InboxPrChecks({
         />
       ) : null}
       {stale && error ? (
-        <p role="status" className="px-2 text-[12px] text-content/55">
+        <p role="status" className="px-2 text-[12px] text-muted">
           Saved results may be out of date.
         </p>
       ) : null}
@@ -725,20 +725,20 @@ export function InboxPrChecks({
                   setShowOthers(false);
                   setSelection(null);
                 }}
-                className={`inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-[12px] disabled:opacity-40 ${activeFilter === value ? "bg-selection text-content shadow-sm" : "text-content/50 hover:text-content"}`}
+                className={`inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-[12px] disabled:opacity-40 ${activeFilter === value ? "bg-selection text-content shadow-sm" : "text-muted hover:text-content"}`}
               >
                 {label}
-                <span className="tabular-nums text-content/40">{count}</span>
+                <span className="tabular-nums text-muted">{count}</span>
               </button>
             ))}
           </div>
-          <span className="text-[10px] text-content/40 @max-[420px]/checks:hidden">
+          <span className="text-[10px] text-muted @max-[420px]/checks:hidden">
             {counts.fail ? "Failures first" : ""}
           </span>
         </div>
       ) : null}
       {rows.length === 0 ? (
-        <p className="text-[13px] text-content/45">No checks reported</p>
+        <p className="text-[13px] text-muted">No checks reported</p>
       ) : (
         <>
           {groups.map((group) =>
@@ -748,9 +748,9 @@ export function InboxPrChecks({
                 hidden={group.hidden}
                 className={group.hidden ? "hidden" : ""}
               >
-                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-[12px] font-normal text-content/55">
+                <h3 className="mb-1.5 mt-3 flex items-center gap-2 px-2 text-[12px] font-normal text-muted">
                   {checkStateLabel(group.state)}
-                  <span className="text-[10px] text-content/35">
+                  <span className="text-[10px] text-muted">
                     {group.rows.length}
                   </span>
                 </h3>
@@ -820,7 +820,7 @@ export function InboxPrChecks({
               type="button"
               aria-expanded={showOthers}
               onClick={() => setShowOthers(!showOthers)}
-              className="mt-3 flex items-center gap-2 border-t border-stroke px-2 pt-4 text-left text-[11px] text-content/50 hover:text-content"
+              className="mt-3 flex items-center gap-2 border-t border-stroke px-2 pt-4 text-left text-[11px] text-muted hover:text-content"
             >
               <ChevronRight
                 className={`size-3 ${showOthers ? "rotate-90" : ""}`}

@@ -54,6 +54,7 @@ import {
   saveSidebarTabOrder,
   type SidebarTabId,
 } from "../../features/settings/model/appearance";
+import { confirmNative, reportError } from "../../shared/lib/confirm";
 import { useSidebarTasks } from "../../features/tasks/hooks/useSidebarTasks";
 import { useTaskAlerts } from "../../features/tasks/hooks/useTaskAlerts";
 import { tabBadge, type StatusAction, type StatusCard } from "../../features/tasks/model/statusCard";
@@ -494,7 +495,7 @@ function SidebarComponent({
       });
       refreshRemoteProjectSessions();
     } catch (error) {
-      window.alert(`Could not update this session.\n\n${String(error)}`);
+      void reportError("update this session", error, "Try again.");
     }
   };
   const remoteDelete = async (sessionIds: readonly string[]) => {
@@ -503,9 +504,10 @@ function SidebarComponent({
       window.alert("Connect this project's machine to delete its sessions.");
       return;
     }
-    if (!window.confirm(
+    if (!(await confirmNative(
       `Delete ${sessionIds.length === 1 ? "this conversation" : `${sessionIds.length} conversations`}? This can’t be undone.`,
-    )) return;
+      sessionIds.length === 1 ? "Delete conversation" : "Delete conversations",
+    ))) return;
     try {
       for (const sessionId of sessionIds) {
         await remoteRequest(remote.machine.id, "sessions.delete", {
@@ -516,7 +518,7 @@ function SidebarComponent({
       }
       refreshRemoteProjectSessions();
     } catch (error) {
-      window.alert(`Could not delete this session.\n\n${String(error)}`);
+      void reportError("delete this session", error, "Try again.");
       refreshRemoteProjectSessions();
     }
   };
@@ -1336,7 +1338,7 @@ function SidebarComponent({
         id === "copy-harness-session-id" ? providerSessionId : sessionId;
       if (value) {
         void copyText(value).catch((error) => {
-          console.error("Failed to copy session ID:", error);
+          void reportError("copy the session ID", error);
         });
       }
       return;
@@ -1621,7 +1623,7 @@ function SidebarComponent({
           setSearchQuery("");
         }
       }}
-      className="h-full w-full min-w-0 rounded-md bg-transparent py-0 pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-content/35"
+      className="h-full w-full min-w-0 rounded-md bg-transparent py-0 pl-7 pr-2 text-[12px] text-content outline-none placeholder:text-muted focus-visible:focus-ring-inset"
     />
   );
 
@@ -1681,7 +1683,7 @@ function SidebarComponent({
             onTabPick(itemId);
           }}
           className={`flex h-6 min-w-0 flex-1 items-center justify-center gap-1 self-center rounded-md px-2 text-[12px] leading-none ${
-            active ? "bg-selection text-content" : "text-content/50"
+            active ? "bg-selection text-content" : "text-muted"
           }`}
         >
           {isChangesTab && hasChangeStats ? (
@@ -1820,7 +1822,7 @@ function SidebarComponent({
               ) : null}
             </div>
           ) : (
-            <p className="px-3 py-2 text-[12px] text-content/50">
+            <p className="px-3 py-2 text-[12px] text-muted">
               No project folder
             </p>
           )}
@@ -1852,7 +1854,7 @@ function SidebarComponent({
           }`}
         >
           {!cwd || cwd === "~" ? (
-            <p className="px-3 py-2 text-[12px] text-content/50">
+            <p className="px-3 py-2 text-[12px] text-muted">
               No project folder
             </p>
           ) : (
@@ -1866,7 +1868,7 @@ function SidebarComponent({
             */}
               {pendingFirstLoad ? null : status === "error" &&
                 projectSessions.length === 0 ? (
-                <p className="px-3 py-2 text-[12px] text-content/50">
+                <p className="px-3 py-2 text-[12px] text-muted">
                   Couldn’t load sessions
                 </p>
               ) : visibleSessions.length === 0 ? (
@@ -1874,13 +1876,13 @@ function SidebarComponent({
                 // just typed, so it stays a quiet line of text. Only the genuine
                 // "this project has nothing in it" case earns the illustration.
                 narrowedByUser ? (
-                  <p className="px-3 py-2 text-[12px] text-content/50">
+                  <p className="px-3 py-2 text-[12px] text-muted">
                     {searchNarrowed
                       ? "No matching sessions"
                       : "No sessions match these filters"}
                   </p>
                 ) : remoteProject && !remote.machine ? (
-                  <p className="px-3 py-2 text-[12px] text-content/45">
+                  <p className="px-3 py-2 text-[12px] text-muted">
                     This project’s machine isn’t connected on this computer.
                   </p>
                 ) : (
@@ -2105,7 +2107,7 @@ function SidebarComponent({
                                       onClick={() =>
                                         onNewInFolder(entry.folder.id)
                                       }
-                                      className="relative flex w-full items-center gap-1 rounded-md border border-transparent px-2.5 py-1.5 text-left text-content/45 hover:bg-content/10 hover:text-content"
+                                      className="relative flex w-full items-center gap-1 rounded-md border border-transparent px-2.5 py-1.5 text-left text-muted hover:bg-content/10 hover:text-content"
                                     >
                                       <Plus
                                         className="size-3 shrink-0"
@@ -2805,7 +2807,7 @@ function CompactRailAction({
       className={`relative grid size-8 shrink-0 place-items-center rounded-md active:scale-[0.97] ${
         active
           ? "bg-selection text-content"
-          : "text-content/50 hover:bg-content/10 hover:text-content"
+          : "text-muted hover:bg-content/10 hover:text-content"
       } disabled:cursor-default disabled:opacity-35`}
     >
       <Icon
@@ -2873,7 +2875,7 @@ function SessionsHeaderButton({
       aria-haspopup={hasPopup ? "menu" : undefined}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={onClick}
-      className={`relative z-50 grid size-6 place-items-center rounded-md text-content/50 hover:bg-content/10 hover:text-content ${
+      className={`relative z-50 grid size-6 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content ${
         open || active ? "bg-selection text-content" : ""
       }`}
     >
@@ -2992,7 +2994,7 @@ function FolderRow({
       ) : null}
       <span
         className={`relative grid size-4 shrink-0 place-items-center ${
-          accent ? "" : "text-content/50"
+          accent ? "" : "text-muted"
         }`}
         style={accent ? { color: accent } : undefined}
       >
@@ -3027,13 +3029,13 @@ function FolderRow({
       <span className="relative min-w-0 flex-1 truncate text-[13px] font-semibold leading-snug text-content">
         {folder.name}
       </span>
-      <span className="relative flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-content/45">
+      <span className="relative flex shrink-0 items-center gap-1 text-[11px] tabular-nums text-muted">
         {!expanded && needsApproval ? (
-          <CircleAlert className="size-3 text-amber-400" strokeWidth={1.75} />
+          <CircleAlert className="size-3 text-warning" strokeWidth={1.75} />
         ) : !expanded && busy ? (
           <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-accent" />
         ) : !expanded && done ? (
-          <Check className="size-3 text-emerald-400" strokeWidth={2.25} />
+          <Check className="size-3 text-success" strokeWidth={2.25} />
         ) : null}
         <span>{count}</span>
       </span>
@@ -3090,7 +3092,7 @@ function FolderRenameRow({
       {dropTarget ? (
         <div className="pointer-events-none absolute inset-0 rounded-md bg-accent/20" />
       ) : null}
-      <span className="relative grid size-4 shrink-0 place-items-center text-content/50">
+      <span className="relative grid size-4 shrink-0 place-items-center text-muted">
         <ChevronDown className="size-3.5" strokeWidth={1.75} />
       </span>
       <input
@@ -3111,7 +3113,7 @@ function FolderRenameRow({
         }}
         className="relative min-w-0 flex-1 rounded bg-content/10 px-2 py-0.5 text-[13px] font-semibold leading-snug text-content outline-none ring-1 ring-accent/40"
       />
-      <span className="relative shrink-0 text-[11px] tabular-nums text-content/45">
+      <span className="relative shrink-0 text-[11px] tabular-nums text-muted">
         {memberCount}
       </span>
     </div>
@@ -3268,14 +3270,14 @@ const SessionCard = memo(function SessionCard({
       ? null
       : resolveModel(session.harness, session.model).name;
   const statusClass = needsApproval
-    ? "text-amber-400"
+    ? "text-warning"
     : busy
       ? "text-accent"
       : done
-        ? "text-emerald-400"
+        ? "text-success"
         : draft
-          ? "text-content/55"
-          : "text-content/45";
+          ? "text-muted"
+          : "text-muted";
   const status = (
     <span
       className={`flex shrink-0 items-center gap-1 text-[11px] tabular-nums ${statusClass}`}
@@ -3569,7 +3571,7 @@ const SessionCard = memo(function SessionCard({
             const focused = event.currentTarget.ownerDocument.activeElement;
             if (focused instanceof HTMLElement) focused.blur();
           }}
-          className="rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
+          className="rounded-sm outline-none focus-visible:focus-ring"
         >
           {compact && !orchestrationExpanded ? null : (
             <span className="relative flex items-center gap-2">
@@ -3578,7 +3580,7 @@ const SessionCard = memo(function SessionCard({
                   harness={session.harness}
                   className="size-3.5 shrink-0"
                 />
-                <span className="min-w-0 truncate text-[11px] text-content/50">
+                <span className="min-w-0 truncate text-[11px] text-muted">
                   {model}
                 </span>
               </span>
@@ -3595,7 +3597,7 @@ const SessionCard = memo(function SessionCard({
           >
             {session.pinned ? (
               <Pin
-                className="size-3 shrink-0 text-content/45"
+                className="size-3 shrink-0 text-muted"
                 strokeWidth={1.75}
               />
             ) : null}
@@ -3620,7 +3622,7 @@ const SessionCard = memo(function SessionCard({
         <span className="relative mt-1 flex items-center gap-2">
           {gitLabel ? (
             <span
-              className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-content/45"
+              className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-muted"
               title={session.worktreeCwd ? `${gitLabel}\n${session.worktreeCwd}` : gitLabel}
             >
               <GitBranch className="size-3 shrink-0" strokeWidth={1.75} />
@@ -3642,7 +3644,7 @@ const SessionCard = memo(function SessionCard({
                   event.stopPropagation();
                   onArchive(session.id, !session.archived);
                 }}
-                className="pointer-events-none grid size-5 place-items-center rounded-md text-content/50 opacity-0 hover:bg-content/10 hover:text-content group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+                className="pointer-events-none grid size-5 place-items-center rounded-md text-muted opacity-0 hover:bg-content/10 hover:text-content group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <Archive className="size-3 shrink-0" strokeWidth={1.75} />
               </button>
@@ -3654,7 +3656,7 @@ const SessionCard = memo(function SessionCard({
                 role="img"
                 title="Started by an automation"
                 aria-label="Started by an automation"
-                className="grid size-5 -mr-1 shrink-0 place-items-center text-amber-400"
+                className="grid size-5 -mr-1 shrink-0 place-items-center text-warning"
               >
                 <Zap className="size-3" strokeWidth={1.75} />
               </span>
@@ -3711,7 +3713,7 @@ const SessionCard = memo(function SessionCard({
             <span className="text-[11px] font-semibold text-content/85">
               Subagents
             </span>
-            <span className="shrink-0 text-[10px] tabular-nums text-content/45">
+            <span className="shrink-0 text-[10px] tabular-nums text-muted">
               {orchestrationDone}/{orchestration.tasks.length} done
             </span>
           </div>
@@ -3736,12 +3738,12 @@ const SessionCard = memo(function SessionCard({
                       task.status === "failed" ||
                       task.status === "blocked" ||
                       task.status === "interrupted"
-                        ? "text-amber-400"
+                        ? "text-warning"
                         : label === "Working"
                           ? "text-accent"
                           : task.status === "completed"
-                            ? "text-emerald-400"
-                            : "text-content/45"
+                            ? "text-success"
+                            : "text-muted"
                     }`}
                   >
                     {label}
@@ -3814,7 +3816,7 @@ function SessionRenameRow({
     <div
       className={`flex w-full flex-col rounded-md px-2.5 py-2 ${
         needsApproval
-          ? "bg-amber-400/10 text-content"
+          ? "bg-warning/10 text-content"
           : isActive
             ? "bg-selection text-content"
             : "text-content/80"

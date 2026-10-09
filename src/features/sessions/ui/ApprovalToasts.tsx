@@ -1,5 +1,5 @@
 import { CircleAlert } from "../../../shared/ui/icons";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { allowsProjectNotification } from "../../notifications/model/notificationPreferences";
 import { knownNotificationProject } from "../../notifications/model/notificationProjects";
@@ -34,29 +34,37 @@ export function ApprovalToasts({
   topOffset = 12,
 }: Props) {
   useProjectNotificationPreferences();
-  if (notices.length === 0) return null;
+  // The live region stays mounted while no request is pending. A region
+  // inserted together with its first message is announced unreliably.
+  const [announcer, setAnnouncer] = useState<HTMLElement | null>(null);
 
   return createPortal(
-    <div
-      aria-live="polite"
-      style={{ zIndex: LAYER.toast, top: topOffset }}
-      className="pointer-events-none fixed right-3 flex w-[min(360px,calc(100vw-24px))] flex-col gap-2"
-    >
-      {notices.map((notice) => (
-        <ProjectApprovalToast
-          key={`${notice.sessionId}:${notice.kind}:${notice.requestId}`}
-          notice={notice}
-          onFocusSession={onFocusSession}
-          onApproval={onApproval}
-        />
-      ))}
-    </div>,
+    <>
+      <div ref={setAnnouncer} aria-live="polite" className="sr-only" />
+      {notices.length === 0 ? null : (
+        <div
+          style={{ zIndex: LAYER.toast, top: topOffset }}
+          className="pointer-events-none fixed right-3 flex w-[min(360px,calc(100vw-24px))] flex-col gap-2"
+        >
+          {notices.map((notice) => (
+            <ProjectApprovalToast
+              key={`${notice.sessionId}:${notice.kind}:${notice.requestId}`}
+              notice={notice}
+              announcer={announcer}
+              onFocusSession={onFocusSession}
+              onApproval={onApproval}
+            />
+          ))}
+        </div>
+      )}
+    </>,
     document.body,
   );
 }
 
 function ProjectApprovalToast(props: {
   notice: Notice;
+  announcer: HTMLElement | null;
   onFocusSession: Props["onFocusSession"];
   onApproval: Props["onApproval"];
 }) {
@@ -75,29 +83,37 @@ function ProjectApprovalToast(props: {
     })
   )
     return null;
-  return <ApprovalToastCard {...props} />;
+  return <ApprovalToastCard {...props} projectName={project.name} />;
 }
 
 function ApprovalToastCard({
   notice,
+  announcer,
+  projectName,
   onFocusSession,
   onApproval,
 }: {
   notice: Notice;
+  announcer: HTMLElement | null;
+  projectName: string;
   onFocusSession: (sessionId: string) => void;
   onApproval: Props["onApproval"];
 }) {
   const { session, label, requestId } = notice;
   const title = sessionDisplayTitle(session.title, session.harness);
   const harness = HARNESS_TITLE[session.harness];
+  const labelId = useId();
+  // Say who is asking, not the whole card: the card's own text is read when
+  // the user reaches it.
+  const announcement = `${harness} in ${projectName} ${
+    notice.kind === "question" ? "has a question" : "needs approval"
+  }`;
 
   const openSession = () => onFocusSession(session.id);
 
   return (
-    <article
-      className="approval-toast pointer-events-auto overflow-hidden rounded-xl border border-content/20 border-dashed bg-content/10 shadow-xl backdrop-blur-xl"
-      role="status"
-    >
+    <article className="approval-toast pointer-events-auto overflow-hidden rounded-xl border border-content/20 border-dashed bg-content/10 shadow-xl backdrop-blur-xl">
+      {announcer ? createPortal(<p>{announcement}</p>, announcer) : null}
       <button
         type="button"
         onClick={openSession}
@@ -113,7 +129,10 @@ function ApprovalToastCard({
             <span>{notice.kind === "question" ? "Question" : "Approval"}</span>
           </span>
         </span>
-        <span className="line-clamp-3 text-[12px] leading-relaxed text-content/70">
+        <span
+          id={labelId}
+          className="line-clamp-3 text-[12px] leading-relaxed text-content/70"
+        >
           {label}
         </span>
         <span className="text-[11px] text-content/40">{harness}</span>
@@ -122,14 +141,16 @@ function ApprovalToastCard({
         <div className="flex gap-2 border-t border-stroke px-3.5 py-2.5">
           <button
             type="button"
-            className="flex-1 rounded-md bg-content px-2.5 py-1 text-[11px] font-medium text-background-base hover:bg-content/80"
+            aria-describedby={labelId}
+            className="h-7 flex-1 rounded-md bg-content px-2.5 text-[12px] font-medium text-background-base hover:bg-content/80"
             onClick={() => onApproval(session.id, requestId, "allow")}
           >
             Allow
           </button>
           <button
             type="button"
-            className="flex-1 rounded-md bg-content/10 px-2.5 py-1 text-[11px] font-medium text-content/70 hover:bg-content/20"
+            aria-describedby={labelId}
+            className="h-7 flex-1 rounded-md bg-content/10 px-2.5 text-[12px] font-medium text-content/70 hover:bg-content/20"
             onClick={() => onApproval(session.id, requestId, "deny")}
           >
             Deny

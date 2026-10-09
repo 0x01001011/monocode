@@ -234,12 +234,12 @@ export function SkillsPage({
             {header}
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
               <div className="flex min-w-0 flex-1 items-center gap-3">
-                <span className="shrink-0 text-[12px] text-content/40 tabular-nums">
+                <span className="shrink-0 text-[12px] text-muted tabular-nums">
                   {skills == null
                     ? "…"
                     : `${filtered.length} ${filtered.length === 1 ? "skill" : "skills"}`}
                 </span>
-                <label className="flex h-7 w-52 min-w-0 flex-1 items-center gap-2 rounded-md border border-content/10 px-2 text-content/45 focus-within:border-content/20">
+                <label className="flex h-7 w-52 min-w-0 flex-1 items-center gap-2 rounded-md border border-content/10 px-2 text-muted focus-within:border-content/20">
                   <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
                   <input
                     ref={filterInput}
@@ -249,7 +249,7 @@ export function SkillsPage({
                     aria-label="Filter skills"
                     spellCheck={false}
                     autoComplete="off"
-                    className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+                    className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
                   />
                 </label>
                 <button
@@ -262,7 +262,7 @@ export function SkillsPage({
                     window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
                     setReload((value) => value + 1);
                   }}
-                  className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content"
+                  className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
                 >
                   <RefreshCw className="size-3.5" strokeWidth={1.75} />
                 </button>
@@ -305,21 +305,21 @@ export function SkillsPage({
             ) : null}
 
             {actionError ? (
-              <p role="alert" className="pb-3 text-[12px] text-red-400">
+              <p role="alert" className="pb-3 text-[12px] text-danger">
                 {actionError}
               </p>
             ) : null}
 
             {error ? (
-              <p role="alert" className="text-[12px] text-red-400">
+              <p role="alert" className="text-[12px] text-danger">
                 {error}
               </p>
             ) : skills == null ? (
-              <p className="text-[12px] text-content/45">Loading skills…</p>
+              <p className="text-[12px] text-muted">Loading skills…</p>
             ) : (
               <div className="overflow-hidden rounded-lg border border-content/10">
                 {filtered.length === 0 ? (
-                  <p className="px-3 py-3 text-[12px] text-content/45">
+                  <p className="px-3 py-3 text-[12px] text-muted">
                     {skills.length === 0
                       ? "No skills yet. Add skill creates a starter SKILL.md."
                       : "No matching skills"}
@@ -337,7 +337,7 @@ export function SkillsPage({
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            className="mr-auto min-w-0 truncate rounded text-left font-sans text-[12px] text-content hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            className="mr-auto min-w-0 truncate rounded text-left font-sans text-[12px] text-content hover:underline focus-visible:focus-ring"
                             title={`Preview ${skill.name}`}
                             ref={registerPreviewButton(`name:${skill.path}`)}
                             aria-controls={previewOpen ? previewId : undefined}
@@ -353,7 +353,7 @@ export function SkillsPage({
                                 ? "MonoCode"
                                 : "Project"}
                           </span>
-                          <span className="w-20 shrink-0 truncate text-right font-sans text-[11px] text-content/40">
+                          <span className="w-20 shrink-0 truncate text-right font-sans text-[11px] text-muted">
                             {skill.source}
                           </span>
                           <button
@@ -371,7 +371,7 @@ export function SkillsPage({
                         </div>
                         {skill.description ? (
                           <p
-                            className="mt-0.5 truncate text-[12px] text-content/55"
+                            className="mt-0.5 truncate text-[12px] text-muted"
                             title={skill.description}
                           >
                             {skill.description}
@@ -379,7 +379,7 @@ export function SkillsPage({
                         ) : null}
                         <div className="mt-0.5 flex items-center gap-1">
                           <p
-                            className="min-w-0 flex-1 truncate font-sans text-[11px] text-content/35"
+                            className="min-w-0 flex-1 truncate font-sans text-[11px] text-muted"
                             title={skill.path}
                           >
                             {skill.path}
@@ -392,7 +392,7 @@ export function SkillsPage({
                             aria-controls={previewOpen ? previewId : undefined}
                             aria-expanded={previewSkill?.path === skill.path}
                             onClick={() => onPreview(skill, "icon")}
-                            className="grid size-5 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            className="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-content/10 hover:text-content focus-visible:focus-ring"
                           >
                             <Eye
                               className="size-3"
@@ -405,7 +405,7 @@ export function SkillsPage({
                             aria-label={`Copy path of ${skill.name}`}
                             title="Copy path"
                             onClick={() => onCopyPath(skill.path)}
-                            className="grid size-5 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
+                            className="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-content/10 hover:text-content"
                           >
                             <Copy className="size-3" strokeWidth={1.75} />
                           </button>
@@ -414,7 +414,7 @@ export function SkillsPage({
                             aria-label={`Reveal ${skill.name} in file explorer`}
                             title="Reveal in file manager"
                             onClick={() => onReveal(skill.path)}
-                            className="grid size-5 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content"
+                            className="grid size-5 shrink-0 place-items-center rounded text-muted hover:bg-content/10 hover:text-content"
                           >
                             <FolderOpen className="size-3" strokeWidth={1.75} />
                           </button>
@@ -426,7 +426,7 @@ export function SkillsPage({
               </div>
             )}
 
-            <p className="pt-3 text-[12px] text-content/40">
+            <p className="pt-3 text-[12px] text-muted">
               Hidden skills stay on disk and are excluded from MonoCode's
               file-skill catalog. Provider-managed skills and native commands
               are unaffected. Skills live in{" "}
@@ -452,13 +452,13 @@ export function SkillsPage({
                 aria-label="Close skill preview"
                 title="Close preview (Escape)"
                 onClick={() => setPreviewSkill(null)}
-                className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content focus-visible:focus-ring"
               >
                 <X className="size-3.5" strokeWidth={1.75} />
               </button>
             </header>
             <div className="shrink-0 space-y-3 border-b border-stroke px-4 pt-1 pb-3">
-              <p className="select-text break-all text-[11px] text-content/50">
+              <p className="select-text break-all text-[11px] text-muted">
                 {previewSkill.path}
               </p>
               <div className="flex justify-end">
@@ -475,14 +475,14 @@ export function SkillsPage({
               {previewError ? (
                 <p
                   role="alert"
-                  className="break-words px-4 py-5 text-[12px] text-red-400"
+                  className="break-words px-4 py-5 text-[12px] text-danger"
                 >
                   {previewError}
                 </p>
               ) : previewText === null ? (
                 <p
                   role="status"
-                  className="px-4 py-5 text-[12px] text-content/50"
+                  className="px-4 py-5 text-[12px] text-muted"
                 >
                   Loading skill…
                 </p>

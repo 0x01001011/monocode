@@ -144,7 +144,7 @@ export function LinkedWorkItemUpdateNotice({
         <div className="relative z-[1] flex items-center justify-between gap-0.5 border-b border-stroke px-3 py-2">
           <div className="flex items-center gap-1.5">
             <span className="size-2 shrink-0 rounded-full bg-accent" />
-            <KindIcon className="size-3.5 text-content/55" strokeWidth={1.75} />
+            <KindIcon className="size-3.5 text-muted" strokeWidth={1.75} />
             <span className="min-w-0 flex-1 truncate text-[12px] font-semibold">
               GitHub activity
             </span>
@@ -154,7 +154,7 @@ export function LinkedWorkItemUpdateNotice({
             title="Dismiss"
             aria-label={`Dismiss updates for ${kindLabel} ${card.number}`}
             onClick={dismiss}
-            className="grid size-6 shrink-0 place-items-center rounded-md text-content/40 hover:bg-content/10 hover:text-content"
+            className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
           >
             <X className="size-3" strokeWidth={2} />
           </button>
@@ -169,14 +169,14 @@ export function LinkedWorkItemUpdateNotice({
             }}
             className="block w-full text-left"
           >
-            <span className="block text-[11px] text-content/50">
+            <span className="block text-[11px] text-muted">
               {kindLabel} #{card.number} · {card.repo}
             </span>
             <span className="mt-0.5 block truncate text-[13px] font-medium hover:underline">
               {card.title}
             </span>
           </button>
-          <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-content/55">
+          <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted">
             <span>{linkedWorkItemUpdateSummary(card)}</span>
           </div>
         </div>
@@ -196,7 +196,7 @@ export function LinkedWorkItemUpdateNotice({
                 }}
                 className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-content/5 disabled:cursor-default disabled:hover:bg-transparent"
               >
-                <span className="mt-0.5 text-content/45">
+                <span className="mt-0.5 text-muted">
                   <ActivityIcon entry={entry} />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -205,11 +205,11 @@ export function LinkedWorkItemUpdateNotice({
                       {entryKindLabel(entry)}
                     </span>
                     {entry.author ? (
-                      <span className="min-w-0 truncate text-content/45">
+                      <span className="min-w-0 truncate text-muted">
                         @{entry.author}
                       </span>
                     ) : null}
-                    <span className="ml-auto shrink-0 text-content/35">
+                    <span className="ml-auto shrink-0 text-muted">
                       {formatRelativeTime(entry.createdAt)}
                     </span>
                   </span>
@@ -229,14 +229,14 @@ export function LinkedWorkItemUpdateNotice({
                 className={
                   terminalState === "pr_merged"
                     ? "size-3.5 shrink-0 text-violet-400/90"
-                    : "size-3.5 shrink-0 text-emerald-400/90"
+                    : "size-3.5 shrink-0 text-success"
                 }
                 strokeWidth={1.75}
               />
               <span className="font-medium text-content/75">
                 {terminalLabel}
               </span>
-              <span className="text-content/45">Clean up this session</span>
+              <span className="text-muted">Clean up this session</span>
             </div>
             <div className="mt-2 flex items-center gap-1.5">
               <button
@@ -260,7 +260,7 @@ export function LinkedWorkItemUpdateNotice({
                 title="Delete session"
                 disabled={Boolean(cleanupAction) || !onDeleteSession}
                 onClick={() => void runCleanup("delete", onDeleteSession)}
-                className="inline-flex min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 py-1 text-[11px] text-red-300/90 hover:bg-red-500/15 disabled:opacity-40"
+                className="inline-flex min-w-0 items-center gap-1.5 overflow-hidden rounded-md px-2 py-1 text-[11px] text-danger hover:bg-danger/15 disabled:opacity-40"
               >
                 {cleanupAction === "delete" ? (
                   <Loader className="size-3 shrink-0 animate-spin" />

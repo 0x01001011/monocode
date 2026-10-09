@@ -155,7 +155,7 @@ export function DateTimePicker({
           className="flex items-baseline gap-1.5 text-xs font-medium text-content/90"
         >
           {monthLabel}{" "}
-          <span className="font-normal tabular-nums text-content/40">
+          <span className="font-normal tabular-nums text-muted">
             {month.getFullYear()}
           </span>
         </span>
@@ -165,7 +165,7 @@ export function DateTimePicker({
             aria-label="Previous month"
             disabled={previousDisabled}
             onClick={() => navigate(shiftMonth(focusedDate, -1), false)}
-            className="grid size-7 place-items-center rounded text-content/55 hover:bg-content/5 hover:text-content focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-30"
+            className="grid size-7 place-items-center rounded text-muted hover:bg-content/5 hover:text-content focus-visible:focus-ring disabled:pointer-events-none disabled:opacity-30"
           >
             <ChevronLeft className="size-3.5" />
           </button>
@@ -173,7 +173,7 @@ export function DateTimePicker({
             type="button"
             aria-label="Next month"
             onClick={() => navigate(shiftMonth(focusedDate, 1), false)}
-            className="grid size-7 place-items-center rounded text-content/55 hover:bg-content/5 hover:text-content focus-visible:outline-2 focus-visible:outline-accent"
+            className="grid size-7 place-items-center rounded text-muted hover:bg-content/5 hover:text-content focus-visible:focus-ring"
           >
             <ChevronRight className="size-3.5" />
           </button>
@@ -185,7 +185,7 @@ export function DateTimePicker({
             <span
               key={label}
               role="columnheader"
-              className="pb-1.5 text-center text-[10px] font-normal text-content/40"
+              className="pb-1.5 text-center text-[10px] font-normal text-muted"
             >
               {label}
             </span>
@@ -213,7 +213,7 @@ export function DateTimePicker({
                     aria-current={
                       dateKey(date) === dateKey(today) ? "date" : undefined
                     }
-                className={`relative size-8 rounded text-xs tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:pointer-events-none disabled:text-content/20 ${dateKey(date) === selectedKey ? "bg-selection-hover font-medium text-content ring-1 ring-inset ring-content/20" : "text-content/70 hover:bg-content/5 hover:text-content"}`}
+                className={`relative size-8 rounded text-xs tabular-nums focus-visible:focus-ring disabled:pointer-events-none disabled:text-content/20 ${dateKey(date) === selectedKey ? "bg-selection-hover font-medium text-content ring-1 ring-inset ring-content/20" : "text-content/70 hover:bg-content/5 hover:text-content"}`}
                     onClick={() => pick(date)}
                   >
                     {date.getDate()}
@@ -237,16 +237,16 @@ export function DateTimePicker({
             className="flex items-center gap-1.5 text-xs text-content/70"
           >
             <Clock
-              className="size-3 shrink-0 text-content/40"
+              className="size-3 shrink-0 text-muted"
               aria-hidden="true"
             />
             Time
           </label>
-          <p id={timeHintId} className="mt-0.5 text-[10px] text-content/40">
+          <p id={timeHintId} className="mt-0.5 text-[10px] text-muted">
             Local time, 24-hour
           </p>
         </div>
-        <div className="w-20 rounded border border-content/10 bg-content/5 focus-within:border-content/40 focus-within:outline-2 focus-within:outline-accent">
+        <div className="w-20 rounded border border-content/10 bg-content/5 focus-within:border-content/40 focus-within:outline-2 focus-within:outline-focus">
           <input
             id={timeId}
             type="text"
@@ -258,7 +258,7 @@ export function DateTimePicker({
             onChange={(event) =>
               onChange(`${dateKey(selected)}T${event.target.value}`)
             }
-            className="w-full bg-transparent px-2 py-1.5 text-center font-mono text-xs tabular-nums text-content outline-none placeholder:text-content/30"
+            className="w-full bg-transparent px-2 py-1.5 text-center font-mono text-xs tabular-nums text-content outline-none placeholder:text-muted"
           />
         </div>
       </div>

@@ -630,7 +630,7 @@ function ProjectSection({
     <div className="shrink-0 mb-2">
       <ProjectSectionHeader label={label} onAdd={onAdd} />
       {items.length === 0 && emptyLabel ? (
-        <p className="px-4 pb-1 text-[11px] leading-tight text-content/40">
+        <p className="px-4 pb-1 text-[11px] leading-tight text-muted">
           {emptyLabel}
         </p>
       ) : null}
@@ -673,7 +673,7 @@ function ProjectSectionHeader({
   return (
     <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
       {/* As tall as the header buttons, so every section header matches. */}
-      <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
+      <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-muted">
         {label}
       </span>
       {onAddGroup ? (
@@ -685,7 +685,7 @@ function ProjectSectionHeader({
             const rect = event.currentTarget.getBoundingClientRect();
             onAddGroup(rect.left, rect.bottom);
           }}
-          className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
+          className="grid size-5 shrink-0 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content"
         >
           <FolderPlus className="size-3.5" strokeWidth={1.75} />
         </button>
@@ -814,7 +814,7 @@ function ProjectGroupSection({
             event.stopPropagation();
             openMenu(event.currentTarget);
           }}
-          className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
+          className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
         >
           <MoreHorizontal className="size-4" strokeWidth={1.75} />
         </button>
@@ -997,7 +997,7 @@ function ProjectCard({
           <span className={labelClassName}>{name}</span>
         )}
         {machine ? (
-          <span className="min-w-0 flex-1 truncate text-[11px] leading-tight text-content/45">
+          <span className="min-w-0 flex-1 truncate text-[11px] leading-tight text-muted">
             {machine.name}
           </span>
         ) : null}
@@ -1010,7 +1010,7 @@ function ProjectCard({
           <span
             role="img"
             aria-label={connection}
-            className="relative grid size-4 shrink-0 place-items-center text-content/45"
+            className="relative grid size-4 shrink-0 place-items-center text-muted"
           >
             <Internet className="size-3" strokeWidth={1.75} aria-hidden="true" />
             <span
@@ -1026,7 +1026,7 @@ function ProjectCard({
             role="img"
             aria-label={muteStatus}
             title={muteStatus}
-            className="grid size-4 shrink-0 place-items-center text-amber-400"
+            className="grid size-4 shrink-0 place-items-center text-warning"
           >
             <BellOff className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           </span>
@@ -1045,7 +1045,7 @@ function ProjectCard({
             event.stopPropagation();
             window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
           }}
-          className="absolute right-7 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-amber-400 hover:bg-content/8 group-hover:grid group-has-[:focus-visible]:grid"
+          className="absolute right-7 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-warning hover:bg-content/8 group-hover:grid group-has-[:focus-visible]:grid"
         >
           <Internet className="size-3.5" strokeWidth={1.75} />
         </button>
@@ -1066,7 +1066,7 @@ function ProjectCard({
             event.detail === 0 ? rect.bottom : event.clientY,
           );
         }}
-        className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
+        className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
       >
         <MoreHorizontal className="size-4" strokeWidth={1.75} />
       </button>
@@ -1080,7 +1080,7 @@ function ProjectCard({
           event.stopPropagation();
           onTogglePin(item.path);
         }}
-        className="absolute left-2 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-content/55 opacity-0 pointer-events-none transition-opacity hover:text-content group-hover:pointer-events-auto group-hover:opacity-100"
+        className="absolute left-2 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-muted opacity-0 pointer-events-none transition-opacity hover:text-content group-hover:pointer-events-auto group-hover:opacity-100"
       >
         {pinned ? (
           <PinOff className="size-3.5" strokeWidth={1.75} />
@@ -1198,7 +1198,7 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content"
+        className="grid size-5 shrink-0 place-items-center rounded-md text-muted hover:bg-content/8 hover:text-content aria-expanded:bg-content/8 aria-expanded:text-content"
       >
         <Plus className="size-3.5" strokeWidth={1.75} />
       </button>

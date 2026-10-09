@@ -182,7 +182,7 @@ export function SearchableProjectPicker({
             ? "bg-selection text-content"
             : appearance === "filled"
               ? "bg-content/10 text-content hover:bg-content/[0.14]"
-              : "text-content/50 hover:bg-content/5 hover:text-content"
+              : "text-muted hover:bg-content/5 hover:text-content"
         }${buttonClassName ? ` ${buttonClassName}` : ""}`}
       >
         {activeMono ? (
@@ -213,7 +213,7 @@ export function SearchableProjectPicker({
               {activeMono?.name ?? label}
             </span>
             <ChevronDown
-              className={`size-3 shrink-0 text-content/45 transition-transform ${
+              className={`size-3 shrink-0 text-muted transition-transform ${
                 open ? "rotate-180" : ""
               }`}
               strokeWidth={1.75}
@@ -386,7 +386,7 @@ export function ProjectPickerPopover({
       onKeyDown={onPickerKeyDown}
       className="flex flex-col overflow-hidden"
     >
-      <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-content/45 focus-within:text-content/70">
+      <label className="flex h-11 shrink-0 items-center gap-2.5 border-b border-stroke px-3 text-muted focus-within:text-content/70">
         <Search className="size-4 shrink-0" strokeWidth={1.75} />
         <span className="sr-only">Search projects</span>
         <input
@@ -399,7 +399,7 @@ export function ProjectPickerPopover({
           placeholder={
             monos ? "Search monos and projects..." : "Search projects..."
           }
-          className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-muted"
         />
       </label>
       <div
@@ -435,7 +435,7 @@ export function ProjectPickerPopover({
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
               {mono.name}
             </span>
-            <span className="shrink-0 text-[11px] text-content/40">Mono</span>
+            <span className="shrink-0 text-[11px] text-muted">Mono</span>
           </button>
         ))}
         {filteredProjects.length > 0 ? (
@@ -504,14 +504,14 @@ export function ProjectPickerPopover({
                 <span className="min-w-0 max-w-[calc(100%_-_36px)] shrink-0 truncate text-[13px] font-medium">
                   {itemLabel}
                 </span>
-                <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-[11px] text-content/40">
+                <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-[11px] text-muted">
                   {prettyParent(item.path)}
                 </span>
               </button>
             );
           })
         ) : filteredMonos.length ? null : (
-          <p className="px-2.5 py-5 text-center text-[12px] text-content/45">
+          <p className="px-2.5 py-5 text-center text-[12px] text-muted">
             {emptyMessage}
           </p>
         )}

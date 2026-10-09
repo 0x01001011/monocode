@@ -123,12 +123,12 @@ function NavRow({
     >
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="text-[13px] leading-5 text-content/90">{label}</span>
-        <span className="line-clamp-1 text-[12px] leading-5 text-content/40">
+        <span className="line-clamp-1 text-[12px] leading-5 text-muted">
           {description}
         </span>
       </span>
       {count !== undefined ? (
-        <span className="shrink-0 text-[12px] leading-5 tabular-nums text-content/40">
+        <span className="shrink-0 text-[12px] leading-5 tabular-nums text-muted">
           {count}
         </span>
       ) : null}

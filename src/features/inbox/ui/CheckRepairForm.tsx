@@ -170,7 +170,7 @@ export function CheckRepairForm({
           </p>
           <p
             title={checks.map((check) => check.name).join(", ")}
-            className="mt-0.5 truncate text-[11px] leading-4 text-content/45"
+            className="mt-0.5 truncate text-[11px] leading-4 text-muted"
           >
             {checks.length === 1
               ? checks[0].name
@@ -182,12 +182,12 @@ export function CheckRepairForm({
           type="button"
           aria-label="Close fix picker"
           onClick={() => dismiss()}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-content/40 hover:bg-content/10 hover:text-content"
+          className="grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content"
         >
           <X className="size-3.5" strokeWidth={1.75} />
         </button>
       </div>
-      <label className="mx-1.5 flex h-9 shrink-0 items-center gap-2 rounded-md bg-content/5 px-2.5 text-content/40 focus-within:text-content/65">
+      <label className="mx-1.5 flex h-9 shrink-0 items-center gap-2 rounded-md bg-content/5 px-2.5 text-muted focus-within:text-content/65">
         <Search className="size-3.5 shrink-0" strokeWidth={1.75} />
         <input
           ref={searchRef}
@@ -216,7 +216,7 @@ export function CheckRepairForm({
               setSessionId(choices[active]?.id ?? "");
             }
           }}
-          className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35"
+          className="min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-muted"
         />
       </label>
       <div
@@ -245,7 +245,7 @@ export function CheckRepairForm({
               className={`flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] disabled:opacity-50 ${index === active ? "bg-selection text-content" : "text-content/70 hover:bg-content/5 hover:text-content"}`}
             >
               <Icon
-                className="size-3.5 shrink-0 text-content/50"
+                className="size-3.5 shrink-0 text-muted"
                 strokeWidth={1.75}
               />
               <span
@@ -264,7 +264,7 @@ export function CheckRepairForm({
           );
         })}
         {choices.length === 1 && query.trim() ? (
-          <p className="px-2.5 py-3 text-[12px] text-content/45">
+          <p className="px-2.5 py-3 text-[12px] text-muted">
             No matching chats
           </p>
         ) : null}
@@ -272,13 +272,13 @@ export function CheckRepairForm({
       {error ? (
         <p
           role="alert"
-          className="px-3.5 pb-3 text-[12px] leading-4 text-rose-400"
+          className="px-3.5 pb-3 text-[12px] leading-4 text-danger"
         >
           {error}
         </p>
       ) : null}
       {blocked && !busy ? (
-        <p role="status" className="px-3.5 pb-3 text-[12px] leading-4 text-content/55">
+        <p role="status" className="px-3.5 pb-3 text-[12px] leading-4 text-muted">
           Wait for the latest checks before starting a fix.
         </p>
       ) : null}
@@ -287,13 +287,13 @@ export function CheckRepairForm({
           <p className="truncate text-content/65" title={selectedTitle}>
             {selectedTitle}
           </p>
-          <p className="text-content/35">CI details included</p>
+          <p className="text-muted">CI details included</p>
         </div>
         <button
           type="button"
           disabled={busy || blocked}
           onClick={() => void start()}
-          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-selection px-2.5 text-[12px] font-medium text-content hover:bg-selection-hover disabled:opacity-50 focus-visible:outline focus-visible:outline-1 focus-visible:outline-content/50"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-selection px-2.5 text-[12px] font-medium text-content hover:bg-selection-hover disabled:opacity-50"
         >
           {busy ? (
             <LoaderCircle

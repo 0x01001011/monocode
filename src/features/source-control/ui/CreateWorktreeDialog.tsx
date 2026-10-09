@@ -83,7 +83,7 @@ export function CreateWorktreeDialog({
         className="flex flex-col gap-4 p-4"
         onSubmit={(e) => void submit(e)}
       >
-        <p className="text-[12px] text-content/55">
+        <p className="text-[12px] text-muted">
           An independent working copy of {prettyCwd(cwd)}. Existing uncommitted
           changes stay in their current working copy.
         </p>
@@ -148,12 +148,12 @@ export function CreateWorktreeDialog({
           </div>
         )}
         {defaultRoot && (
-          <p className="break-all text-[11px] text-content/40">
+          <p className="break-all text-[11px] text-muted">
             Created in {prettyCwd(defaultRoot)}
           </p>
         )}
         {error && (
-          <p role="alert" className="text-[12px] text-red-400">
+          <p role="alert" className="text-[12px] text-danger">
             {error}
           </p>
         )}

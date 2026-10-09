@@ -82,7 +82,7 @@ export function SkillPicker({
           {notice ? (
             <p
               role="status"
-              className="border-t border-stroke px-2.5 py-2 text-[12px] leading-snug text-amber-300/90"
+              className="border-t border-stroke px-2.5 py-2 text-[12px] leading-snug text-warning"
             >
               {notice}
             </p>
@@ -152,7 +152,7 @@ function SkillList({
 
   if (skills.length === 0) {
     return (
-      <p className="px-3 py-2.5 text-[12px] text-content/50">
+      <p className="px-3 py-2.5 text-[12px] text-muted">
         {query.trim() ? "No matching commands or skills" : "No commands yet"}
       </p>
     );
@@ -188,17 +188,17 @@ function SkillList({
               <span className="truncate text-[13px]">
                 /{skill.invocation}
               </span>
-              <span className="shrink-0 text-[10px] uppercase tracking-wide text-content/40">
+              <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted">
                 {scopeLabel(skill)}
               </span>
             </span>
             {!compact && skill.description ? (
-              <span className="line-clamp-2 text-[11px] leading-4 text-content/50">
+              <span className="line-clamp-2 text-[11px] leading-4 text-muted">
                 {skill.description}
               </span>
             ) : null}
             {!compact && skill.kind === "native" && (skill.inputHint || skill.subcommands?.length) ? (
-              <span className="line-clamp-2 text-[11px] text-content/40">
+              <span className="line-clamp-2 text-[11px] text-muted">
                 {skill.inputHint || skill.subcommands?.map((sub) => sub.usage || sub.name).join(" · ")}
               </span>
             ) : null}
@@ -258,7 +258,7 @@ export function CreateSkillForm({
       }}
       className="px-2.5 py-2"
     >
-      <p className="mb-2 text-[11px] text-content/50">
+      <p className="mb-2 text-[11px] text-muted">
         Writes a starter SKILL.md you can edit.
       </p>
       <input
@@ -269,7 +269,7 @@ export function CreateSkillForm({
         aria-label="Skill name"
         disabled={busy}
         onChange={(e) => setName(e.target.value)}
-        className={`mb-2 w-full rounded-md bg-content/10 px-2 py-1.5 text-[13px] text-content outline-none placeholder:text-content/40 ${monospace ? "font-mono" : "font-sans"}`}
+        className={`mb-2 w-full rounded-md bg-content/10 px-2 py-1.5 text-[13px] text-content outline-none placeholder:text-muted ${monospace ? "font-mono" : "font-sans"}`}
       />
       <div className="mb-2 flex gap-1">
         <ScopeButton
@@ -292,7 +292,7 @@ export function CreateSkillForm({
       {error ? (
         <p className="mb-2 text-[12px] text-content/70">{error}</p>
       ) : !name.trim() || valid ? null : (
-        <p className="mb-2 text-[12px] text-content/50">
+        <p className="mb-2 text-[12px] text-muted">
           Use lowercase letters, numbers, and hyphens.
         </p>
       )}
@@ -301,7 +301,7 @@ export function CreateSkillForm({
           type="button"
           disabled={busy}
           onClick={onCancel}
-          className="rounded-md px-2 py-1 text-[12px] text-content/50 hover:bg-content/10 hover:text-content"
+          className="rounded-md px-2 py-1 text-[12px] text-muted hover:bg-content/10 hover:text-content"
         >
           Cancel
         </button>
@@ -345,7 +345,7 @@ function ScopeButton({
     >
       <span className="text-[12px]">{label}</span>
       <span
-        className={`truncate text-[10px] text-content/40 ${monospace ? "font-mono" : "font-sans"}`}
+        className={`truncate text-[10px] text-muted ${monospace ? "font-mono" : "font-sans"}`}
       >
         {hint}
       </span>
