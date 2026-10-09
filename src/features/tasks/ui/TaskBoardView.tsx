@@ -54,6 +54,15 @@ function EmptyState({ loading }: { loading: boolean }) {
   );
 }
 
+const STRUGGLING_FROM_ROUND = 3;
+
+/** The task the reviewer keeps sending back (fix round 3 or more), the worst first. */
+function strugglingNode(plan: BoardSection): BoardNode | undefined {
+  return plan.nodes
+    .filter((n) => n.status !== "done" && (n.fixRounds ?? 0) >= STRUGGLING_FROM_ROUND)
+    .sort((a, b) => (b.fixRounds ?? 0) - (a.fixRounds ?? 0))[0];
+}
+
 /** Scrolls a heading to the top of the view and moves focus to it; reduced motion jumps instead. */
 function revealHeading(heading: Element | null | undefined) {
   if (!(heading instanceof HTMLElement)) return;
@@ -68,6 +77,7 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
   const card = board.statusCard;
   const plan = board.plan;
   const notesRef = useRef<HTMLDivElement>(null);
+  const [reveal, setReveal] = useState<{ id: string; token: number }>();
   const running = visible && (sessions.some((s) => s.busy) || (card.kind !== "idle" && card.kind !== "done"));
 
   // The tab owns its clock so a tick re-renders only this view; it ticks only while it is shown and work runs.
@@ -95,9 +105,15 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
   // These two buttons point at the notes below the table, so they bring them into view.
   const handleAction = (action: StatusAction, target: StatusCard) => {
     if (action === "see-issues" || action === "review-decisions") {
+      // The open findings of a struggling task live in its row, not in the small issues.
+      const stuck = action === "see-issues" ? strugglingNode(plan) : undefined;
+      if (stuck) {
+        setReveal((prev) => ({ id: stuck.id, token: (prev?.token ?? 0) + 1 }));
+        return;
+      }
       const notes = notesRef.current;
-      const wanted = action === "review-decisions" ? ["board-decisions"] : ["board-issues", "board-decisions"];
-      const heading = wanted.map((id) => notes?.querySelector(`[id="${id}"]`)).find(Boolean);
+      const wanted = action === "review-decisions" ? ["decisions"] : ["issues", "decisions"];
+      const heading = wanted.map((name) => notes?.querySelector(`[data-notes="${name}"]`)).find(Boolean);
       revealHeading(heading ?? notes);
       return;
     }
@@ -190,6 +206,7 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
               now={now}
               hasParked={node.index !== undefined && parkedFor.has(node.index)}
               onOpenNode={onOpenNode}
+              {...(reveal?.id === node.id ? { revealToken: reveal.token } : {})}
             />
           ))}
         </tbody>

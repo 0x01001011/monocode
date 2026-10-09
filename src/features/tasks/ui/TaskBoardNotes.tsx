@@ -1,3 +1,4 @@
+import { useId } from "react";
 import type { BoardNote } from "../model/taskBoard";
 
 type Props = {
@@ -20,12 +21,21 @@ function Source({ note }: { note: BoardNote }) {
   );
 }
 
+/** Change-this label; an empty decision has no text to quote. */
+function changeLabel(text: string): string {
+  const quoted = text.length > NAME_CHARS ? `${text.slice(0, NAME_CHARS).trimEnd()}…` : text;
+  return quoted ? `Change this: ${quoted}` : "Change this";
+}
+
+/** Headings carry `data-notes` for the card buttons that scroll to them; ids are per instance (a split shows two boards). */
 export function TaskBoardNotes({ decisions, issues, onChangeDecision }: Props) {
+  const decisionsId = useId();
+  const issuesId = useId();
   return (
     <div className="px-3 pt-4 pb-4">
       {decisions.length > 0 ? (
-        <section aria-labelledby="board-decisions" className="mb-4">
-          <h3 id="board-decisions" tabIndex={-1} className={`m-0 text-[12.5px] font-semibold ${FOCUS}`}>
+        <section aria-labelledby={decisionsId} className="mb-4">
+          <h3 id={decisionsId} data-notes="decisions" tabIndex={-1} className={`m-0 text-[12.5px] font-semibold ${FOCUS}`}>
             Decisions made for you · {decisions.length}
           </h3>
           <p className="m-0 mb-1 text-[11.5px] leading-[1.45] text-content/55">{DECISIONS_EXPLAINER}</p>
@@ -36,7 +46,7 @@ export function TaskBoardNotes({ decisions, issues, onChangeDecision }: Props) {
                 <span className="min-w-0 flex-1">{note.text}</span>
                 <button
                   type="button"
-                  aria-label={`Change this: ${note.text.length > NAME_CHARS ? `${note.text.slice(0, NAME_CHARS).trimEnd()}…` : note.text}`}
+                  aria-label={changeLabel(note.text)}
                   onClick={() => onChangeDecision?.(note)}
                   className={`min-h-6 rounded-md px-2 text-[11.5px] whitespace-nowrap text-content/66 hover:bg-selection-subtle ${FOCUS}`}
                 >
@@ -48,8 +58,8 @@ export function TaskBoardNotes({ decisions, issues, onChangeDecision }: Props) {
         </section>
       ) : null}
       {issues.length > 0 ? (
-        <section aria-labelledby="board-issues">
-          <h3 id="board-issues" tabIndex={-1} className={`m-0 text-[12.5px] font-semibold ${FOCUS}`}>
+        <section aria-labelledby={issuesId}>
+          <h3 id={issuesId} data-notes="issues" tabIndex={-1} className={`m-0 text-[12.5px] font-semibold ${FOCUS}`}>
             Small issues saved for the end · {issues.length}
           </h3>
           <p className="m-0 mb-1 text-[11.5px] leading-[1.45] text-content/55">{ISSUES_EXPLAINER}</p>

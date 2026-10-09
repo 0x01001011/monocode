@@ -73,5 +73,6 @@ export function effectForNode(
 /** The composer text for "Change this" on a decision. */
 export function changeDecisionText(note: BoardNote): string {
   const about = note.taskIndex !== undefined ? `Task ${note.taskIndex}` : undefined;
-  return `About your decision${about ? ` on ${about}` : ""}: ${note.text}`;
+  const text = note.text.trim();
+  return `About your decision${about ? ` on ${about}` : ""}${text ? `: ${text}` : ""}`;
 }

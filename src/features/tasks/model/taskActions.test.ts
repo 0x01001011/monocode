@@ -110,4 +110,9 @@ describe("changeDecisionText", () => {
   it("leaves the task out when the note has none", () => {
     expect(changeDecisionText({ text: "Use polling" })).toBe("About your decision: Use polling");
   });
+
+  it("omits the colon when the decision has no text", () => {
+    expect(changeDecisionText({ taskIndex: 4, text: "" })).toBe("About your decision on Task 4");
+    expect(changeDecisionText({ text: "  " })).toBe("About your decision");
+  });
 });

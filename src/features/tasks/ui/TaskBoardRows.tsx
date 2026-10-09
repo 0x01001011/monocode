@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { whatHappened, type ChainTone } from "../model/happened";
 import type { BoardNode, BoardSection, BoardTarget } from "../model/taskBoard";
@@ -14,6 +14,8 @@ type RowProps = {
   /** Parked notes name this task, so its path counts as unusual. */
   hasParked: boolean;
   onOpenNode?: OpenNode;
+  /** Changes each time the board asks this row to open its detail and come into view. */
+  revealToken?: number;
 };
 
 const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
@@ -113,10 +115,21 @@ function Detail({ node, section, id, onOpenNode }: Pick<RowProps, "node" | "sect
   );
 }
 
-export function TaskRow({ node, section, now, hasParked, onOpenNode }: RowProps) {
+export function TaskRow({ node, section, now, hasParked, onOpenNode, revealToken }: RowProps) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const expandable = hasDetail(node);
+  const rowRef = useRef<HTMLTableRowElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (revealToken === undefined) return;
+    if (expandable) setOpen(true);
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    rowRef.current?.scrollIntoView?.({ block: "start", behavior: reduce ? "auto" : "smooth" });
+    toggleRef.current?.focus({ preventScroll: true });
+    // Only a new request reveals the row again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealToken]);
   const running = node.status === "running";
   const pending = node.status === "pending";
   const glyph = glyphFor(node);
@@ -124,7 +137,7 @@ export function TaskRow({ node, section, now, hasParked, onOpenNode }: RowProps)
   const label = node.index !== undefined ? `${node.index} · ${node.title}` : node.title;
   return (
     <>
-      <tr data-node={node.id} className={`align-top ${running ? "bg-accent/11" : glyph === "struggling" ? "bg-skill/11" : ""}`}>
+      <tr ref={rowRef} data-node={node.id} className={`align-top ${running ? "bg-accent/11" : glyph === "struggling" ? "bg-skill/11" : ""}`}>
         <td className="w-11 py-1.5 pl-3">
           <TaskGlyph kind={glyph} />
         </td>
@@ -132,6 +145,7 @@ export function TaskRow({ node, section, now, hasParked, onOpenNode }: RowProps)
           <span className="flex items-start gap-1">
             {expandable ? (
               <button
+                ref={toggleRef}
                 type="button"
                 aria-expanded={open}
                 aria-controls={open ? detailId : undefined}

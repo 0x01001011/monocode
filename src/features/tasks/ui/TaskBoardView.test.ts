@@ -379,7 +379,7 @@ describe("TaskBoardView", () => {
     beforeEach(() => {
       scrolled = [];
       Element.prototype.scrollIntoView = function (this: Element, options?: unknown) {
-        scrolled.push({ id: this.id, options });
+        scrolled.push({ id: this.getAttribute("data-notes") ?? this.getAttribute("data-node") ?? this.id, options });
       };
       vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query }));
     });
@@ -392,8 +392,8 @@ describe("TaskBoardView", () => {
       const onAction = vi.fn();
       render({ onAction });
       click(buttons("See the open issues")[0]);
-      expect(scrolled).toEqual([{ id: "board-issues", options: { block: "start", behavior: "smooth" } }]);
-      expect(document.activeElement?.id).toBe("board-issues");
+      expect(scrolled).toEqual([{ id: "issues", options: { block: "start", behavior: "smooth" } }]);
+      expect(document.activeElement?.getAttribute("data-notes")).toBe("issues");
       expect(onAction).not.toHaveBeenCalled();
     });
 
@@ -402,8 +402,8 @@ describe("TaskBoardView", () => {
       const onAction = vi.fn();
       render({ onAction });
       click(buttons("Review decisions")[0]);
-      expect(scrolled).toEqual([{ id: "board-decisions", options: { block: "start", behavior: "smooth" } }]);
-      expect(document.activeElement?.id).toBe("board-decisions");
+      expect(scrolled).toEqual([{ id: "decisions", options: { block: "start", behavior: "smooth" } }]);
+      expect(document.activeElement?.getAttribute("data-notes")).toBe("decisions");
       expect(onAction).not.toHaveBeenCalled();
     });
 
@@ -411,7 +411,44 @@ describe("TaskBoardView", () => {
       hook.board = board({ statusCard: struggling, plan: plan({ minors: [] }) });
       render();
       click(buttons("See the open issues")[0]);
-      expect(scrolled.map((s) => s.id)).toEqual(["board-decisions"]);
+      expect(scrolled.map((s) => s.id)).toEqual(["decisions"]);
+    });
+
+    it("See the open issues opens a struggling task's row detail and scrolls to it", () => {
+      const stuck = nodes.map((n) => (n.index === 3 ? { ...n, status: "attention" as const, fixRounds: 3 } : n));
+      hook.board = board({ statusCard: struggling, plan: plan({ nodes: stuck }) });
+      render();
+      expect(container.querySelector("tr[data-detail=task-3]")).toBeNull();
+      click(buttons("See the open issues")[0]);
+      expect(container.querySelector("tr[data-detail=task-3]")).not.toBeNull();
+      expect(scrolled.map((x) => x.id)).toEqual(["task-3"]);
+      expect(document.activeElement?.getAttribute("aria-label")).toBe("Show details for Task 3");
+    });
+
+    it("two boards on screen (a split) never share a heading id", () => {
+      hook.board = board();
+      act(() =>
+        root.render(
+          createElement(
+            "div",
+            null,
+            createElement(TaskBoardView, { projectCwd: "/repo", sessions: [] }),
+            createElement(TaskBoardView, { projectCwd: "/repo", sessions: [] }),
+          ),
+        ),
+      );
+      const ids = Array.from(container.querySelectorAll("h3[id]")).map((h) => h.id);
+      expect(ids).toHaveLength(4);
+      expect(new Set(ids).size).toBe(4);
+      for (const section of Array.from(container.querySelectorAll("section[aria-labelledby]"))) {
+        expect(section.querySelector(`[id="${section.getAttribute("aria-labelledby")}"]`)).not.toBeNull();
+      }
+    });
+
+    it("a decision with no text is labelled Change this, without a dangling colon", () => {
+      hook.board = board({ plan: plan({ decisions: [{ taskIndex: 2, text: "" }] }) });
+      render();
+      expect(buttons("Change this")[0]?.getAttribute("aria-label")).toBe("Change this");
     });
 
     it("jumps without animation when the user prefers reduced motion", () => {
