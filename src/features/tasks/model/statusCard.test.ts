@@ -445,6 +445,33 @@ describe("deriveStatusCard", () => {
     expect(card.others).toEqual({ count: 1, kind: "running", text: "1 other run" });
   });
 
+  it("others names the longest-quiet run among several, and says needs-you over quiet", () => {
+    const quietOnes = deriveStatusCard({
+      sessions: [
+        session({ id: "w", title: "waiting", needsInput: true }),
+        session({ id: "q1", title: "docs", busy: true, lastActivityAt: NOW - 7 * MIN }),
+        session({ id: "q2", title: "ssh", busy: true, lastActivityAt: NOW - 12 * MIN }),
+        session({ id: "q3", title: "ci", busy: true, lastActivityAt: NOW - 9 * MIN }),
+      ],
+      now: NOW,
+      quietAfterMs: QUIET,
+    });
+    expect(quietOnes.sessionId).toBe("w");
+    expect(quietOnes.others).toEqual({ count: 3, kind: "quiet", text: "3 other runs · ssh quiet 12m" });
+
+    const waitingOther = deriveStatusCard({
+      sessions: [
+        session({ id: "w1", title: "first", needsInput: true, askedAt: NOW - 9 * MIN }),
+        session({ id: "w2", title: "second", needsInput: true, askedAt: NOW - 2 * MIN }),
+        session({ id: "q", title: "docs", busy: true, lastActivityAt: NOW - 20 * MIN }),
+      ],
+      now: NOW,
+      quietAfterMs: QUIET,
+    });
+    expect(waitingOther.sessionId).toBe("w1");
+    expect(waitingOther.others).toEqual({ count: 2, kind: "needs-you", text: "2 other runs · second needs you" });
+  });
+
   it("sessionTitle is absent when the card names no session", () => {
     const card = deriveStatusCard({ sessions: [], now: NOW, quietAfterMs: QUIET });
     expect(card.sessionTitle).toBeUndefined();
