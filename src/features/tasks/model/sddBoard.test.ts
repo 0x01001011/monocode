@@ -308,6 +308,29 @@ describe("buildSddSection", () => {
     expect(running.finalReview?.status).toBe("running");
   });
 
+  describe("final review status from the FINAL REVIEW verdict", () => {
+    const final = (tail: string) =>
+      buildSddSection(fixtureSnapshot({ ledgerText: `${ledgerThroughTask6()}\n${tail}` }), NOW).finalReview;
+
+    it("a ready verdict with no fix wave is done", () => {
+      for (const verdict of ["Ready to merge.", "ready to ship", "Approve: no issues"]) {
+        expect(final(`FINAL REVIEW (opus, a1b2c3d..d4e5f6a): ${verdict}`)?.status).toBe("done");
+      }
+    });
+
+    it("a verdict with fixes and no wave line waits for the wave (attention), never runs forever", () => {
+      expect(final("FINAL REVIEW (opus, a1b2c3d..d4e5f6a): Ready with fixes. Critical C1")?.status).toBe("attention");
+      expect(final("FINAL REVIEW (opus, a1b2c3d..d4e5f6a): Ready to ship: with fixes.")?.status).toBe("attention");
+      expect(final("FINAL REVIEW: Needs work")?.status).toBe("attention");
+    });
+
+    it("runs while the wave is dispatched and is done once it is complete", () => {
+      const head = "FINAL REVIEW (opus, a1b2c3d..d4e5f6a): Ready with fixes.";
+      expect(final(`${head}\nFinal fix wave: dispatched; base d4e5f6a`)?.status).toBe("running");
+      expect(final(`${head}\nFinal fix wave: complete`)?.status).toBe("done");
+    });
+  });
+
   it("decisions come from rulings with task index", () => {
     const section = buildSddSection(fixtureSnapshot(), NOW);
     expect(section.decisions!.length).toBeGreaterThanOrEqual(8);

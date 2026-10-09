@@ -223,20 +223,36 @@ function reviewEnd(
   return latest(inWindow) ?? reportAt;
 }
 
+/** The final verdict lets the branch go as is: "Ready to merge/ship" or "Approve", without "with fixes". */
+function finalReady(verdict: string): boolean {
+  return /\b(ready to merge|ready to ship|approve)/i.test(verdict) && !/\bwith fixes\b/i.test(verdict);
+}
+
+/**
+ * The whole-branch review. Done when it approved the branch with no fix wave, or once
+ * its wave is complete; running while the wave is dispatched; otherwise its findings
+ * wait for a wave (`attention`), so the node never runs forever.
+ */
 function buildFinalReview(ledger: ParsedLedger): BoardNode {
   const { review, fixWave } = ledger.final;
   if (review === undefined) return { id: "final-review", title: FINAL_TITLE, status: "pending" };
-  const waveDone = fixWave === "complete";
+  const status: BoardStatus =
+    fixWave === "complete" ? "done" : fixWave === "dispatched" ? "running" : finalReady(review) ? "done" : "attention";
   const stages: BoardStage[] = [
-    { kind: "final-review", label: "Final review", status: "done", ...(review ? { verdict: review } : {}) },
+    {
+      kind: "final-review",
+      label: "Final review",
+      status: !fixWave && status === "attention" ? "attention" : "done",
+      ...(review ? { verdict: review } : {}),
+    },
   ];
   if (fixWave) {
-    stages.push({ kind: "final-fix", label: "Final fixes", status: waveDone ? "done" : "running" });
+    stages.push({ kind: "final-fix", label: "Final fixes", status: fixWave === "complete" ? "done" : "running" });
   }
   return {
     id: "final-review",
     title: FINAL_TITLE,
-    status: waveDone ? "done" : "running",
+    status,
     ...(review ? { summary: review } : {}),
     stages,
   };
