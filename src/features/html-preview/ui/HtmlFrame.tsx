@@ -28,6 +28,17 @@ export type HtmlFrameSource =
  */
 /** Links from a page open at most this often. */
 const OPEN_COOLDOWN_MS = 750;
+/** A reload that never reports loading still replaces the old page after this. */
+const SWAP_FALLBACK_MS = 1500;
+
+/** One page in the frame stack; the new one loads hidden behind the old one. */
+type Buffered = { id: number; loaded: boolean };
+
+/** The page on screen: the newest that has loaded, else the first still loading. */
+function visibleId(frames: Buffered[]): number | undefined {
+  const loaded = frames.filter((frame) => frame.loaded);
+  return loaded.length ? loaded[loaded.length - 1].id : frames[0]?.id;
+}
 
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-downloads";
 
@@ -52,7 +63,9 @@ export function HtmlFrame({
   const [reload, setReload] = useState(0);
   const [attempt, setAttempt] = useState(0);
   const tokenRef = useRef<string | null>(null);
-  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const [frames, setFrames] = useState<Buffered[]>([]);
+  const nextId = useRef(0);
+  const elements = useRef(new Map<number, HTMLIFrameElement>());
   const lastOpen = useRef(0);
   // The page reads this from window.name to address its messages to us.
   const [frameName] = useState(newFrameName);
@@ -61,6 +74,7 @@ export function HtmlFrame({
     let live = true;
     let opened: string | null = null;
     setToken(null);
+    setFrames([]);
     setError(false);
     void openPreview(
       source.kind === "file"
@@ -88,6 +102,31 @@ export function HtmlFrame({
     // sourceKey captures every field of `source` that matters.
   }, [sourceKey, attempt]);
 
+  const markLoaded = (id: number) =>
+    setFrames((current) =>
+      current.some((frame) => frame.id === id)
+        ? current
+            .map((frame) => (frame.id === id ? { ...frame, loaded: true } : frame))
+            // Everything older is on its way out once a newer page is up.
+            .filter((frame) => frame.id >= id)
+        : current,
+    );
+
+  // Each reload trigger loads a fresh page behind the current one, which stays
+  // on screen until the new one is ready, so a save never flashes a blank frame.
+  useEffect(() => {
+    if (!token) return;
+    const id = ++nextId.current;
+    // A page still loading when another trigger arrives is superseded.
+    setFrames((current) => [
+      ...current.filter((frame) => frame.loaded),
+      { id, loaded: false },
+    ]);
+    const timer = window.setTimeout(() => markLoaded(id), SWAP_FALLBACK_MS);
+    return () => window.clearTimeout(timer);
+    // markLoaded only uses a state setter.
+  }, [token, reload, reloadKey, version]);
+
   useEffect(() => {
     let live = true;
     let stop: (() => void) | undefined;
@@ -108,9 +147,12 @@ export function HtmlFrame({
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      const frame = frameRef.current;
-      // The frame's origin is "null", so the window is the only identity check.
-      if (!frame || event.source !== frame.contentWindow) return;
+      // The frame's origin is "null", so the window is the only identity check;
+      // during a reload either of the two stacked frames may be speaking.
+      const frame = [...elements.current.values()].find(
+        (element) => element.contentWindow === event.source,
+      );
+      if (!frame) return;
       const message = parseFrameMessage(event.data, frameName);
       if (message?.type === "console") {
         recordPreviewLog(logKey, message.level, message.text);
@@ -174,19 +216,29 @@ export function HtmlFrame({
       </p>
     );
   const entry = source.kind === "file" ? basename(source.path) : "index.html";
+  const shown = visibleId(frames);
   return (
-    <iframe
-      // A new element reloads the page and every subresource it fetched.
-      key={`${token}:${reload}:${reloadKey ?? 0}:${version ?? ""}`}
-      ref={frameRef}
-      name={frameName}
-      data-html-preview={token}
-      title={title}
-      src={previewUrl(token, entry)}
-      sandbox={SANDBOX}
-      referrerPolicy="no-referrer"
-      allow=""
-      className="block h-full w-full border-0 bg-white"
-    />
+    <div className="relative h-full w-full">
+      {frames.map((frame) => (
+        <iframe
+          key={frame.id}
+          ref={(element) => {
+            if (element) elements.current.set(frame.id, element);
+            else elements.current.delete(frame.id);
+          }}
+          name={frameName}
+          data-html-preview={token}
+          data-loaded={frame.loaded ? "true" : undefined}
+          title={title}
+          src={previewUrl(token, entry)}
+          sandbox={SANDBOX}
+          referrerPolicy="no-referrer"
+          allow=""
+          onLoad={() => markLoaded(frame.id)}
+          style={frame.id === shown ? undefined : { visibility: "hidden" }}
+          className="absolute inset-0 block h-full w-full border-0 bg-white"
+        />
+      ))}
+    </div>
   );
 }
