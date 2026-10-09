@@ -14,6 +14,8 @@ type Input = {
   approvalSessionIds: ReadonlySet<string>;
   activeSessionId?: string;
   activeSession?: Session;
+  /** Every loaded session: their blocks tell how recently they did something. */
+  loadedSessions?: readonly Session[];
   /** True while the Tasks tab is the one on screen. */
   visible: boolean;
   /** A remote project: its path is not on this machine, so the board stays idle. */
@@ -51,7 +53,6 @@ type StatusSessionSource = Pick<SessionSummary, "id" | "title" | "sidebarHidden"
   cwd?: string;
   worktreeCwd?: string;
   updatedAt?: number;
-  blocks?: readonly Block[];
 };
 
 type StatusSessionsInput = {
@@ -60,39 +61,18 @@ type StatusSessionsInput = {
   approvalSessionIds: ReadonlySet<string>;
   activeSessionId?: string;
   activeSession?: Session;
+  /**
+   * Activity times of the loaded sessions (see `loadedActivity`). A session listed here is
+   * judged by its blocks, even when the time is unknown; only the others use `updatedAt`,
+   * which is not refreshed during a turn.
+   */
+  activity: ReadonlyMap<string, number | undefined>;
 };
 
 /**
- * One status input per visible session. Only the active session carries its question
- * and its newest tool time; the sidebar and the Tasks tab both build their board from this.
- */
-export function buildStatusSessions(input: StatusSessionsInput): StatusSessionInput[] {
-  const { sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession } = input;
-  const activeTool = latestToolTime(activeSession?.blocks);
-  const question = questionLine(activeSession);
-  return sessions
-    .filter((session) => !session.sidebarHidden)
-    .map((session) => {
-      const isActive = session.id === activeSessionId;
-      const times = [session.updatedAt, isActive ? activeTool : latestToolTime(session.blocks)].filter(
-        (at): at is number => at !== undefined,
-      );
-      return {
-        id: session.id,
-        title: session.title,
-        busy: busySessionIds.has(session.id),
-        needsInput: approvalSessionIds.has(session.id),
-        ...(isActive && question ? { question } : {}),
-        ...(times.length ? { lastActivityAt: Math.max(...times) } : {}),
-        ...(session.cwd !== undefined ? { workCwd: sessionWorkCwd({ cwd: session.cwd, worktreeCwd: session.worktreeCwd }) } : {}),
-      };
-    });
-}
-
-/**
- * Activity time for a loaded session, which has no `updatedAt`: the newest tool time or
- * user-turn start among the last blocks. Unknown (never quiet) while the newest block is
- * streaming text, since a long generation writes no tool times.
+ * Activity time for a loaded session: the newest tool time or user-turn start among the
+ * last blocks. Unknown (never quiet) while the newest block is streaming text, since a long
+ * generation writes no tool times.
  */
 function loadedActivityAt(session: Session): number | undefined {
   const blocks = session.blocks;
@@ -106,6 +86,34 @@ function loadedActivityAt(session: Session): number | undefined {
     }
   }
   return latest;
+}
+
+/** Activity time per loaded session id. */
+export function loadedActivity(sessions: readonly Session[]): Map<string, number | undefined> {
+  return new Map(sessions.map((session) => [session.id, loadedActivityAt(session)]));
+}
+
+/**
+ * The one builder of status inputs, for the sidebar and the Tasks tab: one per visible
+ * session. Only the active session carries its question.
+ */
+export function buildStatusSessions(input: StatusSessionsInput): StatusSessionInput[] {
+  const { sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession, activity } = input;
+  const question = questionLine(activeSession);
+  return sessions
+    .filter((session) => !session.sidebarHidden)
+    .map((session) => {
+      const lastActivityAt = activity.has(session.id) ? activity.get(session.id) : session.updatedAt;
+      return {
+        id: session.id,
+        title: session.title,
+        busy: busySessionIds.has(session.id),
+        needsInput: approvalSessionIds.has(session.id),
+        ...(session.id === activeSessionId && question ? { question } : {}),
+        ...(lastActivityAt !== undefined ? { lastActivityAt } : {}),
+        ...(session.cwd !== undefined ? { workCwd: sessionWorkCwd({ cwd: session.cwd, worktreeCwd: session.worktreeCwd }) } : {}),
+      };
+    });
 }
 
 /**
@@ -129,17 +137,13 @@ export function statusSessionsFromLoaded(
       if (session.orchestrationLeadId) approvalSessionIds.add(session.orchestrationLeadId);
     }
   }
-  const here = sessions.filter((session) => !session.ephemeral && sameProjectPath(session.cwd, projectCwd));
-  const byId = new Map(here.map((session) => [session.id, session]));
   return buildStatusSessions({
-    sessions: here.map(({ id, title, sidebarHidden, cwd, worktreeCwd }) => ({ id, title, sidebarHidden, cwd, worktreeCwd })),
+    sessions: sessions.filter((session) => !session.ephemeral && sameProjectPath(session.cwd, projectCwd)),
     busySessionIds,
     approvalSessionIds,
     activeSessionId,
     activeSession: sessions.find((session) => session.id === activeSessionId),
-  }).map(({ lastActivityAt: _sidebarClock, ...input }) => {
-    const at = loadedActivityAt(byId.get(input.id) as Session);
-    return at === undefined ? input : { ...input, lastActivityAt: at };
+    activity: loadedActivity(sessions),
   });
 }
 
@@ -148,19 +152,26 @@ export function statusSessionsFromLoaded(
  * tab badge stays current. `running` says whether the panel's clock should tick.
  */
 export function useSidebarTasks(input: Input): { board: TaskBoard; running: boolean } {
-  const { cwd, sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession, visible, remote = false } = input;
-  const blocks = activeSession?.blocks;
+  const { cwd, sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession, loadedSessions, visible, remote = false } = input;
   const pendingQuestion = activeSession?.pendingQuestion;
   const quietAfterMinutes = useQuietAfterMinutes();
+
+  // Streaming changes the loaded sessions all the time; the inputs follow only their activity times.
+  const activity = useMemo(() => {
+    const live = loadedActivity(loadedSessions ?? []);
+    if (activeSession && !live.has(activeSession.id)) live.set(activeSession.id, loadedActivityAt(activeSession));
+    return live;
+  }, [loadedSessions, activeSession]);
+  const activityKey = JSON.stringify([...activity]);
 
   const statusSessions = useMemo<StatusSessionInput[]>(
     () =>
       remote
         ? NO_SESSIONS
-        : buildStatusSessions({ sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession }),
-    // `activeSession` only matters through its blocks and question.
+        : buildStatusSessions({ sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession, activity }),
+    // `activeSession` only matters through its question, and `activity` through its times.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessions, busySessionIds, approvalSessionIds, activeSessionId, blocks, pendingQuestion, remote],
+    [sessions, busySessionIds, approvalSessionIds, activeSessionId, activityKey, pendingQuestion, remote],
   );
 
   const board = useTaskBoard({

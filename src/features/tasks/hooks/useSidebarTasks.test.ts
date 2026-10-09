@@ -135,7 +135,7 @@ describe("useSidebarTasks", () => {
     expect(lastInput().sessions.map((s) => s.id)).toEqual(["a"]);
   });
 
-  it("takes the active session's newest tool time when it is later than updatedAt", () => {
+  it("takes the active session's newest tool time; a session that is not loaded keeps updatedAt", () => {
     const blocks = [
       tool({ toolStartedAt: T0 - 90_000, toolEndedAt: T0 - 80_000 }),
       tool({ toolStartedAt: T0 - 3_000 }),
@@ -146,10 +146,26 @@ describe("useSidebarTasks", () => {
     expect(b.lastActivityAt).toBe(T0 - 5_000);
   });
 
-  it("keeps updatedAt when the tools are older", () => {
+  it("a loaded session's activity comes from its blocks, never from the persisted updatedAt", () => {
     const blocks = [tool({ toolStartedAt: T0 - 90_000, toolEndedAt: T0 - 80_000 })];
     render(base({ activeSession: active("a", { blocks }) }));
-    expect(lastInput().sessions[0].lastActivityAt).toBe(T0 - 5_000);
+    expect(lastInput().sessions[0].lastActivityAt).toBe(T0 - 80_000);
+  });
+
+  it("a busy background session with an old updatedAt but a recent tool time is not quiet", () => {
+    const MIN = 60_000;
+    const background = active("b", { busy: true, blocks: [tool({ toolStartedAt: T0 - 30_000 })] });
+    render(
+      base({
+        sessions: [summary("a"), summary("b", { updatedAt: T0 - 60 * MIN })],
+        busySessionIds: new Set(["b"]),
+        activeSession: active("a"),
+        loadedSessions: [active("a"), background],
+      }),
+    );
+    const inputs = lastInput().sessions;
+    expect(inputs[1].lastActivityAt).toBe(T0 - 30_000);
+    expect(deriveStatusCard({ sessions: inputs, activeSessionId: "a", now: T0, quietAfterMs: 5 * MIN }).kind).not.toBe("quiet");
   });
 
   it("quotes the first line of the pending question for the active session only", () => {

@@ -12584,6 +12584,7 @@ function Workspace({
               activeSession={sessions.find(
                 (session) => session.id === activeSessionId,
               )}
+              loadedSessions={sessions}
               status={historyFailed ? "error" : "idle"}
               pending={historyPending}
               onSelectSession={onSelectHistorySession}

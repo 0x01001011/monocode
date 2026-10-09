@@ -257,6 +257,8 @@ type Props = {
   activeSessionId?: string;
   /** The focused session, for the Tasks tab's board and status card. */
   activeSession?: Session;
+  /** Every loaded session, so the Tasks card judges activity from their blocks. */
+  loadedSessions?: readonly Session[];
   onTasksAction?: (action: StatusAction, card: StatusCard) => void;
   onOpenTasksTab?: () => void;
   onOpenTaskNode?: (node: BoardNode, section: BoardSection) => void;
@@ -370,6 +372,7 @@ function SidebarComponent({
   approvalSessionIds,
   activeSessionId,
   activeSession,
+  loadedSessions,
   onTasksAction,
   onOpenTasksTab,
   onOpenTaskNode,
@@ -462,6 +465,7 @@ function SidebarComponent({
     approvalSessionIds,
     activeSessionId,
     activeSession,
+    loadedSessions,
     visible: tab === "tasks",
     remote: remoteProject,
   });
