@@ -10889,6 +10889,14 @@ function Workspace({
                   projects: mono.projects,
                   showStartedSessionsInSidebar:
                     mono.showStartedSessionsInSidebar,
+                  ...(mono.useSidebarFolders
+                    ? {
+                        folder: {
+                          name: monoLook(mono).name,
+                          color: mono.color,
+                        },
+                      }
+                    : {}),
                 }
               );
             },
