@@ -158,40 +158,39 @@ describe("useSidebarTasks", () => {
     expect(lastInput().sessions).toBe(first);
   });
 
-  describe("clock", () => {
-    it("ticks every second while the tab is visible and a session is busy", () => {
+  describe("running", () => {
+    it("is true while a session is busy", () => {
       render(base({ visible: true, busySessionIds: new Set(["a"]) }));
-      expect(result?.now).toBe(T0);
-      act(() => void vi.advanceTimersByTime(3_000));
-      expect(result?.now).toBe(T0 + 3_000);
+      expect(result?.running).toBe(true);
     });
 
-    it("ticks while the board itself is running even if no session is busy", () => {
+    it("is true while the board itself is running even if no session is busy", () => {
       vi.mocked(useTaskBoard).mockReturnValue(board(RUNNING));
       render(base({ visible: true }));
-      act(() => void vi.advanceTimersByTime(2_000));
-      expect(result?.now).toBe(T0 + 2_000);
+      expect(result?.running).toBe(true);
     });
 
-    it("does not tick while the tab is closed", () => {
-      render(base({ visible: false, busySessionIds: new Set(["a"]) }));
-      const before = result?.now;
-      act(() => void vi.advanceTimersByTime(5_000));
-      expect(result?.now).toBe(before);
-    });
-
-    it("does not tick when nothing is running", () => {
+    it("is false when nothing is running", () => {
       render(base({ visible: true }));
-      const before = result?.now;
-      act(() => void vi.advanceTimersByTime(5_000));
-      expect(result?.now).toBe(before);
+      expect(result?.running).toBe(false);
     });
+  });
 
-    it("stops ticking after the work finishes", () => {
-      render(base({ visible: true, busySessionIds: new Set(["a"]) }));
-      act(() => void vi.advanceTimersByTime(1_000));
-      render(base({ visible: true }));
-      expect(vi.getTimerCount()).toBe(0);
+  describe("remote project", () => {
+    it("keeps the board hidden and sends no sessions, so nothing polls", () => {
+      render(
+        base({
+          remote: true,
+          visible: true,
+          busySessionIds: new Set(["a"]),
+          approvalSessionIds: new Set(["b"]),
+          activeSession: active("a"),
+        }),
+      );
+      const input = lastInput();
+      expect(input.visible).toBe(false);
+      expect(input.sessions).toEqual([]);
+      expect(result?.running).toBe(false);
     });
   });
 });

@@ -57,7 +57,7 @@ import {
 import { useSidebarTasks } from "../../features/tasks/hooks/useSidebarTasks";
 import { tabBadge, type StatusAction, type StatusCard } from "../../features/tasks/model/statusCard";
 import type { BoardNode, BoardSection } from "../../features/tasks/model/taskBoard";
-import { TasksPanel } from "../../features/tasks/ui/TasksPanel";
+import { TasksPanelLive } from "../../features/tasks/ui/TasksPanelLive";
 import { TasksTabBadge, tasksTabLabel } from "../../features/tasks/ui/TasksTabBadge";
 import { formatInteger } from "../../shared/lib/numbers";
 import {
@@ -462,6 +462,7 @@ function SidebarComponent({
     activeSessionId,
     activeSession,
     visible: tab === "tasks",
+    remote: remoteProject,
   });
   const tasksBadge = tabBadge(tasks.board.statusCard);
   const remote = useRemoteProjectSessions(cwd, remoteProject);
@@ -2154,9 +2155,9 @@ function SidebarComponent({
         ) : null}
         {tab === "tasks" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <TasksPanel
+            <TasksPanelLive
               board={tasks.board}
-              now={tasks.now}
+              running={tasks.running}
               onAction={onTasksAction}
               onOpenNode={onOpenTaskNode}
               onOpenAsTab={onOpenTasksTab}

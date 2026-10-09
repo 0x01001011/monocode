@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type { Block, Session } from "../../sessions/model/session";
 import type { StatusSessionInput } from "../model/statusCard";
@@ -13,9 +13,11 @@ type Input = {
   activeSession?: Session;
   /** True while the Tasks tab is the one on screen. */
   visible: boolean;
+  /** A remote project: its path is not on this machine, so the board stays idle. */
+  remote?: boolean;
 };
 
-const TICK_MS = 1000;
+const NO_SESSIONS: StatusSessionInput[] = [];
 /** Tool activity older than the last blocks cannot change how quiet a run looks. */
 const RECENT_BLOCKS = 200;
 
@@ -42,16 +44,16 @@ function questionLine(session: Session | undefined): string | undefined {
 }
 
 /**
- * The Tasks board for the sidebar plus a clock for its durations. The board is read
- * even while the tab is closed so the tab badge stays current; `now` only ticks while
- * the tab is on screen and something is running.
+ * The Tasks board for the sidebar. It is read even while the tab is closed so the
+ * tab badge stays current. `running` says whether the panel's clock should tick.
  */
-export function useSidebarTasks(input: Input): { board: TaskBoard; now: number } {
-  const { cwd, sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession, visible } = input;
+export function useSidebarTasks(input: Input): { board: TaskBoard; running: boolean } {
+  const { cwd, sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession, visible, remote = false } = input;
   const blocks = activeSession?.blocks;
   const pendingQuestion = activeSession?.pendingQuestion;
 
   const statusSessions = useMemo<StatusSessionInput[]>(() => {
+    if (remote) return NO_SESSIONS;
     const activeTool = latestToolTime(blocks);
     const question = questionLine(activeSession);
     return sessions
@@ -71,26 +73,17 @@ export function useSidebarTasks(input: Input): { board: TaskBoard; now: number }
       });
     // `activeSession` only matters through its blocks and question.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, busySessionIds, approvalSessionIds, activeSessionId, blocks, pendingQuestion]);
+  }, [sessions, busySessionIds, approvalSessionIds, activeSessionId, blocks, pendingQuestion, remote]);
 
   const board = useTaskBoard({
     projectCwd: cwd,
     ...(activeSession ? { activeSession } : {}),
     sessions: statusSessions,
-    visible,
+    visible: visible && !remote,
   });
 
   const running =
     statusSessions.some((s) => s.busy) ||
     (board.statusCard.kind !== "idle" && board.statusCard.kind !== "done");
-  const ticking = visible && running;
-  const [tick, setTick] = useState(() => Date.now());
-  useEffect(() => {
-    if (!ticking) return;
-    setTick(Date.now());
-    const id = window.setInterval(() => setTick(Date.now()), TICK_MS);
-    return () => window.clearInterval(id);
-  }, [ticking]);
-
-  return { board, now: ticking ? tick : Date.now() };
+  return { board, running };
 }

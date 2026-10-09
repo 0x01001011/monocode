@@ -28,6 +28,16 @@ vi.mock("../../features/files/ui/FileTree", () => ({
   FileTree: ({ cwd, rootLabel }: { cwd: string; rootLabel?: string }) =>
     createElement("div", { "data-explorer-cwd": cwd }, rootLabel),
 }));
+vi.mock("../../features/tasks/hooks/useTaskBoard", () => {
+  const board = {
+    sections: [],
+    statusCard: { kind: "idle", headline: "", actions: [] },
+    workspaces: [],
+    selectWorkspace: () => {},
+    loading: false,
+  };
+  return { useTaskBoard: () => board };
+});
 vi.mock("../../platform/tauri/clipboard", () => ({
   copyText: vi.fn().mockResolvedValue(undefined),
 }));

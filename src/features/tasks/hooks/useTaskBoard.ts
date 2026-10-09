@@ -42,6 +42,8 @@ type Loaded = { cwd: string; workspaces: SddWorkspaceRef[]; selected?: string; p
 
 const DEFAULT_POLL = { visible: 3000, hiddenBusy: 15000 };
 const QUIET_AFTER_MS = 5 * 60_000;
+/** What a closed panel exposes: only the status card and tab badge are read then. */
+const NO_SECTIONS: BoardSection[] = [];
 
 /** Keeps the previous reference while the serialized content is unchanged. */
 function useStable<T>(value: T): T {
@@ -77,7 +79,8 @@ export function useTaskBoard(input: Input): TaskBoard {
 
   const sessionId = activeSession?.id;
   const blocks = activeSession?.blocks;
-  const blockCount = blocks?.length ?? 0;
+  // Transcript growth reloads at once only for a panel on screen; a hidden one keeps its cadence.
+  const blockCount = visible ? (blocks?.length ?? 0) : 0;
   const anyBusy = sessions.some((s) => s.busy);
   const polling = visible || anyBusy;
   const interval = visible ? pollVisible : pollHidden;
@@ -131,6 +134,7 @@ export function useTaskBoard(input: Input): TaskBoard {
 
   const sections = useStable(
     useMemo(() => {
+      if (!visible) return NO_SECTIONS;
       const now = nowRef.current();
       const todos = dropMirroredTodos(blocks ? buildTodoSection(blocks) : undefined, plan);
       return [
@@ -140,7 +144,7 @@ export function useTaskBoard(input: Input): TaskBoard {
         todos,
       ].filter((s): s is BoardSection => s !== undefined);
       // `clock` re-derives times as polls complete.
-    }, [plan, run, blocks, clock]),
+    }, [visible, plan, run, blocks, clock]),
   );
 
   const statusCard = useStable(

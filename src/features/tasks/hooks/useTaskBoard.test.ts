@@ -4,7 +4,19 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block, Session } from "../../sessions/model/session";
 import type { SddFs } from "../model/sddWorkspace";
+import * as sections from "../model/sections";
 import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
+
+// Call-through spies: the real builders run, the tests only count the calls.
+vi.mock("../model/sections", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../model/sections")>();
+  return {
+    ...actual,
+    buildTodoSection: vi.fn(actual.buildTodoSection),
+    buildAgentSection: vi.fn(actual.buildAgentSection),
+    buildOrchestrationSection: vi.fn(actual.buildOrchestrationSection),
+  };
+});
 
 type Tree = Record<string, { text?: string; mtimeMs?: number }>;
 
@@ -99,6 +111,8 @@ async function advance(ms: number) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
+  vi.mocked(sections.buildTodoSection).mockClear();
+  vi.mocked(sections.buildAgentSection).mockClear();
   latest = undefined;
   renders.length = 0;
   container = document.createElement("div");
@@ -267,5 +281,46 @@ describe("useTaskBoard", () => {
     await advance(3_000);
     expect(latest?.sections).toBe(before?.sections);
     expect(latest?.plan).toBe(before?.plan);
+  });
+
+  it("does not reload per block while hidden, only on the hidden cadence", async () => {
+    const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+    const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
+    const grow = (n: number) =>
+      session("lead", Array.from({ length: n }, (_, i) => ({ ...todoBlock, id: `t${i}` })));
+    await mount(base(fs, { visible: false, sessions: busy, activeSession: grow(0) }));
+    expect(loads()).toBe(1);
+    for (let n = 1; n <= 10; n++) {
+      await mount(base(fs, { visible: false, sessions: busy, activeSession: grow(n) }));
+      await advance(100);
+    }
+    expect(loads()).toBe(1);
+    await advance(14_000);
+    expect(loads()).toBe(2);
+  });
+
+  it("builds no sections while hidden, and builds them when visible", async () => {
+    const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+    const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
+    await mount(base(fs, { visible: false, sessions: busy, activeSession: session("lead", [todoBlock]) }));
+    await mount(
+      base(fs, { visible: false, sessions: busy, activeSession: session("lead", [todoBlock, { ...todoBlock, id: "t2" }]) }),
+    );
+    expect(sections.buildTodoSection).not.toHaveBeenCalled();
+    expect(sections.buildAgentSection).not.toHaveBeenCalled();
+    expect(latest?.sections).toEqual([]);
+
+    await mount(base(fs, { visible: true, sessions: busy, activeSession: session("lead", [todoBlock]) }));
+    expect(sections.buildTodoSection).toHaveBeenCalled();
+    expect(sections.buildAgentSection).toHaveBeenCalled();
+    expect(latest?.sections.map((x) => x.source)).toContain("todos");
+  });
+
+  it("keeps the status card current from the plan while hidden", async () => {
+    const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+    const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
+    await mount(base(fs, { visible: false, sessions: busy, activeSession: session("s") }));
+    expect(latest?.sections).toEqual([]);
+    expect(latest?.statusCard.kind).not.toBe("idle");
   });
 });

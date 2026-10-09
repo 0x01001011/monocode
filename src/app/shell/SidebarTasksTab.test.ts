@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatSessionTitle } from "../../features/sessions/model/session";
 import { useTaskBoard, type TaskBoard } from "../../features/tasks/hooks/useTaskBoard";
 import type { StatusCard } from "../../features/tasks/model/statusCard";
+import {
+  loadProjectSidebarTab,
+  saveProjectSidebarTab,
+} from "../../features/settings/model/projectSidebarTab";
+import { remotePath } from "../../features/connections/model/remoteProjects";
 import { Sidebar } from "./Sidebar";
 
 // Keep native services and heavy children out of these tab tests.
@@ -205,5 +210,63 @@ describe("Sidebar Tasks tab", () => {
       (el) => el.textContent === "Changes",
     )!;
     expect(changes.getAttribute("aria-label")).toBe("Changes");
+  });
+
+  it("restores the Tasks panel from a persisted selection", () => {
+    vi.mocked(useTaskBoard).mockReturnValue(board(RUNNING));
+    saveProjectSidebarTab(props.cwd, "tasks");
+    props = { ...props, tab: loadProjectSidebarTab(props.cwd) };
+    render();
+    expect(props.tab).toBe("tasks");
+    expect(tasksTab().getAttribute("aria-selected")).toBe("true");
+    expect(container.textContent).toContain("A reviewer is checking Task 6");
+  });
+
+  it("appends Tasks to an old saved tab order", () => {
+    localStorage.setItem(
+      "monocode.sidebarTabOrder",
+      JSON.stringify(["changes", "files", "inbox", "sessions"]),
+    );
+    render();
+    const labels = Array.from(container.querySelectorAll('[role="tab"]')).map((el) => el.textContent);
+    expect(labels).toEqual(["Changes", "Explorer", "Sessions", "Tasks"]);
+  });
+
+  it("keeps remote projects off the board", () => {
+    props = { ...props, cwd: remotePath("env-1", "/home/dev/project"), busySessionIds: new Set(["session-1"]), tab: "tasks" };
+    render();
+    const input = vi.mocked(useTaskBoard).mock.calls.at(-1)![0];
+    expect(input.visible).toBe(false);
+    expect(input.sessions).toEqual([]);
+  });
+
+  describe("compact rail", () => {
+    function railTasks(): HTMLButtonElement {
+      const rail = container.querySelector<HTMLElement>("[data-compact-project-rail]")!;
+      return Array.from(rail.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find((el) =>
+        el.getAttribute("aria-label")?.startsWith("Tasks"),
+      )!;
+    }
+    beforeEach(() => {
+      props = {
+        ...props,
+        projectRailOpen: false,
+        onSelectProject: vi.fn(),
+        onOpenProject: vi.fn(),
+      };
+    });
+
+    it("lists a plain Tasks tab", () => {
+      render();
+      expect(railTasks().getAttribute("aria-label")).toBe("Tasks");
+    });
+
+    it("carries the badge meaning in its accessible name", () => {
+      vi.mocked(useTaskBoard).mockReturnValue(board(ASK));
+      render();
+      expect(railTasks().getAttribute("aria-label")).toBe("Tasks, needs you");
+      act(() => railTasks().click());
+      expect(props.onTabChange).toHaveBeenCalledWith("tasks");
+    });
   });
 });
