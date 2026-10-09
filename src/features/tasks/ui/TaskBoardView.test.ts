@@ -287,6 +287,9 @@ describe("TaskBoardView", () => {
     const detail = container.querySelector("tr[data-detail=task-3]");
     expect(detail?.textContent).toContain("Wire it up");
     expect(detail?.querySelectorAll("[aria-label=done]")).toHaveLength(0);
+    // Briefs do not record step progress: the mark says so instead of "not done".
+    expect(detail?.querySelectorAll('[aria-label="status unknown"]')).toHaveLength(1);
+    expect(detail?.querySelectorAll('[aria-label="not done"]')).toHaveLength(0);
     expect(buttons("Open review")).toHaveLength(0);
   });
 

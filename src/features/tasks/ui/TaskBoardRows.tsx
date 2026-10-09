@@ -65,7 +65,8 @@ function StepMark({ done }: { done: boolean }) {
       <Check className="size-2.5" strokeWidth={2.5} aria-hidden="true" />
     </span>
   ) : (
-    <span role="img" aria-label="not done" className="size-3.5 shrink-0 rounded-[3px] border border-content/45" />
+    // A brief does not record which steps finished, so an unfinished task's steps are unknown.
+    <span role="img" aria-label="status unknown" title="status unknown" className="size-3.5 shrink-0 rounded-[3px] border border-content/45" />
   );
 }
 
