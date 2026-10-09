@@ -10,7 +10,17 @@ export type FrameMessage =
   | { type: "ready" }
   | { type: "escape" }
   | { type: "open"; url: string }
-  | { type: "console"; level: ConsoleLevel; text: string };
+  | { type: "console"; level: ConsoleLevel; text: string }
+  | { type: "scroll"; x: number; y: number };
+
+const MAX_SCROLL = 10_000_000;
+
+function scrollMessage(x: unknown, y: unknown): FrameMessage | null {
+  if (typeof x !== "number" || typeof y !== "number") return null;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const clamp = (value: number) => Math.min(MAX_SCROLL, Math.max(0, Math.floor(value)));
+  return { type: "scroll", x: clamp(x), y: clamp(y) };
+}
 
 const CONSOLE_LEVELS = new Set<string>(["log", "info", "warn", "error", "debug"]);
 const MAX_CONSOLE_TEXT = 2000;
@@ -64,6 +74,8 @@ export function parseFrameMessage(
       return openMessage(own(data, "url"));
     case "console":
       return consoleMessage(own(data, "level"), own(data, "text"));
+    case "scroll":
+      return scrollMessage(own(data, "x"), own(data, "y"));
     default:
       return null;
   }

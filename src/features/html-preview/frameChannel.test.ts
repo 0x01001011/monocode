@@ -103,4 +103,34 @@ describe("parseFrameMessage", () => {
       expect(parseFrameMessage(msg({ type: "console", ...extra }), name)).toBeNull();
     });
   });
+
+  describe("scroll", () => {
+    it("accepts whole-number offsets and clamps them to a sane range", () => {
+      expect(parseFrameMessage(msg({ type: "scroll", x: 12, y: 480 }), name)).toEqual({
+        type: "scroll",
+        x: 12,
+        y: 480,
+      });
+      expect(parseFrameMessage(msg({ type: "scroll", x: -5, y: 99_999_999 }), name)).toEqual({
+        type: "scroll",
+        x: 0,
+        y: 10_000_000,
+      });
+      expect(parseFrameMessage(msg({ type: "scroll", x: 1.9, y: 2.4 }), name)).toEqual({
+        type: "scroll",
+        x: 1,
+        y: 2,
+      });
+    });
+
+    it.each([
+      ["missing offsets", {}],
+      ["string offsets", { x: "0", y: "10" }],
+      ["NaN", { x: Number.NaN, y: 0 }],
+      ["Infinity", { x: 0, y: Number.POSITIVE_INFINITY }],
+      ["null", { x: null, y: null }],
+    ])("rejects %s", (_label, extra) => {
+      expect(parseFrameMessage(msg({ type: "scroll", ...extra }), name)).toBeNull();
+    });
+  });
 });

@@ -83,6 +83,18 @@ const BOOTSTRAP: &str = concat!(
     "if(m===\"Script error.\")m+=\" (this browser hides the details of uncaught errors in sandboxed pages)\";",
     "say(\"error\",m+(e.filename?\" (\"+String(e.filename).split(\"/\").pop()+\":\"+e.lineno+\")\":\"\"))});",
     "window.addEventListener(\"unhandledrejection\",function(e){say(\"error\",\"Unhandled rejection: \"+fmt(e.reason))});",
+    // Scroll position, so a reload can return to it: the host sends 'restore'
+    // to the new page, applied as soon as it can take effect and once layout
+    // has settled. Only the host (the parent window) may ask.
+    "var st=0,sx=0,sy=0;",
+    "window.addEventListener(\"scroll\",function(){sx=window.scrollX|0;sy=window.scrollY|0;if(st)return;",
+    "st=setTimeout(function(){st=0;send({type:\"scroll\",x:sx,y:sy})},120)},{passive:true});",
+    "var want=null;function apply(){if(want)window.scrollTo(want.x,want.y)}",
+    "window.addEventListener(\"message\",function(e){var d=e.data;",
+    "if(e.source!==parent||!d||d.mcp!==1||d.n!==n||d.type!==\"restore\")return;",
+    "want={x:+d.x||0,y:+d.y||0};apply()});",
+    "document.addEventListener(\"DOMContentLoaded\",apply);",
+    "window.addEventListener(\"load\",function(){apply();want=null});",
     "send({type:\"ready\"})",
     "})();</script>"
 );

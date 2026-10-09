@@ -67,6 +67,10 @@ export function HtmlFrame({
   const nextId = useRef(0);
   const elements = useRef(new Map<number, HTMLIFrameElement>());
   const lastOpen = useRef(0);
+  // Where the page on screen is scrolled, to hand to the page that replaces it.
+  const scrollPos = useRef<{ x: number; y: number } | null>(null);
+  const readyCounts = useRef(new Map<number, number>());
+  const shownRef = useRef<number | undefined>(undefined);
   // The page reads this from window.name to address its messages to us.
   const [frameName] = useState(newFrameName);
 
@@ -75,6 +79,8 @@ export function HtmlFrame({
     let opened: string | null = null;
     setToken(null);
     setFrames([]);
+    scrollPos.current = null;
+    readyCounts.current.clear();
     setError(false);
     void openPreview(
       source.kind === "file"
@@ -149,19 +155,38 @@ export function HtmlFrame({
     const onMessage = (event: MessageEvent) => {
       // The frame's origin is "null", so the window is the only identity check;
       // during a reload either of the two stacked frames may be speaking.
-      const frame = [...elements.current.values()].find(
-        (element) => element.contentWindow === event.source,
+      const owner = [...elements.current.entries()].find(
+        ([, element]) => element.contentWindow === event.source,
       );
-      if (!frame) return;
+      if (!owner) return;
+      const [frameId, frame] = owner;
       const message = parseFrameMessage(event.data, frameName);
       if (message?.type === "console") {
         recordPreviewLog(logKey, message.level, message.text);
+        return;
+      }
+      if (message?.type === "scroll") {
+        // Only the page on screen defines where a reload should return to.
+        if (frameId === shownRef.current) scrollPos.current = { x: message.x, y: message.y };
         return;
       }
       if (message?.type === "ready") {
         // A new document loaded in the frame; its console starts empty.
         markPreviewLoaded(logKey);
         clearPreviewLogs(logKey);
+        const seen = (readyCounts.current.get(frameId) ?? 0) + 1;
+        readyCounts.current.set(frameId, seen);
+        const at = scrollPos.current;
+        if (seen > 1) {
+          // The same frame announcing itself again navigated to another page.
+          scrollPos.current = null;
+        } else if (at && (at.x > 0 || at.y > 0)) {
+          // A reload: put the new page where the old one was.
+          frame.contentWindow?.postMessage(
+            { mcp: 1, n: frameName, type: "restore", x: at.x, y: at.y },
+            "*",
+          );
+        }
         return;
       }
       if (message?.type === "open") {
@@ -217,6 +242,7 @@ export function HtmlFrame({
     );
   const entry = source.kind === "file" ? basename(source.path) : "index.html";
   const shown = visibleId(frames);
+  shownRef.current = shown;
   return (
     <div className="relative h-full w-full">
       {frames.map((frame) => (

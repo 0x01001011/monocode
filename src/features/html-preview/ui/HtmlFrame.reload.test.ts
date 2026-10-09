@@ -143,3 +143,89 @@ it("accepts the page's messages from whichever of its frames sent them", async (
   window.removeEventListener("keydown", seen);
   expect(seen).toHaveBeenCalledTimes(1);
 });
+
+// --- scroll restore ---------------------------------------------------------
+
+function fakeWindow(frame: HTMLIFrameElement) {
+  const posted: unknown[] = [];
+  const win = { postMessage: (message: unknown) => void posted.push(message) } as unknown as Window;
+  Object.defineProperty(frame, "contentWindow", { value: win, configurable: true });
+  return { win, posted };
+}
+const say = (win: Window, frame: HTMLIFrameElement, extra: Record<string, unknown>) =>
+  act(() => {
+    window.dispatchEvent(
+      Object.assign(
+        new MessageEvent("message", {
+          data: { mcp: 1, n: frame.getAttribute("name"), ...extra },
+        }),
+        { source: win },
+      ),
+    );
+  });
+
+it("gives a reloaded page the scroll position the previous one had", async () => {
+  await mount();
+  const [first] = frames();
+  const a = fakeWindow(first);
+  say(a.win, first, { type: "ready" });
+  say(a.win, first, { type: "scroll", x: 0, y: 640 });
+  load(first);
+  act(() => emit("tok1"));
+  const next = frames()[1];
+  const b = fakeWindow(next);
+  say(b.win, next, { type: "ready" });
+  expect(b.posted).toEqual([
+    expect.objectContaining({ mcp: 1, n: next.getAttribute("name"), type: "restore", x: 0, y: 640 }),
+  ]);
+  // The first page is never told anything.
+  expect(a.posted).toEqual([]);
+});
+
+it("does not restore anything on the first load or for a page that was never scrolled", async () => {
+  await mount();
+  const [first] = frames();
+  const a = fakeWindow(first);
+  say(a.win, first, { type: "ready" });
+  expect(a.posted).toEqual([]);
+  load(first);
+  act(() => emit("tok1"));
+  const next = frames()[1];
+  const b = fakeWindow(next);
+  say(b.win, next, { type: "ready" });
+  expect(b.posted).toEqual([]);
+});
+
+it("forgets the position when the person navigates to another page in the frame", async () => {
+  await mount();
+  const [first] = frames();
+  const a = fakeWindow(first);
+  say(a.win, first, { type: "ready" });
+  say(a.win, first, { type: "scroll", x: 0, y: 900 });
+  load(first);
+  // A second 'ready' from the same frame is a new document, not a reload.
+  say(a.win, first, { type: "ready" });
+  act(() => emit("tok1"));
+  const next = frames()[1];
+  const b = fakeWindow(next);
+  say(b.win, next, { type: "ready" });
+  expect(b.posted).toEqual([]);
+});
+
+it("ignores scroll reports from a page that is not on screen yet", async () => {
+  await mount();
+  const [first] = frames();
+  const a = fakeWindow(first);
+  say(a.win, first, { type: "ready" });
+  load(first);
+  act(() => emit("tok1"));
+  const next = frames()[1];
+  const b = fakeWindow(next);
+  say(b.win, next, { type: "ready" });
+  say(b.win, next, { type: "scroll", x: 0, y: 5000 });
+  act(() => emit("tok1"));
+  const third = frames()[frames().length - 1];
+  const c = fakeWindow(third);
+  say(c.win, third, { type: "ready" });
+  expect(c.posted).toEqual([]);
+});

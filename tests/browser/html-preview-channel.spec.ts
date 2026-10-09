@@ -180,3 +180,56 @@ test("a console call that cannot be serialized does not break the page", async (
   });
   await expect.poll(async () => (await consoleLines(page)).some((m) => m.text === "after")).toBe(true);
 });
+
+test("a reloaded page returns to where the previous one was scrolled", async ({ page }) => {
+  await page.route("**/preview-test/tall.html*", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><html><head>${bootstrap()}</head><body style="margin:0">
+        <div id="end" style="height:4000px">tall page</div></body></html>`,
+    }),
+  );
+  await page.route("**/preview-test/scroll-host.html", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><body>
+        <iframe id="a" name="${NONCE}" sandbox="allow-scripts" src="/preview-test/tall.html"
+          style="width:500px;height:300px"></iframe>
+        <script>
+          // The host's side of the protocol, as HtmlFrame does it.
+          let scroll = null; let readyBy = new Map(); window.restored = 0;
+          addEventListener("message", (e) => {
+            const d = e.data;
+            if (!d || d.mcp !== 1 || d.n !== ${JSON.stringify(NONCE)}) return;
+            if (d.type === "scroll" && e.source === document.getElementById("a").contentWindow) scroll = { x: d.x, y: d.y };
+            if (d.type === "ready") {
+              const count = (readyBy.get(e.source) || 0) + 1; readyBy.set(e.source, count);
+              if (e.source !== document.getElementById("a").contentWindow && scroll && scroll.y > 0) {
+                e.source.postMessage({ mcp: 1, n: ${JSON.stringify(NONCE)}, type: "restore", x: scroll.x, y: scroll.y }, "*");
+                window.restored += 1;
+              }
+            }
+          });
+          window.reload = () => {
+            const b = document.createElement("iframe");
+            b.id = "b"; b.name = ${JSON.stringify(NONCE)}; b.setAttribute("sandbox", "allow-scripts");
+            b.style.cssText = "width:500px;height:300px"; b.src = "/preview-test/tall.html?2";
+            document.body.append(b);
+          };
+        </script></body>`,
+    }),
+  );
+  await page.goto("/preview-test/scroll-host.html");
+  const first = page.frameLocator("#a");
+  await expect(first.locator("#end")).toBeVisible();
+  await first.locator("#end").evaluate(() => window.scrollTo(0, 1500));
+  // The page reports its position shortly after scrolling stops.
+  await page.waitForTimeout(400);
+  await page.evaluate(() => (window as unknown as { reload: () => void }).reload());
+  const second = page.frameLocator("#b");
+  await expect(second.locator("#end")).toBeVisible();
+  await expect
+    .poll(() => second.locator("#end").evaluate(() => Math.round(window.scrollY)))
+    .toBe(1500);
+  expect(await page.evaluate(() => (window as unknown as { restored: number }).restored)).toBe(1);
+});
