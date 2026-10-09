@@ -1,6 +1,8 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import {
+  copyFile,
+  mkdtemp,
   lstat,
   mkdir,
   open,
@@ -11,7 +13,8 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
   GitChangedFile,
   GitDiffIndex,
@@ -67,9 +70,48 @@ async function git(root: string, args: string[], maxBuffer = 4 * 1024 * 1024) {
       timeout: 10_000,
       maxBuffer,
       encoding: "utf8",
-      env: { ...process.env, LC_ALL: "C" },
+      // Background polling must not refresh (rewrite) the user's index or take
+      // its lock, which an agent's own `git add` could then collide with.
+      env: { ...process.env, LC_ALL: "C", GIT_OPTIONAL_LOCKS: "0" },
     })
   ).stdout;
+}
+
+/**
+ * `git diff` refreshes stale stat data and writes the index back even with
+ * GIT_OPTIONAL_LOCKS=0 (only `status` honours it). Run read-only polling diffs
+ * against a throwaway copy so they never touch the repository's own index.
+ */
+async function gitWithIndexCopy(root: string, args: string[]) {
+  let scratch: string | undefined;
+  try {
+    const index = (
+      await git(root, ["rev-parse", "--path-format=absolute", "--git-path", "index"])
+    ).trim();
+    scratch = await mkdtemp(join(tmpdir(), "monocode-index-"));
+    const copy = join(scratch, "index");
+    await copyFile(index, copy);
+    return (
+      await exec("git", ["-c", "core.pager=cat", ...args], {
+        cwd: root,
+        timeout: 10_000,
+        maxBuffer: 4 * 1024 * 1024,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          LC_ALL: "C",
+          GIT_OPTIONAL_LOCKS: "0",
+          GIT_INDEX_FILE: copy,
+        },
+      })
+    ).stdout;
+  } catch (error) {
+    // No index to copy yet (or an old git): read normally.
+    if (!scratch) return git(root, args);
+    throw error;
+  } finally {
+    if (scratch) await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 function gitWithInput(
@@ -564,7 +606,7 @@ export async function hostGitIndex(root: string): Promise<GitDiffIndex> {
     git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => ""),
     git(root, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
     git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    git(root, [
+    gitWithIndexCopy(root, [
       "diff",
       "--no-ext-diff",
       "--no-textconv",

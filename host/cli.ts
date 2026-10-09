@@ -28,6 +28,7 @@ import {
   type RemoteProvider,
 } from "../src/features/connections/model/protocol";
 import { firstFreePort } from "./port";
+import { bearerMatches } from "./secret";
 import { connectionInfo, installService, uninstallService } from "./service";
 import { version } from "../package.json";
 import { protectWindowsDirectory } from "./windows";
@@ -249,7 +250,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       if (
         request.method !== "POST" ||
         request.headers.origin ||
-        request.headers.authorization !== `Bearer ${secret}`
+        !bearerMatches(request.headers.authorization, secret)
       ) {
         response.writeHead(403).end();
         return;

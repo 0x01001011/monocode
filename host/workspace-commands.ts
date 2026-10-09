@@ -546,7 +546,7 @@ export class WorkspaceCommands {
       timeout: 30_000,
       maxBuffer: 4 * 1024 * 1024,
       encoding: "utf8",
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
     })).stdout;
   }
 
