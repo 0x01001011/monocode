@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { readFile, readdir, statfs } from "node:fs/promises";
 import { cpus, freemem, homedir, totalmem } from "node:os";
-import { join } from "node:path";
+import { posix } from "node:path";
 import { promisify } from "node:util";
 import type {
   HostGpuMetrics,
@@ -125,22 +125,22 @@ export async function readCpuTemperature(
 ): Promise<number | undefined> {
   const readings: number[] = [];
   for (const dir of await sources.listDir("/sys/class/hwmon")) {
-    const base = join("/sys/class/hwmon", dir);
-    const name = (await sources.readText(join(base, "name")))?.trim();
+    const base = posix.join("/sys/class/hwmon", dir);
+    const name = (await sources.readText(posix.join(base, "name")))?.trim();
     if (!name || !CPU_SENSORS.has(name)) continue;
     for (const file of await sources.listDir(base)) {
       if (!/^temp\d+_input$/.test(file)) continue;
-      const value = celsius(await sources.readText(join(base, file)));
+      const value = celsius(await sources.readText(posix.join(base, file)));
       if (value !== undefined) readings.push(value);
     }
   }
   if (readings.length === 0) {
     for (const dir of await sources.listDir("/sys/class/thermal")) {
       if (!dir.startsWith("thermal_zone")) continue;
-      const base = join("/sys/class/thermal", dir);
-      const type = (await sources.readText(join(base, "type")))?.trim();
+      const base = posix.join("/sys/class/thermal", dir);
+      const type = (await sources.readText(posix.join(base, "type")))?.trim();
       if (!type || !CPU_SENSORS.has(type)) continue;
-      const value = celsius(await sources.readText(join(base, "temp")));
+      const value = celsius(await sources.readText(posix.join(base, "temp")));
       if (value !== undefined) readings.push(value);
     }
   }
