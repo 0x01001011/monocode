@@ -1,5 +1,6 @@
 import { basename } from "../../../platform/tauri/fs";
 import type { FilePaneTab } from "../../workspace/model/layout";
+import { isLocalProject } from "../../projects/model/recents";
 
 export type TerminalMetaPatch = {
   title?: string;
@@ -140,4 +141,15 @@ export function newTerminalCwd({
   if (session?.worktreeCwd && !session.worktreeRemoved)
     return session.worktreeCwd;
   return activeFile?.cwd ?? session?.cwd ?? fallback;
+}
+
+/**
+ * Whether a terminal can open for this project and folder. A project on
+ * another machine has none yet: the terminal would be a shell on this computer.
+ */
+export function canOpenTerminal(
+  projectCwd: string,
+  workdir: string = projectCwd,
+): boolean {
+  return isLocalProject(projectCwd) && isLocalProject(workdir);
 }
