@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type { Block, Session } from "../../sessions/model/session";
 import type { StatusCard } from "../model/statusCard";
-import { useSidebarTasks } from "./useSidebarTasks";
+import { statusSessionsFromLoaded, useSidebarTasks } from "./useSidebarTasks";
 import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
 
 vi.mock("./useTaskBoard", () => ({ useTaskBoard: vi.fn() }));
@@ -192,5 +192,34 @@ describe("useSidebarTasks", () => {
       expect(input.sessions).toEqual([]);
       expect(result?.running).toBe(false);
     });
+  });
+});
+
+describe("statusSessionsFromLoaded", () => {
+  const loaded = (id: string, over: Record<string, unknown> = {}): Session => active(id, over);
+
+  it("keeps this project's visible sessions and reads busy and waiting from them", () => {
+    const sessions = [
+      loaded("a", { busy: true }),
+      loaded("b", { pendingQuestion: { requestId: 1, questions: [] } }),
+      loaded("other", { cwd: "/elsewhere" }),
+      loaded("hidden", { sidebarHidden: true }),
+      loaded("temp", { ephemeral: true }),
+    ];
+    expect(statusSessionsFromLoaded(sessions, "/proj", "a")).toEqual([
+      { id: "a", title: "a", busy: true, needsInput: false },
+      { id: "b", title: "b", busy: false, needsInput: true },
+    ]);
+  });
+
+  it("marks a worker's lead as busy and takes tool times from each session's own blocks", () => {
+    const sessions = [
+      loaded("lead"),
+      loaded("worker", { busy: true, orchestrationLeadId: "lead", sidebarHidden: true, blocks: [] }),
+      loaded("a", { blocks: [tool({ toolEndedAt: T0 - 2_000 })] }),
+    ];
+    const [lead, a] = statusSessionsFromLoaded(sessions, "/proj", "lead");
+    expect(lead.busy).toBe(true);
+    expect(a.lastActivityAt).toBe(T0 - 2_000);
   });
 });

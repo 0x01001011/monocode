@@ -21,6 +21,7 @@ import {
   isReleaseNotesTab,
   isReviewTab,
   isSessionChangesTab,
+  isTaskBoardTab,
   isTerminalTab,
   type FilePaneTab,
 } from "../model/layout";
@@ -141,6 +142,15 @@ export function surfaceTabPresentation(
       label: "Session Changes",
       iconName: "CHANGES",
       tooltip: "Changes captured for this session only",
+    };
+  }
+
+  if (isTaskBoardTab(file)) {
+    return {
+      name: "Tasks",
+      label: "Tasks",
+      iconName: "plan.md",
+      tooltip: "Task progress for this session",
     };
   }
 

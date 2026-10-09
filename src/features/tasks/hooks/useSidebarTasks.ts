@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
-import type { Block, Session } from "../../sessions/model/session";
+import { sameProjectPath } from "../../projects/model/recents";
+import { sessionNeedsInput, type Block, type Session } from "../../sessions/model/session";
 import type { StatusSessionInput } from "../model/statusCard";
 import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
 
@@ -43,6 +44,76 @@ function questionLine(session: Session | undefined): string | undefined {
   return line || undefined;
 }
 
+/** The few session fields a status input needs; a loaded `Session` fits too. */
+type StatusSessionSource = Pick<SessionSummary, "id" | "title" | "sidebarHidden"> & {
+  updatedAt?: number;
+  blocks?: readonly Block[];
+};
+
+type StatusSessionsInput = {
+  sessions: readonly StatusSessionSource[];
+  busySessionIds: ReadonlySet<string>;
+  approvalSessionIds: ReadonlySet<string>;
+  activeSessionId?: string;
+  activeSession?: Session;
+};
+
+/**
+ * One status input per visible session. Only the active session carries its question
+ * and its newest tool time; the sidebar and the Tasks tab both build their board from this.
+ */
+export function buildStatusSessions(input: StatusSessionsInput): StatusSessionInput[] {
+  const { sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession } = input;
+  const activeTool = latestToolTime(activeSession?.blocks);
+  const question = questionLine(activeSession);
+  return sessions
+    .filter((session) => !session.sidebarHidden)
+    .map((session) => {
+      const isActive = session.id === activeSessionId;
+      const times = [session.updatedAt, isActive ? activeTool : latestToolTime(session.blocks)].filter(
+        (at): at is number => at !== undefined,
+      );
+      return {
+        id: session.id,
+        title: session.title,
+        busy: busySessionIds.has(session.id),
+        needsInput: approvalSessionIds.has(session.id),
+        ...(isActive && question ? { question } : {}),
+        ...(times.length ? { lastActivityAt: Math.max(...times) } : {}),
+      };
+    });
+}
+
+/**
+ * Status inputs for a project built from loaded sessions alone, for surfaces that do not
+ * receive the sidebar's list. A worker's busy or waiting state also marks its lead.
+ */
+export function statusSessionsFromLoaded(
+  sessions: readonly Session[],
+  projectCwd: string,
+  activeSessionId?: string,
+): StatusSessionInput[] {
+  const busySessionIds = new Set<string>();
+  const approvalSessionIds = new Set<string>();
+  for (const session of sessions) {
+    if (session.busy) {
+      busySessionIds.add(session.id);
+      if (session.orchestrationLeadId) busySessionIds.add(session.orchestrationLeadId);
+    }
+    if (sessionNeedsInput(session)) {
+      approvalSessionIds.add(session.id);
+      if (session.orchestrationLeadId) approvalSessionIds.add(session.orchestrationLeadId);
+    }
+  }
+  return buildStatusSessions({
+    sessions: sessions.filter((session) => !session.ephemeral && sameProjectPath(session.cwd, projectCwd)),
+    busySessionIds,
+    approvalSessionIds,
+    activeSessionId,
+    activeSession: sessions.find((session) => session.id === activeSessionId),
+  });
+}
+
 /**
  * The Tasks board for the sidebar. It is read even while the tab is closed so the
  * tab badge stays current. `running` says whether the panel's clock should tick.
@@ -52,28 +123,15 @@ export function useSidebarTasks(input: Input): { board: TaskBoard; running: bool
   const blocks = activeSession?.blocks;
   const pendingQuestion = activeSession?.pendingQuestion;
 
-  const statusSessions = useMemo<StatusSessionInput[]>(() => {
-    if (remote) return NO_SESSIONS;
-    const activeTool = latestToolTime(blocks);
-    const question = questionLine(activeSession);
-    return sessions
-      .filter((session) => !session.sidebarHidden)
-      .map((session) => {
-        const isActive = session.id === activeSessionId;
-        const lastActivityAt =
-          isActive && activeTool !== undefined ? Math.max(session.updatedAt, activeTool) : session.updatedAt;
-        return {
-          id: session.id,
-          title: session.title,
-          busy: busySessionIds.has(session.id),
-          needsInput: approvalSessionIds.has(session.id),
-          ...(isActive && question ? { question } : {}),
-          lastActivityAt,
-        };
-      });
+  const statusSessions = useMemo<StatusSessionInput[]>(
+    () =>
+      remote
+        ? NO_SESSIONS
+        : buildStatusSessions({ sessions, busySessionIds, approvalSessionIds, activeSessionId, activeSession }),
     // `activeSession` only matters through its blocks and question.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, busySessionIds, approvalSessionIds, activeSessionId, blocks, pendingQuestion, remote]);
+    [sessions, busySessionIds, approvalSessionIds, activeSessionId, blocks, pendingQuestion, remote],
+  );
 
   const board = useTaskBoard({
     projectCwd: cwd,

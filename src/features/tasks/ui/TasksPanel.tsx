@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import type { TaskBoard } from "../hooks/useTaskBoard";
-import { formatDuration } from "../model/duration";
+import { progressLine } from "../model/progress";
 import type { StatusAction, StatusCard as StatusCardData } from "../model/statusCard";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
 import { StatusCard } from "./StatusCard";
@@ -16,7 +16,6 @@ type Props = {
   onOpenAsTab?: () => void;
 };
 
-const ETA_FROM_DONE = 3;
 const PREVIEW_NOTES = 3;
 const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
 const SMALL_BUTTON = `min-h-6 rounded-md px-2 text-[11.5px] text-content/66 hover:bg-selection-subtle ${FOCUS}`;
@@ -31,35 +30,6 @@ const LEGEND: [GlyphKind, string][] = [
   ["failed", "Failed"],
   ["issues", "Review found issues"],
 ];
-
-const isDone = (n: BoardNode) => n.status === "done";
-
-function finishedAt(plan: BoardSection): number | undefined {
-  const ends = [...plan.nodes, ...(plan.finalReview ? [plan.finalReview] : [])]
-    .map((n) => n.endedAt)
-    .filter((t): t is number => t !== undefined);
-  return ends.length ? Math.max(...ends) : undefined;
-}
-
-/** "5 of 8 done · 1h 01m so far · about 35m left"; the ETA needs three finished tasks. */
-function progressLine(plan: BoardSection, now: number): string {
-  const parts = [`${plan.done} of ${plan.total} done`];
-  const finished = plan.total > 0 && plan.done >= plan.total;
-  const end = finished ? finishedAt(plan) : now;
-  if (plan.startedAt !== undefined && end !== undefined) {
-    parts.push(`${formatDuration(end - plan.startedAt, !finished)}${finished ? "" : " so far"}`);
-  }
-  if (plan.done >= ETA_FROM_DONE && !finished) {
-    const spans = plan.nodes
-      .filter(isDone)
-      .flatMap((n) => (n.startedAt !== undefined && n.endedAt !== undefined && n.endedAt >= n.startedAt ? [n.endedAt - n.startedAt] : []));
-    if (spans.length) {
-      const mean = spans.reduce((a, b) => a + b, 0) / spans.length;
-      parts.push(`about ${formatDuration(mean * (plan.total - plan.done), false)} left`);
-    }
-  }
-  return parts.join(" · ");
-}
 
 function Legend() {
   return (

@@ -57,12 +57,12 @@ function parentIndex(nodes: BoardNode[], parentId?: string, out = new Map<string
   return out;
 }
 
-function glyphFor(node: BoardNode): GlyphKind {
+export function glyphFor(node: BoardNode): GlyphKind {
   if (node.status === "attention" && (node.fixRounds ?? 0) >= STRUGGLING_FROM_ROUND) return "struggling";
   return glyphForStatus(node.status);
 }
 
-function durationLabel(node: BoardNode, now: number): string | undefined {
+export function durationLabel(node: BoardNode, now: number): string | undefined {
   if (node.status === "pending") return undefined;
   if (node.startedAt === undefined) return NO_DURATION;
   if (node.status === "running") return formatDuration(now - node.startedAt, true);

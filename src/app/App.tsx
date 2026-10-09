@@ -202,6 +202,7 @@ import {
   newAgentTab,
   openEditorTab,
   openSessionChangesTab,
+  openTaskBoardTab,
   pinEditorFile,
   openWorkspaceFile,
   previewWorkspaceFile,
@@ -4081,6 +4082,23 @@ function Workspace({
     },
     [activeTabId],
   );
+
+  /** The Tasks tab's "Open as tab": the active session's board in the workspace. */
+  const onOpenTasksTab = useCallback(() => {
+    const session = sessionsRef.current.find(
+      (entry) => entry.id === activeSessionIdRef.current,
+    );
+    if (!session) return;
+    const projectCwd = sidebarCwdRef.current;
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === activeTabId
+          ? openTaskBoardTab(tab, session.cwd, session.id, projectCwd, true)
+          : tab,
+      ),
+    );
+    setComposerFocused(false);
+  }, [activeTabId]);
 
   // A Mono view covers the workspace, so its session changes open beside the
   // chat instead of in a project tab hidden behind it.
@@ -12496,6 +12514,7 @@ function Workspace({
               open={sessionSidebarOpen}
               tab={sidebarTab}
               onTabChange={setSidebarTab}
+              onOpenTasksTab={onOpenTasksTab}
               filesSearchOpen={filesSearchOpen}
               onFilesSearchOpenChange={setFilesSearchOpen}
               onOpenFilesSearch={onFindInProject}
@@ -13252,7 +13271,9 @@ function toTitleTab(
         ? `plan:${file.plan.blockId}`
         : file.releaseNotes
           ? `release-notes:${file.releaseNotes.version}`
-          : file.path;
+          : file.taskBoard
+            ? `task-board:${file.cwd}:${file.taskBoard.sessionId}`
+            : file.path;
     if (seenKeys.has(key)) return;
     seenKeys.add(key);
     files.push(
@@ -13261,7 +13282,9 @@ function toTitleTab(
           ? releaseNotesTitle(file.releaseNotes.version)
           : file.terminal
             ? terminalTabLabel(file)
-            : basename(file.path)),
+            : file.taskBoard
+              ? "Tasks"
+              : basename(file.path)),
     );
   };
   const focusedPane =

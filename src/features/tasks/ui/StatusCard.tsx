@@ -40,7 +40,7 @@ const GLYPH: Partial<Record<StatusKind, GlyphKind>> = {
 const BUTTON =
   "min-h-6 rounded-[7px] px-2.5 py-1 text-[11.5px] whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
 
-function actionLabel(action: StatusAction, card: StatusCardData): string {
+export function actionLabel(action: StatusAction, card: StatusCardData): string {
   if (action === "answer-in-session" && card.sessionTitle) return `Answer in ${card.sessionTitle}`;
   return ACTION_LABELS[action];
 }

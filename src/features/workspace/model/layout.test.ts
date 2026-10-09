@@ -322,6 +322,22 @@ describe("openTaskBoardTab", () => {
   });
 });
 
+describe("Open as tab from the sidebar", () => {
+  it("Open as tab from the sidebar opens a task board tab", () => {
+    // The App handler passes the session's cwd and id, the project cwd and pin = true.
+    const opened = openTaskBoardTab(newTab("session-a"), "/repo", "session-a", "/repo", true);
+    const pane = opened.editorPanes[0];
+    const file = pane?.files.find(isTaskBoardTab);
+    expect(file?.taskBoard).toEqual({ sessionId: "session-a" });
+    expect(pane?.activeFileId).toBe(file?.id);
+    expect(opened.focusedId).toBe(pane?.id);
+    // An explicit open is not a preview, so the next preview does not replace it.
+    expect(file?.preview).toBeUndefined();
+    // A second click focuses the same tab.
+    expect(openTaskBoardTab(opened, "/repo", "session-a", "/repo", true).editorPanes[0]?.files).toHaveLength(1);
+  });
+});
+
 describe("openChangesTab", () => {
   it("keeps Changes and per-file reviews independent across worktrees", () => {
     const main = openChangesTab(newTab("session-a"), "/repo");
