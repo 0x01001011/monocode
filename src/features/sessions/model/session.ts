@@ -346,6 +346,10 @@ export type Block = {
     /** Left running by the agent when it yielded; the turn waits on it. */
     background?: boolean;
   };
+  /** Epoch ms; absent on sessions restored before timing existed. */
+  toolStartedAt?: number;
+  /** Epoch ms of the first completed or failed status; absent while running. */
+  toolEndedAt?: number;
   approval?: {
     requestId: number;
     decided?: "allow" | "deny" | "cancelled";

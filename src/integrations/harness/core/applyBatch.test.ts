@@ -9,7 +9,10 @@ import type { HarnessEvent } from "./types";
 function content(session: Session) {
   return {
     ...session,
-    blocks: session.blocks.map(({ id: _id, ...block }) => block),
+    // Ids and wall-clock tool stamps differ between two independent runs.
+    blocks: session.blocks.map(
+      ({ id: _id, toolStartedAt: _s, toolEndedAt: _e, ...block }) => block,
+    ),
   };
 }
 

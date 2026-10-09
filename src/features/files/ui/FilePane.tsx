@@ -14,6 +14,7 @@ import {
   isReleaseNotesTab,
   isReviewTab,
   isSessionChangesTab,
+  isTaskBoardTab,
   isTerminalTab,
   type EditorPane,
   type FilePaneTab,
@@ -34,6 +35,7 @@ import { MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
 import { BinaryFileView } from "./BinaryFileView";
 import { ReleaseNotesSurface } from "../../../app/ui/ReleaseNotesSurface";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { TaskBoardSurface } from "../../tasks/ui/TaskBoardSurface";
 
 const CommitDiff = lazySurface(async () => {
   const module = await import("../../source-control/ui/CommitDiff");
@@ -61,6 +63,8 @@ type Props = {
   focused: boolean;
   /** The title bar already names a standalone file, so avoid repeating it. */
   showTabs?: boolean;
+  /** False while the workspace is hidden or covered; a task board then stops polling. */
+  visible?: boolean;
   dirtyFileIds: Set<string>;
   fileErrorCounts: Map<string, number>;
   sessions: Session[];
@@ -88,6 +92,7 @@ function FilePaneComponent({
   pane,
   focused,
   showTabs = true,
+  visible = true,
   dirtyFileIds,
   fileErrorCounts,
   sessions,
@@ -114,6 +119,9 @@ function FilePaneComponent({
   const activeFile = pane.files.find((file) => file.id === pane.activeFileId);
   const sessionReview =
     activeFile && isSessionChangesTab(activeFile) ? activeFile : undefined;
+  // Only the active tab's board is mounted; `visible` quiets it while the whole workspace is hidden.
+  const taskBoard =
+    activeFile && isTaskBoardTab(activeFile) ? activeFile : undefined;
   const unifiedReview =
     !!activeFile &&
     !sessionReview &&
@@ -149,6 +157,16 @@ function FilePaneComponent({
               focusPath={sessionReview.path}
             />
           </div>
+        ) : taskBoard ? (
+          <div className="absolute inset-0 h-full">
+            <TaskBoardSurface
+              projectCwd={taskBoard.projectCwd ?? taskBoard.cwd}
+              planCwd={taskBoard.cwd}
+              sessionId={taskBoard.taskBoard.sessionId}
+              sessions={sessions}
+              visible={visible}
+            />
+          </div>
         ) : commitReview && activeFile?.commit ? (
           <div className="absolute inset-0 h-full">
             <CommitDiff cwd={activeFile.cwd} sha={activeFile.commit.sha} />
@@ -167,6 +185,7 @@ function FilePaneComponent({
             isCommitTab(file) ||
             isChangesTab(file) ||
             isSessionChangesTab(file) ||
+            isTaskBoardTab(file) ||
             (unifiedReview && isReviewTab(file))
           )
             return null;
@@ -245,6 +264,7 @@ export const FilePane = memo(FilePaneComponent, (previous, next) => {
     previous.pane !== next.pane ||
     previous.focused !== next.focused ||
     previous.showTabs !== next.showTabs ||
+    previous.visible !== next.visible ||
     previous.dirtyFileIds !== next.dirtyFileIds ||
     previous.fileErrorCounts !== next.fileErrorCounts ||
     previous.onFocus !== next.onFocus ||
@@ -261,6 +281,16 @@ export const FilePane = memo(FilePaneComponent, (previous, next) => {
     previous.editorNavigation !== next.editorNavigation ||
     Boolean(previous.onPaneDragStart) !== Boolean(next.onPaneDragStart) ||
     previous.onTerminalMetaChange !== next.onTerminalMetaChange
+  ) {
+    return false;
+  }
+
+  // The visible board reads every session in its project, not just its own.
+  if (
+    previous.sessions !== next.sessions &&
+    next.pane.files.some(
+      (file) => file.id === next.pane.activeFileId && isTaskBoardTab(file),
+    )
   ) {
     return false;
   }

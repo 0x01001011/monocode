@@ -4,6 +4,7 @@ import {
   leafIds,
   newFileTab,
   newPlanTab,
+  newTaskBoardTab,
   newTab,
   openEditorTab,
   type WorkspaceTab,
@@ -152,6 +153,42 @@ describe("removeSessionFromWorkspace", () => {
 
     expect(result.tabs[0]?.editorPanes[0]?.files).toEqual([readme]);
     expect(result.tabs[0]?.editorPanes[0]?.activeFileId).toBe(readme.id);
+  });
+
+  it("closing a session closes its task board tab", () => {
+    const own = newTaskBoardTab("/projects/monocode", "s1");
+    const other = newTaskBoardTab("/projects/monocode", "s2");
+    const readme = newFileTab(
+      "/projects/monocode/README.md",
+      "/projects/monocode",
+    );
+    const shared: WorkspaceTab = {
+      ...tab("shared", "s1"),
+      layout: {
+        type: "split" as const,
+        id: "split",
+        dir: "right" as const,
+        children: [leaf("s1"), leaf("s2"), leaf("editor")],
+        sizes: [1 / 3, 1 / 3, 1 / 3],
+      },
+      focusedId: "s1",
+      editorPanes: [
+        {
+          id: "editor",
+          files: [own, other, readme],
+          activeFileId: own.id,
+        },
+      ],
+    };
+    const result = remove({
+      tabs: [shared],
+      sessions: [session("s1"), session("s2")],
+      sessionId: "s1",
+      activeTabId: "shared",
+    });
+
+    expect(result.tabs[0]?.editorPanes[0]?.files).toEqual([other, readme]);
+    expect(result.tabs[0]?.editorPanes[0]?.activeFileId).toBe(other.id);
   });
 
   it("replaces the final project tab with a blank session", () => {

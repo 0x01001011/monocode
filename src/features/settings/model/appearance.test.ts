@@ -35,6 +35,8 @@ import {
   applyDiffPalette,
   loadDiffPalette,
   saveDiffPalette,
+  loadSidebarTabOrder,
+  saveSidebarTabOrder,
 } from "./appearance";
 
 const KEY = "monocode.transcriptLayout";
@@ -343,5 +345,23 @@ describe("dark theme lightness setting", () => {
     expect(loadThemeDarkLightness()).toBe(0);
     saveThemeDarkLightness(100);
     expect(loadThemeDarkLightness()).toBe(30);
+  });
+});
+
+describe("sidebar tab order", () => {
+  beforeEach(mockLocalStorage);
+
+  it("puts Tasks right after Changes by default", () => {
+    expect(loadSidebarTabOrder()).toEqual(["sessions", "inbox", "files", "changes", "tasks"]);
+  });
+
+  it("appends Tasks to an old saved order that lacks it", () => {
+    saveSidebarTabOrder(["changes", "files", "inbox", "sessions"]);
+    expect(loadSidebarTabOrder()).toEqual(["changes", "files", "inbox", "sessions", "tasks"]);
+  });
+
+  it("keeps a saved position for Tasks", () => {
+    saveSidebarTabOrder(["tasks", "sessions", "inbox", "files", "changes"]);
+    expect(loadSidebarTabOrder()).toEqual(["tasks", "sessions", "inbox", "files", "changes"]);
   });
 });

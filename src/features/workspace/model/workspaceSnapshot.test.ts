@@ -15,6 +15,7 @@ import {
   newEditorWorkspaceTab,
   newReleaseNotesWorkspaceTab,
   newSessionChangesTab,
+  newTaskBoardTab,
   newTab,
   newTerminalFile,
   splitPane,
@@ -327,6 +328,73 @@ describe("collectWorkspaceSnapshot", () => {
     expect(restored?.sessionChanges).toEqual({ sessionId: "session-a" });
     expect(restored?.review).toBe(true);
     expect(restored?.path).toBe("/tmp/a/src/lib.rs");
+  });
+
+  it("task board tabs round-trip the snapshot", () => {
+    const file = newTaskBoardTab("/tmp/a", "session-a", "/tmp/project");
+    const tab = {
+      ...newTab("s1"),
+      id: "t1",
+      editorPanes: [{ id: "e1", files: [file], activeFileId: file.id }],
+    };
+    const snapshot = collectWorkspaceSnapshot(
+      [tab],
+      [],
+      "t1",
+      "/tmp/a",
+      new Map(),
+    );
+    const restored = hydrateWorkspaceSnapshot(snapshot, new Map())?.tabs[0]
+      ?.editorPanes[0]?.files[0];
+    expect(restored?.taskBoard).toEqual({ sessionId: "session-a" });
+    expect(restored?.review).toBeUndefined();
+    expect(restored?.path).toBe("/tmp/a");
+    expect(restored?.projectCwd).toBe("/tmp/project");
+  });
+
+  it("drops a task board tab with a malformed taskBoard", () => {
+    const file = newTaskBoardTab("/tmp/a", "session-a");
+    const tab = {
+      ...newTab("s1"),
+      id: "t1",
+      editorPanes: [
+        {
+          id: "e1",
+          files: [{ ...file, taskBoard: { sessionId: "  " } }],
+          activeFileId: file.id,
+        },
+      ],
+    };
+    const snapshot = collectWorkspaceSnapshot(
+      [tab],
+      [],
+      "t1",
+      "/tmp/a",
+      new Map(),
+    );
+    const restored = hydrateWorkspaceSnapshot(snapshot, new Map())?.tabs[0];
+    expect(restored?.editorPanes ?? []).toEqual([]);
+  });
+
+  it("a snapshot with taskBoard and terminal is dropped", () => {
+    const file = { ...newTaskBoardTab("/tmp/a", "session-a"), terminal: true };
+    const tab = {
+      ...newTab("s1"),
+      id: "t1",
+      editorPanes: [{ id: "e1", files: [file], activeFileId: file.id }],
+    };
+    const snapshot = collectWorkspaceSnapshot(
+      [tab],
+      [],
+      "t1",
+      "/tmp/a",
+      new Map(),
+    );
+    const restored = hydrateWorkspaceSnapshot(snapshot, new Map())?.tabs[0];
+    expect(restored?.editorPanes ?? []).toEqual([]);
+    expect(
+      (restored?.terminalPanes ?? []).flatMap((pane) => pane.files),
+    ).toEqual([]);
   });
 
   it("preserves a worktree editor's execution directory and owning project", () => {

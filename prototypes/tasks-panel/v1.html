@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Tasks panel prototype</title>
+<style>
+  :root {
+    --bg: hsl(240 0% 9%);
+    --sidebar: hsl(240 2% 11%);
+    --content: hsl(240 0% 92%);
+    --stroke: color-mix(in srgb, var(--content) 7%, transparent);
+    --sel: color-mix(in srgb, var(--content) 10%, transparent);
+    --sel-subtle: color-mix(in srgb, var(--content) 6%, transparent);
+    --accent: hsl(211 92% 62%);
+    --done: #34d399;
+    --fail: #fb7185;
+    --warn: #e8c547;
+    --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0d0d0e; color: var(--content); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+  .stage { display: flex; gap: 28px; padding: 28px; align-items: flex-start; flex-wrap: wrap; }
+  .caption { font-size: 12px; color: color-mix(in srgb, var(--content) 55%, transparent); margin: 0 0 8px 2px; }
+  .frame { width: 300px; height: 820px; background: var(--sidebar); border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .ws-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 6px; font-size: 13px; font-weight: 600; }
+  .ws-head span { color: color-mix(in srgb, var(--content) 45%, transparent); font-weight: 400; }
+  .tabs { display: flex; gap: 2px; margin: 4px 8px 6px; padding: 3px; border-radius: 8px; background: var(--sel-subtle); }
+  .tab { flex: 1; height: 24px; display: grid; place-items: center; font-size: 12px; border-radius: 6px; color: color-mix(in srgb, var(--content) 50%, transparent); position: relative; }
+  .tab.on { background: var(--sel); color: var(--content); }
+  .tab .dot { position: absolute; top: 5px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .scroll { flex: 1; overflow: auto; padding: 4px 0 16px; }
+  .muted { color: color-mix(in srgb, var(--content) 55%, transparent); }
+  .faint { color: color-mix(in srgb, var(--content) 40%, transparent); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* section header */
+  .sec { display: flex; align-items: baseline; gap: 6px; padding: 10px 12px 4px; font-size: 11px; letter-spacing: 0.02em; text-transform: uppercase; color: color-mix(in srgb, var(--content) 50%, transparent); }
+  .sec b { font-weight: 600; color: color-mix(in srgb, var(--content) 72%, transparent); text-transform: none; letter-spacing: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sec .r { margin-left: auto; text-transform: none; letter-spacing: 0; }
+
+  /* rows */
+  .row { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 3px 12px; font-size: 12.5px; border-radius: 6px; margin: 0 4px; }
+  .row:hover { background: var(--sel-subtle); }
+  .row.cur { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .ix { width: 14px; text-align: right; font-size: 11px; }
+  .row .d { font-size: 11.5px; }
+  .chev { width: 10px; font-size: 9px; color: color-mix(in srgb, var(--content) 40%, transparent); }
+  .badge { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: var(--sel); color: color-mix(in srgb, var(--content) 70%, transparent); }
+  .badge.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+
+  /* glyphs, matching TaskListPreview vocabulary */
+  .g { width: 16px; height: 16px; flex: none; display: grid; place-items: center; border-radius: 50%; font-size: 10px; }
+  .g.pending { border: 1px solid color-mix(in srgb, var(--content) 28%, transparent); width: 14px; height: 14px; margin: 1px; }
+  .g.done { background: color-mix(in srgb, var(--done) 20%, transparent); color: var(--done); }
+  .g.run { border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); animation: spin 0.9s linear infinite; width: 14px; height: 14px; margin: 1px; }
+  .g.fail { background: color-mix(in srgb, var(--fail) 20%, transparent); color: var(--fail); font-weight: 700; }
+  .g.block { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); font-size: 9px; }
+  .g.sm { transform: scale(0.8); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .g.run { animation: none; border-color: var(--accent); } }
+
+  /* progress */
+  .bar { height: 3px; border-radius: 3px; background: var(--sel); margin: 6px 12px 2px; overflow: hidden; display: flex; gap: 2px; }
+  .bar i { display: block; height: 100%; background: var(--done); opacity: 0.8; }
+  .bar i.run { background: var(--accent); opacity: 1; }
+  .seg { display: flex; gap: 3px; margin: 8px 12px 2px; }
+  .seg i { flex: 1; height: 4px; border-radius: 2px; background: var(--sel); }
+  .seg i.done { background: color-mix(in srgb, var(--done) 75%, transparent); }
+  .seg i.run { background: var(--accent); }
+
+  /* now line */
+  .now { margin: 6px 8px 4px; padding: 8px 10px; border-radius: 8px; background: var(--sel-subtle); font-size: 12.5px; line-height: 1.45; }
+  .now .l1 { display: flex; align-items: center; gap: 8px; }
+  .now .l2 { font-size: 11.5px; margin-top: 2px; padding-left: 24px; }
+
+  /* stage strip */
+  .strip { display: flex; flex-wrap: wrap; gap: 4px 4px; padding: 2px 12px 6px 50px; font-size: 11px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; background: var(--sel-subtle); color: color-mix(in srgb, var(--content) 68%, transparent); }
+  .chip.bad { color: var(--fail); background: color-mix(in srgb, var(--fail) 12%, transparent); }
+  .chip.ok { color: var(--done); background: color-mix(in srgb, var(--done) 12%, transparent); }
+  .chip.run { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .steps { padding: 0 12px 6px 50px; font-size: 12px; }
+  .step { display: flex; gap: 7px; align-items: flex-start; padding: 2px 0; line-height: 1.35; }
+  .box { width: 12px; height: 12px; margin-top: 2px; flex: none; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--content) 30%, transparent); }
+  .box.on { background: color-mix(in srgb, var(--done) 75%, transparent); border-color: transparent; }
+  .sub { padding-left: 34px; }
+  .sub .row { font-size: 12px; min-height: 24px; }
+
+  .foot { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+  .pill { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; background: var(--sel-subtle); color: color-mix(in srgb, var(--content) 70%, transparent); }
+  .gap { height: 8px; }
+  .hr { height: 1px; background: var(--stroke); margin: 8px 12px; }
+  .icon-btn { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: color-mix(in srgb, var(--content) 55%, transparent); font-size: 12px; }
+
+  /* mini span bars (variant C) */
+  .span { width: 64px; height: 6px; position: relative; background: var(--sel-subtle); border-radius: 3px; flex: none; }
+  .span i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: color-mix(in srgb, var(--done) 70%, transparent); }
+  .span i.run { background: var(--accent); }
+
+  /* full tab */
+  .full { width: 980px; background: var(--bg); border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; }
+  .full-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--stroke); }
+  .full-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th { text-align: left; font-weight: 500; font-size: 11.5px; color: color-mix(in srgb, var(--content) 50%, transparent); padding: 8px 10px; border-bottom: 1px solid var(--stroke); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--stroke); vertical-align: middle; }
+  tr.cur td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .flow { display: flex; align-items: center; gap: 0; }
+  .node { width: 9px; height: 9px; border-radius: 50%; background: var(--done); flex: none; }
+  .node.bad { background: var(--fail); }
+  .node.run { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .node.off { background: transparent; border: 1px solid color-mix(in srgb, var(--content) 30%, transparent); }
+  .wire { height: 2px; flex: 1; min-width: 18px; background: color-mix(in srgb, var(--done) 45%, transparent); }
+  .wire.off { background: var(--sel); }
+  .lbl { font-size: 10.5px; padding: 0 4px; }
+  .gantt { padding: 14px 18px 18px; }
+  .gl { display: grid; grid-template-columns: 170px 1fr 60px; align-items: center; gap: 10px; font-size: 12px; padding: 3px 0; }
+  .track { position: relative; height: 10px; background: var(--sel-subtle); border-radius: 3px; }
+  .track i { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: color-mix(in srgb, var(--done) 65%, transparent); }
+  .track i.rv { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+  .track i.fx { background: color-mix(in srgb, var(--warn) 60%, transparent); }
+  .notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; padding: 0 18px 18px; font-size: 12px; }
+  .notes h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; }
+  .notes li { margin: 0 0 5px; line-height: 1.4; color: color-mix(in srgb, var(--content) 72%, transparent); }
+  .notes ul { padding-left: 16px; margin: 0; }
+</style>
+</head>
+<body>
+<div class="stage">
+
+<!-- ============ VARIANT A: spec as written ============ -->
+<div>
+  <p class="caption">A · Spec as written (stacked sources)</p>
+  <div class="frame">
+    <div class="ws-head">Workspace <span>⌕ ＋</span></div>
+    <div class="tabs"><div class="tab">Sessions</div><div class="tab">Explorer</div><div class="tab">Changes</div><div class="tab on">Tasks<i class="dot"></i></div></div>
+    <div class="scroll">
+      <div class="sec">Plan <b>skills-index-remote-ranking</b><span class="r icon-btn">⤢</span></div>
+      <div class="bar"><i style="width:62%"></i><i class="run" style="width:6%"></i></div>
+      <div class="row"><span class="muted num" style="font-size:11.5px">5/8 · 1h 01m</span></div>
+      <div class="row"><span class="faint">Now</span><span class="t">Task 6 · Review · <span class="num">2m 14s</span></span></div>
+      <div class="row"><span class="chev">▸</span><span class="g done">✓</span><span class="ix faint">1</span><span class="t">Rust memoized scan and revision</span><span class="d muted num">2m</span></div>
+      <div class="row"><span class="chev">▾</span><span class="g done">✓</span><span class="ix faint">2</span><span class="t">Watcher, event, frontend invalid…</span><span class="badge">R1</span><span class="d muted num">19m</span></div>
+      <div class="strip"><span class="chip">Implement 14m</span><span class="chip bad">Review ✗</span><span class="chip">R1 5m</span><span class="chip ok">✓</span></div>
+      <div class="steps">
+        <div class="step"><i class="box on"></i>Rust test watcher_bumps_revision…</div>
+        <div class="step"><i class="box on"></i>Run it; see failure.</div>
+        <div class="step"><i class="box on"></i>Implement start(app, roots)</div>
+        <div class="step"><i class="box on"></i>TS: loadSkills clears the cache</div>
+        <div class="step"><i class="box on"></i>Run vitest and cargo</div>
+      </div>
+      <div class="row"><span class="chev">▸</span><span class="g done">✓</span><span class="ix faint">3</span><span class="t">Usage store (Rust)</span><span class="badge">R1</span><span class="d muted num">10m</span></div>
+      <div class="row"><span class="chev">▸</span><span class="g done">✓</span><span class="ix faint">4</span><span class="t">Ranking with usage (TS)</span><span class="badge">R1</span><span class="d muted num">11m</span></div>
+      <div class="row"><span class="chev">▸</span><span class="g done">✓</span><span class="ix faint">5</span><span class="t">Host TS scanner and list_skills</span><span class="badge">R1</span><span class="d muted num">12m</span></div>
+      <div class="row"><span class="chev">▸</span><span class="g run"></span><span class="ix faint">6</span><span class="t">Desktop remote wiring</span><span class="d muted num">7m 50s</span></div>
+      <div class="row"><span class="chev"></span><span class="g pending"></span><span class="ix faint">7</span><span class="t muted">Real verification</span></div>
+      <div class="row"><span class="chev"></span><span class="g pending"></span><span class="ix faint">8</span><span class="t muted">Build, install as kcode, ship</span></div>
+      <div class="row"><span class="chev"></span><span class="g pending"></span><span class="ix faint"></span><span class="t muted">Final review</span></div>
+      <div class="foot"><span class="pill">▸ Rulings 9</span><span class="pill">▸ Minors 14</span><span class="pill">▸ Parked 0</span></div>
+      <div class="sec">Subagents <span class="r">1 running · 11 done</span></div>
+      <div class="row"><span class="g run"></span><span class="t">Review Task 6</span><span class="faint" style="font-size:11px">opus</span><span class="d muted num">2m 14s</span></div>
+      <div class="row"><span class="g done">✓</span><span class="t">Implement Task 6</span><span class="faint" style="font-size:11px">sonnet</span><span class="d muted num">5m 27s</span></div>
+      <div class="row"><span class="g done">✓</span><span class="t">Re-review Task 5</span><span class="faint" style="font-size:11px">sonnet</span><span class="d muted num">1m 40s</span></div>
+      <div class="row"><span class="faint" style="padding-left:24px;font-size:12px">9 more</span></div>
+      <div class="sec">Todos <span class="r">5/8</span></div>
+      <div class="row"><span class="g done sm">✓</span><span class="t">Task 1: Rust memoized scan</span></div>
+      <div class="row"><span class="g done sm">✓</span><span class="t">Task 2: Watcher, event…</span></div>
+      <div class="row"><span class="faint" style="padding-left:24px;font-size:12px">6 more</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT B: glance-first, merged ============ -->
+<div>
+  <p class="caption">B · Glance-first: one story, subagents nested in stages</p>
+  <div class="frame">
+    <div class="ws-head">Workspace <span>⌕ ＋</span></div>
+    <div class="tabs"><div class="tab">Sessions</div><div class="tab">Explorer</div><div class="tab">Changes</div><div class="tab on">Tasks<i class="dot"></i></div></div>
+    <div class="scroll">
+      <div class="now">
+        <div class="l1"><span class="g run"></span><span class="t"><b style="font-weight:600">Reviewing Task 6</b> of 8 <span class="muted">· Desktop remote wiring</span></span></div>
+        <div class="l2 muted"><span class="num">2m 14s</span> in review · nothing needs you</div>
+      </div>
+      <div class="sec">Plan <b>Skills index remote ranking</b><span class="r num">1h 01m <span class="icon-btn" style="display:inline-grid">⤢</span></span></div>
+      <div class="seg"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="run"></i><i></i><i></i><i></i></div>
+      <div class="row" style="min-height:20px"><span class="faint num" style="font-size:11px">5 of 8 done · final review after task 8</span></div>
+      <div class="gap"></div>
+      <div class="row"><span class="g done">✓</span><span class="ix faint">1</span><span class="t">Rust memoized scan and revision</span><span class="d muted num">2m</span></div>
+      <div class="row"><span class="g done">✓</span><span class="ix faint">2</span><span class="t">Watcher, event, frontend invalid…</span><span class="badge" title="One fix round after review">1 fix</span><span class="d muted num">19m</span></div>
+      <div class="row"><span class="g done">✓</span><span class="ix faint">3</span><span class="t">Usage store (Rust)</span><span class="badge">1 fix</span><span class="d muted num">10m</span></div>
+      <div class="row"><span class="g done">✓</span><span class="ix faint">4</span><span class="t">Ranking with usage (TS)</span><span class="badge">1 fix</span><span class="d muted num">11m</span></div>
+      <div class="row"><span class="g done">✓</span><span class="ix faint">5</span><span class="t">Host TS scanner and list_skills</span><span class="badge">1 fix</span><span class="d muted num">12m</span></div>
+      <div class="row cur"><span class="g run"></span><span class="ix faint">6</span><span class="t"><b style="font-weight:600">Desktop remote wiring</b></span><span class="d num">7m 50s</span></div>
+      <div class="sub">
+        <div class="row"><span class="g done sm">✓</span><span class="t">Implemented <span class="faint">· sonnet</span></span><span class="d muted num">5m 27s</span></div>
+        <div class="row"><span class="g run sm"></span><span class="t">Reviewing <span class="faint">· opus</span></span><span class="d num" style="color:var(--accent)">2m 14s</span></div>
+      </div>
+      <div class="steps" style="padding-left:58px">
+        <div class="step"><i class="box"></i><span class="muted">Tests: list_skills in allowlists</span></div>
+        <div class="step"><i class="box"></i><span class="muted">Implement; TTL 30 s revalidation</span></div>
+        <div class="step"><i class="box"></i><span class="muted">Rust parity test vs expected.json</span></div>
+        <div class="step"><i class="box"></i><span class="muted">Full gates; commit</span></div>
+        <div class="step faint" style="font-size:11px">Steps tick when the task completes.</div>
+      </div>
+      <div class="row"><span class="g pending"></span><span class="ix faint">7</span><span class="t muted">Real verification</span></div>
+      <div class="row"><span class="g pending"></span><span class="ix faint">8</span><span class="t muted">Build, install as kcode, ship</span></div>
+      <div class="row"><span class="g pending"></span><span class="ix faint"></span><span class="t muted">Final review</span></div>
+      <div class="hr"></div>
+      <div class="row"><span class="t">Decisions made for you</span><span class="badge">9</span></div>
+      <div class="row"><span class="t">Deferred to final review</span><span class="badge">14</span></div>
+      <div class="sec">Other agents in this session</div>
+      <div class="row"><span class="g done">✓</span><span class="t">Explore · map sidebar tabs</span><span class="d muted num">2m 47s</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT C: flow rows with spans ============ -->
+<div>
+  <p class="caption">C · Flow rows: every task shows its span on the plan clock</p>
+  <div class="frame">
+    <div class="ws-head">Workspace <span>⌕ ＋</span></div>
+    <div class="tabs"><div class="tab">Sessions</div><div class="tab">Explorer</div><div class="tab">Changes</div><div class="tab on">Tasks<i class="dot"></i></div></div>
+    <div class="scroll">
+      <div class="sec">Plan <b>Skills index remote ranking</b><span class="r icon-btn">⤢</span></div>
+      <div class="row"><span class="muted num" style="font-size:11.5px">5/8 · started 13:59 · 1h 01m</span></div>
+      <div class="gap"></div>
+      <div class="row"><span class="g done">✓</span><span class="t">1 Rust memoized scan</span><span class="span"><i style="left:0;width:4%"></i></span><span class="d muted num" style="width:34px;text-align:right">2m</span></div>
+      <div class="row"><span class="g done">✓</span><span class="t">2 Watcher, event…</span><span class="span"><i style="left:4%;width:31%"></i></span><span class="d muted num" style="width:34px;text-align:right">19m</span></div>
+      <div class="row"><span class="g done">✓</span><span class="t">3 Usage store</span><span class="span"><i style="left:35%;width:16%"></i></span><span class="d muted num" style="width:34px;text-align:right">10m</span></div>
+      <div class="row"><span class="g done">✓</span><span class="t">4 Ranking with usage</span><span class="span"><i style="left:51%;width:18%"></i></span><span class="d muted num" style="width:34px;text-align:right">11m</span></div>
+      <div class="row"><span class="g done">✓</span><span class="t">5 Host TS scanner</span><span class="span"><i style="left:69%;width:18%"></i></span><span class="d muted num" style="width:34px;text-align:right">12m</span></div>
+      <div class="row cur"><span class="g run"></span><span class="t">6 Desktop remote…</span><span class="span"><i class="run" style="left:87%;width:13%"></i></span><span class="d num" style="width:34px;text-align:right">7m</span></div>
+      <div class="row"><span class="g pending"></span><span class="t muted">7 Real verification</span><span class="span"></span><span style="width:34px"></span></div>
+      <div class="row"><span class="g pending"></span><span class="t muted">8 Build, install…</span><span class="span"></span><span style="width:34px"></span></div>
+      <div class="foot"><span class="pill">Rulings 9</span><span class="pill">Minors 14</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FULL TAB ============ -->
+<div>
+  <p class="caption">Full tab · flow table + timeline</p>
+  <div class="full">
+    <div class="full-head"><span class="g run"></span><h2>Skills index remote ranking</h2><span class="muted" style="font-size:12.5px">Reviewing Task 6 of 8 · 1h 01m so far</span><span style="margin-left:auto" class="faint" style="font-size:12px">docs/superpowers/plans/2026-10-07-skills-index-remote-ranking.md</span></div>
+    <table>
+      <thead><tr><th style="width:36px"></th><th>Task</th><th style="width:330px">Flow</th><th>Commits</th><th style="text-align:right">Time</th></tr></thead>
+      <tbody>
+        <tr><td><span class="g done">✓</span></td><td>1 · Rust memoized scan and revision</td><td><div class="flow"><span class="lbl muted">impl</span><i class="node"></i><i class="wire"></i><span class="lbl muted">review</span><i class="node"></i><i class="wire"></i><i class="node"></i><span class="lbl muted">done</span></div></td><td class="faint" style="font-family:var(--mono);font-size:11.5px">ebb5db1..129e9e2</td><td class="num muted" style="text-align:right">2m</td></tr>
+        <tr><td><span class="g done">✓</span></td><td>2 · Watcher, event, frontend invalidation</td><td><div class="flow"><span class="lbl muted">impl</span><i class="node"></i><i class="wire"></i><span class="lbl muted">review</span><i class="node bad"></i><i class="wire"></i><span class="lbl muted">fix 1</span><i class="node"></i><i class="wire"></i><i class="node"></i><span class="lbl muted">done</span></div></td><td class="faint" style="font-family:var(--mono);font-size:11.5px">129e9e2..e704fdd</td><td class="num muted" style="text-align:right">19m</td></tr>
+        <tr><td><span class="g done">✓</span></td><td>3 · Usage store (Rust)</td><td><div class="flow"><span class="lbl muted">impl</span><i class="node"></i><i class="wire"></i><span class="lbl muted">review</span><i class="node bad"></i><i class="wire"></i><span class="lbl muted">fix 1</span><i class="node"></i><i class="wire"></i><i class="node"></i><span class="lbl muted">done</span></div></td><td class="faint" style="font-family:var(--mono);font-size:11.5px">e704fdd..8113287</td><td class="num muted" style="text-align:right">10m</td></tr>
+        <tr class="cur"><td><span class="g run"></span></td><td><b style="font-weight:600">6 · Desktop remote wiring</b></td><td><div class="flow"><span class="lbl muted">impl</span><i class="node"></i><i class="wire"></i><span class="lbl" style="color:var(--accent)">review 2m 14s</span><i class="node run"></i><i class="wire off"></i><i class="node off"></i></div></td><td class="faint" style="font-family:var(--mono);font-size:11.5px">ae43c2d..02244d3</td><td class="num" style="text-align:right">7m 50s</td></tr>
+        <tr><td><span class="g pending"></span></td><td class="muted">7 · Real verification</td><td></td><td></td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="gantt">
+      <div class="gl"><span class="muted">1 Rust memoized scan</span><div class="track"><i style="left:0;width:3%"></i></div><span class="num muted">2m</span></div>
+      <div class="gl"><span class="muted">2 Watcher, event…</span><div class="track"><i style="left:3%;width:22%"></i><i class="rv" style="left:25%;width:2%"></i><i class="fx" style="left:27%;width:8%"></i></div><span class="num muted">19m</span></div>
+      <div class="gl"><span class="muted">3 Usage store</span><div class="track"><i style="left:35%;width:11%"></i><i class="rv" style="left:46%;width:1.5%"></i><i class="fx" style="left:47.5%;width:3.5%"></i></div><span class="num muted">10m</span></div>
+      <div class="gl"><span>6 Desktop remote wiring</span><div class="track"><i style="left:87%;width:9%"></i><i class="rv" style="left:96%;width:4%"></i></div><span class="num">7m 50s</span></div>
+    </div>
+    <div class="notes">
+      <div><h4>Decisions made for you · 9</h4><ul><li>SkillsPage uses loadDiscoveredSkills so disabled skills stay visible. Cost if wrong: a second cache to keep in sync.</li><li>Record usage at send, not at pick, to avoid double counts.</li></ul></div>
+      <div><h4>Deferred to final review · 14</h4><ul><li>Memo entries for never-rescanned roots persist for process life.</li><li>No tests for root-created-later or debounce coalescing.</li></ul></div>
+      <div><h4>Parked · 0</h4><ul><li class="faint">Nothing parked.</li></ul></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Tasks panel prototype, round 2</title>
+<style>
+  :root {
+    --sidebar: hsl(240 2% 11%);
+    --bg: hsl(240 0% 9%);
+    --content: hsl(240 0% 92%);
+    --stroke: color-mix(in srgb, var(--content) 7%, transparent);
+    --sel: color-mix(in srgb, var(--content) 10%, transparent);
+    --sel-subtle: color-mix(in srgb, var(--content) 6%, transparent);
+    --muted: color-mix(in srgb, var(--content) 66%, transparent);
+    --faint: color-mix(in srgb, var(--content) 55%, transparent); /* AA floor, ~5:1 */
+    --line: color-mix(in srgb, var(--content) 45%, transparent);  /* glyph borders, >=3:1 */
+    --accent: hsl(211 92% 62%);
+    --done: #34d399;
+    --fail: #fb7185;
+    --warn: #f5c451;
+    --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* type scale: meta 11.5 / body 12.5 / title 14 */
+    --fs-meta: 11.5px; --fs-body: 12.5px; --fs-title: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0d0d0e; color: var(--content); font-family: var(--font); font-size: var(--fs-body); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-align: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 6px; }
+  .stage { display: flex; gap: 28px; padding: 28px; align-items: flex-start; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 18px; }
+  .caption { font-size: var(--fs-meta); color: var(--faint); margin: 0 0 8px 2px; }
+  .frame { width: 300px; background: var(--sidebar); border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .frame.tall { height: 900px; }
+  .ws-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 6px; font-weight: 600; font-size: 13px; }
+  .tabs { display: flex; gap: 2px; margin: 4px 8px 6px; padding: 3px; border-radius: 8px; background: var(--sel-subtle); }
+  .tab { flex: 1; height: 24px; display: grid; place-items: center; font-size: 12px; border-radius: 6px; color: var(--faint); position: relative; }
+  .tab.on { background: var(--sel); color: var(--content); }
+  .tab .dot { position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .tab .dot.warn { background: var(--warn); width: 7px; height: 7px; border-radius: 2px; transform: rotate(45deg); }
+  .tab .dot.fail { background: var(--fail); }
+  .scroll { flex: 1; overflow: auto; padding: 2px 0 14px; }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+  .meta { font-size: var(--fs-meta); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* status card: the glance */
+  .now { margin: 4px 8px 6px; padding: 10px 10px 10px; border-radius: 10px; background: var(--sel-subtle); }
+  .now.warn { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .now.fail { background: color-mix(in srgb, var(--fail) 12%, transparent); }
+  .now .l1 { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-title); font-weight: 600; line-height: 1.3; }
+  .now .l2 { margin: 3px 0 0 24px; line-height: 1.4; }
+  .now .ok { color: var(--done); }
+  .now .act { display: flex; gap: 6px; margin: 8px 0 0 24px; }
+  .btn { white-space: nowrap; font-size: var(--fs-meta); padding: 4px 10px; border-radius: 7px; background: var(--sel); }
+  .btn.primary { background: var(--warn); color: #1b1606; font-weight: 600; }
+  .btn.ghost { background: transparent; color: var(--muted); }
+
+  .others { margin: 0 8px 4px; }
+  .others .row { min-height: 24px; }
+
+  /* section header: sentence case, no eyebrow */
+  .sec { display: flex; align-items: baseline; gap: 6px; padding: 10px 12px 2px; }
+  .sec .h { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sec .r { margin-left: auto; white-space: nowrap; }
+  .sub-h { padding: 0 12px 4px; }
+
+  .seg { display: flex; gap: 3px; margin: 6px 12px 4px; }
+  .seg i { flex: 1; height: 4px; border-radius: 2px; background: var(--sel); }
+  .seg i.done { background: color-mix(in srgb, var(--done) 75%, transparent); }
+  .seg i.run { background: var(--accent); }
+  .seg i.warn { background: var(--warn); }
+
+  /* tree rows */
+  [role="tree"] { list-style: none; margin: 4px 0 0; padding: 0; }
+  .row { display: flex; align-items: center; gap: 8px; width: calc(100% - 8px); min-height: 26px; padding: 3px 8px 3px 10px; margin: 0 4px; border-radius: 6px; }
+  .row:hover { background: var(--sel-subtle); }
+  .row.cur { background: color-mix(in srgb, var(--accent) 11%, transparent); }
+  .row.cur.warn { background: color-mix(in srgb, var(--warn) 11%, transparent); }
+  .row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .ix { width: 12px; text-align: right; color: var(--faint); font-size: var(--fs-meta); }
+  .row .d { font-size: var(--fs-meta); color: var(--muted); }
+  .chev { width: 10px; font-size: 9px; color: var(--faint); flex: none; }
+
+  /* glyphs: one vocabulary (matches TaskListPreview) */
+  .g { width: 16px; height: 16px; flex: none; display: grid; place-items: center; border-radius: 50%; font-size: 10px; line-height: 1; }
+  .g.pending { border: 1px solid var(--line); width: 14px; height: 14px; margin: 1px; }
+  .g.done { background: color-mix(in srgb, var(--done) 20%, transparent); color: var(--done); }
+  .g.run { border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); animation: spin 0.9s linear infinite; width: 14px; height: 14px; margin: 1px; }
+  .g.findings { border: 1.5px solid var(--warn); width: 14px; height: 14px; margin: 1px; color: var(--warn); font-size: 9px; font-weight: 700; }
+  .g.ask { background: var(--warn); color: #1b1606; font-weight: 800; font-size: 11px; border-radius: 4px; }
+  .g.stall { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); font-size: 8px; letter-spacing: -1px; }
+  .g.fail { background: color-mix(in srgb, var(--fail) 22%, transparent); color: var(--fail); font-weight: 700; }
+  .g.sm { transform: scale(0.82); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .g.run { animation: none; border-color: var(--accent); } }
+
+  .kids { padding-left: 26px; }
+  .kids .row { min-height: 24px; }
+  .hint { padding: 2px 12px 6px 56px; }
+  .hint button { color: var(--faint); font-size: var(--fs-meta); }
+
+  .disclose { margin-top: 6px; }
+  .disclose .row .t { white-space: normal; }
+  .item { display: flex; gap: 8px; padding: 4px 12px 4px 34px; line-height: 1.4; }
+  .item .src { white-space: nowrap; color: var(--faint); font-size: var(--fs-meta); }
+  .more { padding: 2px 12px 6px 34px; }
+  .more button { color: var(--accent); font-size: var(--fs-meta); }
+  .tag { font-size: var(--fs-meta); color: var(--faint); white-space: nowrap; }
+  .tag.warn { color: var(--warn); }
+
+  /* empty */
+  .empty { padding: 18px 16px; line-height: 1.5; }
+  .empty h3 { margin: 0 0 6px; font-size: var(--fs-title); font-weight: 600; }
+  .empty p { margin: 0 0 10px; color: var(--muted); }
+  .empty ul { margin: 0; padding-left: 16px; color: var(--muted); }
+  .empty li { margin-bottom: 4px; }
+
+  /* full tab */
+  .full { width: 980px; background: var(--bg); border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; }
+  .full-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--stroke); white-space: nowrap; }
+  .full-head h2 { margin: 0; font-size: var(--fs-title); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; }
+  th { text-align: left; font-weight: 500; font-size: var(--fs-meta); color: var(--faint); padding: 8px 10px; border-bottom: 1px solid var(--stroke); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--stroke); vertical-align: middle; }
+  tr.cur td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .flow { display: flex; align-items: center; }
+  .node { width: 10px; height: 10px; border-radius: 50%; background: var(--done); flex: none; }
+  .node.findings { background: transparent; border: 1.5px solid var(--warn); }
+  .node.run { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .node.off { background: transparent; border: 1px solid var(--line); }
+  .wire { height: 2px; flex: 1; min-width: 14px; background: color-mix(in srgb, var(--content) 18%, transparent); }
+  .lbl { font-size: var(--fs-meta); padding: 0 5px; color: var(--muted); white-space: nowrap; }
+  .lbl.warn { color: var(--warn); }
+  .lbl.run { color: var(--accent); }
+  .timecell { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .span { width: 90px; height: 4px; position: relative; background: var(--sel-subtle); border-radius: 2px; }
+  .span i { position: absolute; top: 0; bottom: 0; border-radius: 2px; background: color-mix(in srgb, var(--content) 45%, transparent); }
+  .span i.run { background: var(--accent); }
+  .mono { font-family: var(--mono); font-size: var(--fs-meta); color: var(--muted); }
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 16px 18px 18px; }
+  .notes h4 { margin: 0 0 8px; font-size: var(--fs-body); font-weight: 600; }
+  .notes ol { margin: 0; padding: 0; list-style: none; }
+  .notes li { display: grid; grid-template-columns: 56px 1fr; gap: 8px; margin: 0 0 8px; line-height: 1.45; }
+  .notes li .why { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="stage">
+
+<!-- ===== Main: running, nothing needs you ===== -->
+<div>
+  <p class="caption">B2 · Running, nothing needs you (keyboard focus on Task 6)</p>
+  <div class="frame tall">
+    <div class="ws-head">Workspace <span class="faint">⌕ ＋</span></div>
+    <div class="tabs" role="tablist"><div class="tab">Sessions</div><div class="tab">Explorer</div><div class="tab">Changes</div><div class="tab on" aria-label="Tasks, running">Tasks<i class="dot"></i></div></div>
+    <div class="scroll">
+      <div class="now" role="status">
+        <div class="l1"><span class="g run" aria-hidden="true"></span><span>A reviewer is checking Task 6</span></div>
+        <div class="l2 muted">Desktop remote wiring · <span class="num">2m 14s</span> so far</div>
+        <div class="l2 ok">✓ Nothing needs you right now</div>
+      </div>
+      <div class="others">
+        <button class="row"><span class="g run sm" aria-hidden="true"></span><span class="t muted">ssh-hardening · Task 3 of 5</span><span class="d num">4m</span></button>
+      </div>
+
+      <div class="sec"><span class="h">Skills index remote ranking</span><span class="r"><button class="faint meta" aria-label="Open as tab">⤢</button></span></div>
+      <div class="sub-h faint meta num">5 of 8 done · started 13:59 · about 35m left</div>
+      <div class="seg" aria-hidden="true"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="run"></i><i></i><i></i></div>
+
+      <ul role="tree" aria-label="Plan tasks">
+        <li role="treeitem"><button class="row"><span class="chev">▸</span><span class="g done">✓</span><span class="ix">1</span><span class="t">Rust memoized scan and revision</span><span class="d num">2m</span></button></li>
+        <li role="treeitem"><button class="row" title="Reviewer found 3 issues; one fix round passed re-review."><span class="chev">▸</span><span class="g done">✓</span><span class="ix">2</span><span class="t">Watcher, event, frontend invalidation</span><span class="d num">19m</span></button></li>
+        <li role="treeitem"><button class="row"><span class="chev">▸</span><span class="g done">✓</span><span class="ix">3</span><span class="t">Usage store (Rust)</span><span class="d num">10m</span></button></li>
+        <li role="treeitem"><button class="row"><span class="chev">▸</span><span class="g done">✓</span><span class="ix">4</span><span class="t">Ranking with usage (TS)</span><span class="d num">11m</span></button></li>
+        <li role="treeitem"><button class="row"><span class="chev">▸</span><span class="g done">✓</span><span class="ix">5</span><span class="t">Host TS scanner and list_skills</span><span class="d num">12m</span></button></li>
+        <li role="treeitem" aria-expanded="true"><button class="row cur" style="outline:2px solid var(--accent);outline-offset:-1px"><span class="chev">▾</span><span class="g run" aria-label="running"></span><span class="ix">6</span><span class="t" style="font-weight:600">Desktop remote wiring</span><span class="d num" style="color:var(--content)">7m 50s</span></button>
+          <ul role="group" class="kids" style="list-style:none;margin:0;padding-left:26px">
+            <li role="treeitem"><button class="row"><span class="g done sm">✓</span><span class="t">Written by implementer</span><span class="tag">sonnet</span><span class="d num">5m 27s</span></button></li>
+            <li role="treeitem"><button class="row"><span class="g run sm" aria-label="running"></span><span class="t">Checked by reviewer</span><span class="tag">opus</span><span class="d num" style="color:var(--accent)">2m 14s</span></button></li>
+          </ul>
+          <div class="hint"><button>4 steps in the plan ▸</button></div>
+        </li>
+        <li role="treeitem"><button class="row"><span class="chev"></span><span class="g pending" aria-label="pending"></span><span class="ix">7</span><span class="t muted">Real verification</span></button></li>
+        <li role="treeitem"><button class="row"><span class="chev"></span><span class="g pending"></span><span class="ix">8</span><span class="t muted">Build, install as kcode, ship</span></button></li>
+        <li role="treeitem"><button class="row"><span class="chev"></span><span class="g pending"></span><span class="ix"></span><span class="t muted">Final review of the whole branch</span></button></li>
+      </ul>
+
+      <div class="disclose">
+        <button class="row" aria-expanded="true"><span class="chev">▾</span><span class="t">Decisions made for you</span><span class="d num">9</span></button>
+        <div class="item"><span>Record skill usage when you send, not when you pick, so nothing counts twice.</span><span class="src">Task 4</span></div>
+        <div class="item"><span>Skills page keeps disabled skills visible, using a second cache.</span><span class="src">Task 2</span></div>
+        <div class="item"><span>Symlinked skills are skipped on the host for safety.</span><span class="src">Task 5</span></div>
+        <div class="more"><button>Show all 9</button></div>
+        <button class="row" aria-expanded="false"><span class="chev">▸</span><span class="t">Left for the final review</span><span class="d num">14</span></button>
+      </div>
+
+      <div class="sec"><span class="h">Other agents</span></div>
+      <ul role="tree" aria-label="Other agents">
+        <li role="treeitem"><button class="row"><span class="g done">✓</span><span class="t">Explore · map sidebar tabs</span><span class="d num">2m 47s</span></button></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ===== States column ===== -->
+<div class="col">
+  <div>
+    <p class="caption">B2 · Needs you (agent asked a question)</p>
+    <div class="frame">
+      <div class="tabs"><div class="tab">Sessions</div><div class="tab">Explorer</div><div class="tab">Changes</div><div class="tab on" aria-label="Tasks, needs you">Tasks<i class="dot warn"></i></div></div>
+      <div class="now warn" role="alert">
+        <div class="l1"><span class="g ask" aria-hidden="true">?</span><span>Task 6 is waiting for your answer</span></div>
+        <div class="l2 muted">“Should remote pickers expand SKILL.md bodies?” · asked <span class="num">3m</span> ago</div>
+        <div class="act"><button class="btn primary">Answer in session</button><button class="btn ghost">Remind me in 10m</button></div>
+      </div>
+      <ul role="tree" style="margin-bottom:10px"><li role="treeitem"><button class="row cur warn"><span class="g ask sm">?</span><span class="ix">6</span><span class="t" style="font-weight:600">Desktop remote wiring</span><span class="d num">9m</span></button></li></ul>
+    </div>
+  </div>
+  <div>
+    <p class="caption">B2 · Quiet too long</p>
+    <div class="frame">
+      <div class="tabs"><div class="tab">Sessions</div><div class="tab">Explorer</div><div class="tab">Changes</div><div class="tab on">Tasks<i class="dot warn"></i></div></div>
+      <div class="now warn" role="status">
+        <div class="l1"><span class="g stall" aria-hidden="true">❚❚</span><span>No activity on Task 6 for 6m</span></div>
+        <div class="l2 muted">The reviewer last wrote at 15:02. It may be running a long test.</div>
+        <div class="act"><button class="btn">Open reviewer</button><button class="btn ghost">Keep waiting</button></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="caption">B2 · Struggling (3rd fix round)</p>
+    <div class="frame">
+      <div class="tabs"><div class="tab">Sessions</div><div class="tab">Explorer</div><div class="tab">Changes</div><div class="tab on">Tasks<i class="dot fail"></i></div></div>
+      <div class="now fail" role="status">
+        <div class="l1"><span class="g fail" aria-hidden="true">!</span><span>Task 6 failed review twice</span></div>
+        <div class="l2 muted">Fix round 3 of 5 is running. Open findings: remote sessions never record usage.</div>
+        <div class="act"><button class="btn">See findings</button><button class="btn ghost">Open session</button></div>
+      </div>
+      <ul role="tree" style="margin-bottom:10px"><li role="treeitem"><button class="row"><span class="g findings sm">2</span><span class="ix">6</span><span class="t">Desktop remote wiring</span><span class="tag warn">fix round 3</span><span class="d num">31m</span></button></li></ul>
+    </div>
+  </div>
+  <div>
+    <p class="caption">B2 · Empty (first run)</p>
+    <div class="frame">
+      <div class="tabs"><div class="tab">Sessions</div><div class="tab">Explorer</div><div class="tab">Changes</div><div class="tab on">Tasks</div></div>
+      <div class="empty">
+        <h3>Nothing to track yet</h3>
+        <p>When the agent in this session works through a plan or hands work to other agents, you'll see each task here with its status and time.</p>
+        <ul><li>A plan run with superpowers</li><li>A todo list the agent writes</li><li>Subagents and orchestration workers</li></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Full tab ===== -->
+<div>
+  <p class="caption">Full tab · round 2</p>
+  <div class="full">
+    <div class="full-head"><span class="g run" aria-hidden="true"></span><h2>Skills index remote ranking</h2><span class="muted">A reviewer is checking Task 6 · 5 of 8 done · 1h 01m so far · about 35m left</span><span style="margin-left:auto"></span><button class="btn" title="docs/superpowers/plans/2026-10-07-skills-index-remote-ranking.md">Open plan</button></div>
+    <table>
+      <thead><tr><th style="width:36px"></th><th>Task</th><th style="width:360px">What happened</th><th>Commits</th><th style="text-align:right;width:170px">Time</th></tr></thead>
+      <tbody>
+        <tr><td><span class="g done">✓</span></td><td>1 · Rust memoized scan and revision</td><td><div class="flow"><span class="lbl">written</span><i class="node"></i><i class="wire"></i><span class="lbl">passed review</span><i class="node"></i></div></td><td><button class="mono">ebb5db1..129e9e2</button></td><td><div class="timecell"><span class="span"><i style="left:0;width:3%"></i></span><span class="num muted">2m</span></div></td></tr>
+        <tr><td><span class="g done">✓</span></td><td>2 · Watcher, event, frontend invalidation</td><td><div class="flow"><span class="lbl">written</span><i class="node"></i><i class="wire"></i><span class="lbl warn">review: 3 findings</span><i class="node findings"></i><i class="wire"></i><span class="lbl">fixed, passed</span><i class="node"></i></div></td><td><button class="mono">129e9e2..e704fdd</button></td><td><div class="timecell"><span class="span"><i style="left:3%;width:31%"></i></span><span class="num muted">19m</span></div></td></tr>
+        <tr><td><span class="g done">✓</span></td><td>3 · Usage store (Rust)</td><td><div class="flow"><span class="lbl">written</span><i class="node"></i><i class="wire"></i><span class="lbl warn">review: 1 finding</span><i class="node findings"></i><i class="wire"></i><span class="lbl">fixed, passed</span><i class="node"></i></div></td><td><button class="mono">e704fdd..8113287</button></td><td><div class="timecell"><span class="span"><i style="left:34%;width:16%"></i></span><span class="num muted">10m</span></div></td></tr>
+        <tr class="cur"><td><span class="g run"></span></td><td><b style="font-weight:600">6 · Desktop remote wiring</b></td><td><div class="flow"><span class="lbl">written</span><i class="node"></i><i class="wire"></i><span class="lbl run">in review · 2m 14s</span><i class="node run"></i><i class="wire"></i><i class="node off"></i></div></td><td><button class="mono">ae43c2d..02244d3</button></td><td><div class="timecell"><span class="span"><i class="run" style="left:87%;width:13%"></i></span><span class="num">7m 50s</span></div></td></tr>
+        <tr><td><span class="g pending"></span></td><td class="muted">7 · Real verification</td><td></td><td></td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="notes">
+      <div><h4>Decisions made for you · 9</h4><ol>
+        <li><span class="faint meta">Task 4</span><span>Record usage at send, not at pick. <span class="why">If wrong: picks never sent are not counted.</span></span></li>
+        <li><span class="faint meta">Task 2</span><span>Skills page keeps disabled skills visible. <span class="why">If wrong: a second cache to keep in sync.</span></span></li>
+        <li><span class="faint meta">Task 5</span><span>Skip symlinked skills on the host. <span class="why">If wrong: host and desktop listings differ.</span></span></li>
+      </ol></div>
+      <div><h4>Left for the final review · 14</h4><ol>
+        <li><span class="faint meta">Task 1</span><span>Memo entries for unscanned roots live for the whole process.</span></li>
+        <li><span class="faint meta">Task 2</span><span>No tests for a root created later or for debounce coalescing.</span></li>
+        <li><span class="faint meta">Task 3</span><span>A Skill call after a typed /name counts twice.</span></li>
+      </ol></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
