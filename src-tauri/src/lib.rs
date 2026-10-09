@@ -47,6 +47,8 @@ mod session_store;
 mod skills;
 mod skills_watch;
 pub mod ssh_askpass;
+#[cfg(target_os = "macos")]
+mod trackpad_zoom;
 #[cfg(target_os = "windows")]
 mod tray;
 mod tunnel_registry;
@@ -205,6 +207,15 @@ fn set_dock_badge(
 ) {
     #[cfg(target_os = "macos")]
     macos::set_window_badge(&window, count);
+}
+
+#[tauri::command]
+fn set_trackpad_zoom_enabled(
+    #[allow(unused_variables)] window: tauri::WebviewWindow,
+    #[allow(unused_variables)] enabled: bool,
+) {
+    #[cfg(target_os = "macos")]
+    trackpad_zoom::set_enabled(&window, enabled);
 }
 
 #[tauri::command]
@@ -518,6 +529,8 @@ pub fn run() {
             mono::mono_read,
             mono::mono_save,
             checkpoint::session_checkpoint_ensure,
+            checkpoint::session_checkpoint_begin_turn,
+            checkpoint::session_checkpoint_finish_turn,
             checkpoint::session_checkpoint_prepare,
             checkpoint::session_checkpoint_capture,
             checkpoint::session_checkpoint_status,
@@ -530,6 +543,7 @@ pub fn run() {
             set_traffic_lights_visible,
             set_window_background_blur,
             set_dock_badge,
+            set_trackpad_zoom_enabled,
             #[cfg(target_os = "macos")]
             menu::keybindings_set_overrides,
             #[cfg(target_os = "macos")]

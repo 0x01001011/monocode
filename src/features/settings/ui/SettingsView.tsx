@@ -233,8 +233,10 @@ import {
 } from "../../providers/model/providerAccountIdentity";
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import {
+  saveComposerAutocorrect,
   saveMaskEmails,
   saveShowRemainingUsage,
+  useComposerAutocorrect,
   useMaskEmails,
   useShowRemainingUsage,
 } from "../model/displayPrefs";
@@ -971,6 +973,7 @@ function ChatPage() {
   const [diffViewer, setDiffViewer] = useState<DiffViewer>(loadDiffViewer);
   const [formatOnSave, setFormatOnSave] = useState(loadFormatOnSave);
   const [composerRunner, setComposerRunner] = useState(loadComposerRunner);
+  const composerAutocorrect = useComposerAutocorrect();
   const [gridArcadeEnabled, setGridArcadeEnabled] = useState(
     loadGridArcadeEnabled,
   );
@@ -1091,6 +1094,17 @@ function ChatPage() {
               { value: "beside", label: "Beside" },
             ]}
             onChange={onModelControls}
+          />
+        </Row>
+        <Row
+          id="composer-autocorrect"
+          label="Autocorrect"
+          description="Spell check and autocorrect prompts in session and mono composers. Turn this off to keep the text exactly as typed."
+        >
+          <Toggle
+            label="Autocorrect"
+            on={composerAutocorrect}
+            onChange={saveComposerAutocorrect}
           />
         </Row>
       </Group>
