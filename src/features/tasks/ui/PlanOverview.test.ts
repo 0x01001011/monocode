@@ -237,7 +237,7 @@ describe("PlanOverview problems", () => {
     for (const b of problemButtons()) {
       expect(b.className).toContain("min-h-6");
       expect(b.className).toContain("bg-selection-subtle");
-      expect(b.className).toContain("focus-visible:outline-focus");
+      expect(b.className).toContain("focus-visible:focus-ring-inset");
       expect(b.getAttribute("type")).toBe("button");
     }
   });

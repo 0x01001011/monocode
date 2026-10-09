@@ -7,7 +7,7 @@ type Props = {
   onOpenPath?: (path: string) => void;
 };
 
-const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+const FOCUS = "focus-visible:focus-ring-inset";
 
 /** Needs a look first (what is moving or stuck), then what is next. Otherwise nothing is current. */
 function currentIndex(phases: readonly FlowPhase[]): number {

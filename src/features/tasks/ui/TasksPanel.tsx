@@ -20,7 +20,7 @@ type Props = {
 };
 
 const PREVIEW_NOTES = 3;
-const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+const FOCUS = "focus-visible:focus-ring-inset";
 const SMALL_BUTTON = `min-h-6 rounded-md px-2 text-[11.5px] text-muted hover:bg-selection-subtle ${FOCUS}`;
 
 const LEGEND: [GlyphKind, string][] = [

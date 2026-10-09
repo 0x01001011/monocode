@@ -18,7 +18,7 @@ type RowProps = {
   revealToken?: number;
 };
 
-const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+const FOCUS = "focus-visible:focus-ring-inset";
 const LINK = `min-h-6 rounded-md px-1.5 text-[11.5px] text-focus hover:bg-selection-subtle ${FOCUS}`;
 const COLUMNS = 4;
 

@@ -138,3 +138,139 @@ export function measure(page: Page, scope?: string): Promise<Measured> {
     };
   }, scope);
 }
+
+export type FocusStop = {
+  /** A readable name for the stop, e.g. `button "Show all 5"`. */
+  label: string;
+  /** What kind of control it is, so a run can prove it reached each kind. */
+  kind: "treeitem" | "select" | "flow-strip" | "overview-pill" | "button" | "heading" | "other";
+  /** True the first time this element is seen on the page, so repeated stops are not double counted. */
+  fresh: boolean;
+  outlineStyle: string;
+  outlineWidth: number;
+  /** Distance from the border edge to the inner edge of the ring; negative is inward. */
+  outlineOffset: number;
+  /** The lower of the ring's contrasts against what it is drawn over (parent, and the element's own fill when the ring touches it). */
+  contrast: number;
+  /** The first overflow-clipping ancestor that cuts the ring, if any. */
+  clippedBy: string | null;
+  /** Why this stop has no visible ring, or null when it has one. */
+  problem: string | null;
+};
+
+/**
+ * Describes the focus ring of the focused element (the `[data-row]` child for a treeitem, where the
+ * ring is drawn): style, width, contrast against the real background under it, and whether an
+ * `overflow` ancestor clips it. Returns null when focus is on the body (it left the page).
+ */
+export function focusStop(page: Page): Promise<FocusStop | null> {
+  return page.evaluate(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body || active === document.documentElement) return null;
+    const seenSet = ((window as unknown as { __focusSeen?: WeakSet<Element> }).__focusSeen ??= new WeakSet());
+    const fresh = !seenSet.has(active);
+    seenSet.add(active);
+
+    const isTreeitem = active.getAttribute("role") === "treeitem";
+    const target = isTreeitem ? (active.querySelector(":scope > [data-row]") ?? active) : active;
+    const cs = getComputedStyle(target);
+
+    // Same canvas compositing as `measure`, so the numbers match what the user sees.
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = 1;
+    const cx = cv.getContext("2d", { willReadFrequently: true })!;
+    const rgba = (c: string): number[] => {
+      cx.clearRect(0, 0, 1, 1);
+      cx.fillStyle = "#000";
+      cx.fillStyle = c;
+      cx.fillRect(0, 0, 1, 1);
+      const d = cx.getImageData(0, 0, 1, 1).data;
+      return [d[0], d[1], d[2], d[3] / 255];
+    };
+    const over = (top: number[], bot: number[]) => {
+      const a = top[3];
+      return [top[0] * a + bot[0] * (1 - a), top[1] * a + bot[1] * (1 - a), top[2] * a + bot[2] * (1 - a), 1];
+    };
+    const lum = (c: number[]) => {
+      const f = (v: number) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+    };
+    const ratio = (a: number[], b: number[]) => {
+      const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+      return (x + 0.05) / (y + 0.05);
+    };
+    const backdrop = (el: Element | null) => {
+      const chain: Element[] = [];
+      for (let e = el; e; e = e.parentElement) chain.push(e);
+      let base = [0, 0, 0, 1];
+      for (const e of chain.reverse()) {
+        const c = rgba(getComputedStyle(e).backgroundColor);
+        if (c[3] > 0) base = over(c, base);
+      }
+      return base;
+    };
+
+    const outlineStyle = cs.outlineStyle;
+    const outlineWidth = parseFloat(cs.outlineWidth) || 0;
+    const outlineOffset = parseFloat(cs.outlineOffset) || 0;
+    const ring = rgba(cs.outlineColor);
+    const below = backdrop(target.parentElement);
+    const withOwn = over(rgba(cs.backgroundColor), below);
+    // The ring spans [offset, offset + width] outward from the border edge.
+    const outer = outlineOffset + outlineWidth;
+    const touchesOutside = outer > 0.01;
+    const touchesInside = outlineOffset < -0.01;
+    const against: number[][] = [];
+    if (touchesOutside) against.push(below);
+    if (touchesInside) against.push(withOwn);
+    if (against.length === 0) against.push(below);
+    const contrast = Math.min(...against.map((bg) => ratio(over(ring, bg), bg)));
+
+    // The ring's outer rectangle must sit inside every clipping ancestor's padding box.
+    const rect = target.getBoundingClientRect();
+    const grow = Math.max(outer, 0);
+    let clippedBy: string | null = null;
+    for (let a = target.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+      const acs = getComputedStyle(a);
+      if (acs.overflowX === "visible" && acs.overflowY === "visible") continue;
+      const r = a.getBoundingClientRect();
+      const left = r.left + parseFloat(acs.borderLeftWidth);
+      const right = r.right - parseFloat(acs.borderRightWidth);
+      const top = r.top + parseFloat(acs.borderTopWidth);
+      const bottom = r.bottom - parseFloat(acs.borderBottomWidth);
+      const cutX = acs.overflowX !== "visible" && (rect.left - grow < left - 0.5 || rect.right + grow > right + 0.5);
+      const cutY = acs.overflowY !== "visible" && (rect.top - grow < top - 0.5 || rect.bottom + grow > bottom + 0.5);
+      if (cutX || cutY) {
+        clippedBy = `${a.tagName.toLowerCase()}.${a.className.toString().slice(0, 50)}`;
+        break;
+      }
+    }
+
+    const name = (active.getAttribute("aria-label") ?? active.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+    const tag = active.tagName.toLowerCase();
+    const kind: FocusStop["kind"] = isTreeitem
+      ? "treeitem"
+      : tag === "select"
+        ? "select"
+        : tag === "button" && active.closest('ol[aria-label="Superpowers flow"]')
+          ? "flow-strip"
+          : tag === "button" && active.closest("[data-problems]")
+            ? "overview-pill"
+            : tag === "button"
+              ? "button"
+              : tag === "h3"
+                ? "heading"
+                : "other";
+
+    let problem: string | null = null;
+    if (outlineStyle === "none" || outlineStyle === "hidden") problem = `outline-style is ${outlineStyle}`;
+    else if (outlineWidth < 2) problem = `outline-width ${outlineWidth}px`;
+    else if (contrast + 0.005 < 3) problem = `ring contrast ${contrast.toFixed(2)}:1`;
+    else if (clippedBy) problem = `ring clipped by ${clippedBy}`;
+
+    return { label: `${kind} "${name}"`, kind, fresh, outlineStyle, outlineWidth, outlineOffset, contrast: +contrast.toFixed(2), clippedBy, problem };
+  });
+}

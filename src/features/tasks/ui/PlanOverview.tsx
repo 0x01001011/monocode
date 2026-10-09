@@ -13,9 +13,9 @@ type Props = {
   compact?: boolean;
 };
 
-// The ring is the global :focus-visible rule, kept inside the pill. `outline-none` is left off on purpose:
-// in Tailwind 4 it sets the outline style to none for the focus-visible utilities too, so no ring shows.
-const FOCUS = "focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+// The design-system inset ring (see `focus-ring-inset` in styles/index.css), kept inside the pill. Never pair
+// it with `outline-none`: in Tailwind 4 that sets the outline style to none, so no ring shows.
+const FOCUS = "focus-visible:focus-ring-inset";
 const SHOWN_PROBLEMS = 3;
 
 /** Status tokens; a task that has not started is the muted track. Only colour animates. */

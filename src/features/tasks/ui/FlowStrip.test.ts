@@ -131,7 +131,7 @@ describe("FlowStrip", () => {
     render({ onOpenPath: () => {} });
     for (const b of buttons()) {
       expect(b.className).toContain("min-h-6");
-      expect(b.className).toContain("focus-visible:outline-focus");
+      expect(b.className).toContain("focus-visible:focus-ring-inset");
       expect(b.className).toContain("text-focus");
       expect(b.className).not.toContain("text-accent");
     }

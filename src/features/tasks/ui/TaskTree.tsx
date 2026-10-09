@@ -305,7 +305,8 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle, rev
           onFocus={(e) => {
             if (e.target === e.currentTarget) setActiveId(node.id);
           }}
-          className="list-none outline-none [&:focus-visible>[data-row]]:outline-2 [&:focus-visible>[data-row]]:-outline-offset-1 [&:focus-visible>[data-row]]:outline-focus"
+          // The li itself draws no ring; its row does, inset so the tree's scroll frame cannot clip it.
+          className="list-none outline-none [&:focus-visible>[data-row]]:focus-ring-inset"
         >
           <div
             data-row

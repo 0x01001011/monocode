@@ -37,8 +37,9 @@ const GLYPH: Partial<Record<StatusKind, GlyphKind>> = {
   done: "done",
 };
 
-const BUTTON =
-  "min-h-6 rounded-[7px] px-2.5 py-1 text-[11.5px] outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+// The ring is chosen per button: the primary one is a solid red fill, where an inset blue ring would
+// vanish (about 1:1), so it draws the ring outside on the card instead.
+const BUTTON = "min-h-6 rounded-[7px] px-2.5 py-1 text-[11.5px]";
 
 export function actionLabel(action: StatusAction, card: StatusCardData): string {
   if (action === "answer-in-session" && card.sessionTitle) return `Answer in ${card.sessionTitle}`;
@@ -47,9 +48,9 @@ export function actionLabel(action: StatusAction, card: StatusCardData): string 
 
 function actionClass(action: StatusAction): string {
   // "Answer in <title>" carries a session title of any length: it wraps inside the card.
-  if (PRIMARY.has(action)) return `${BUTTON} max-w-full text-left break-words bg-danger font-semibold text-background-base`;
-  if (SOLID.has(action)) return `${BUTTON} whitespace-nowrap bg-selection text-content`;
-  return `${BUTTON} whitespace-nowrap text-muted hover:bg-selection-subtle`;
+  if (PRIMARY.has(action)) return `${BUTTON} max-w-full text-left break-words bg-danger font-semibold text-background-base focus-visible:focus-ring`;
+  if (SOLID.has(action)) return `${BUTTON} whitespace-nowrap bg-selection text-content focus-visible:focus-ring-inset`;
+  return `${BUTTON} whitespace-nowrap text-muted hover:bg-selection-subtle focus-visible:focus-ring-inset`;
 }
 
 // The card's dot is the only moving thing in the panel; reduced motion keeps it still.

@@ -11,7 +11,7 @@ type Props = {
 const DECISIONS_EXPLAINER = "Calls the agent made without stopping to ask. Change any of them by telling the agent.";
 const ISSUES_EXPLAINER = "Things the reviewer chose not to block on. The final review decides which to fix.";
 const NAME_CHARS = 60;
-const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+const FOCUS = "focus-visible:focus-ring-inset";
 
 function Source({ note }: { note: BoardNote }) {
   return (

@@ -32,7 +32,7 @@ type Props = {
 };
 
 const TICK_MS = 1000;
-const FOCUS = "outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus";
+const FOCUS = "focus-visible:focus-ring-inset";
 const BUTTON = `min-h-6 rounded-md px-2 text-[11.5px] whitespace-nowrap text-muted hover:bg-selection-subtle ${FOCUS}`;
 const HEADERS = ["Status", "Task", "What happened", "Time"];
 
