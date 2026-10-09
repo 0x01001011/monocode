@@ -1,9 +1,10 @@
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -123,5 +124,87 @@ it.runIf(process.platform !== "win32")(
       vi.unstubAllEnvs();
       rmSync(directory, { recursive: true, force: true });
     }
+  },
+);
+
+// Providers installed with a Node version manager live in a directory a
+// non-interactive service PATH never contains (the managers are initialised
+// from interactive shell startup files).
+describe.runIf(process.platform !== "win32")(
+  "provider lookup in version-manager directories",
+  () => {
+    const launcher = (directory: string) => {
+      mkdirSync(directory, { recursive: true });
+      const file = join(directory, "grok");
+      writeFileSync(file, "#!/bin/sh\necho grok\n");
+      chmodSync(file, 0o755);
+      return file;
+    };
+    const withHome = async (
+      setup: (home: string) => string | undefined,
+      env: Record<string, string> = {},
+    ) => {
+      const home = realpathSync(
+        mkdtempSync(join(tmpdir(), "monocode-provider-home-")),
+      );
+      vi.stubEnv("HOME", home);
+      vi.stubEnv("PATH", "/usr/bin:/bin");
+      // CI images export these (GitHub's Ubuntu runners set NVM_DIR), which
+      // would redirect the lookup away from the temporary HOME.
+      for (const key of [
+        "NVM_DIR",
+        "FNM_DIR",
+        "VOLTA_HOME",
+        "PNPM_HOME",
+        "ASDF_DATA_DIR",
+      ])
+        vi.stubEnv(key, "");
+      for (const [key, value] of Object.entries(env))
+        vi.stubEnv(key, value.replace("$HOME", home));
+      try {
+        const expected = setup(home);
+        const resolved = await resolveProvider("grok").catch(() => undefined);
+        return { resolved, expected };
+      } finally {
+        vi.unstubAllEnvs();
+        rmSync(home, { recursive: true, force: true });
+      }
+    };
+
+    it.each([
+      ["nvm", ".nvm/versions/node/v22.1.0/bin"],
+      ["volta", ".volta/bin"],
+      ["pnpm", ".local/share/pnpm"],
+      ["asdf", ".asdf/shims"],
+      ["mise", ".local/share/mise/shims"],
+      ["fnm default alias", ".local/share/fnm/aliases/default/bin"],
+    ])("finds a provider installed by %s", async (_name, relative) => {
+      const { resolved, expected } = await withHome((home) =>
+        launcher(join(home, relative)),
+      );
+      expect(resolved).toBe(expected);
+    });
+
+    it("prefers the newest nvm Node version", async () => {
+      const { resolved, expected } = await withHome((home) => {
+        launcher(join(home, ".nvm/versions/node/v9.11.2/bin"));
+        launcher(join(home, ".nvm/versions/node/v20.9.0/bin"));
+        return launcher(join(home, ".nvm/versions/node/v22.1.0/bin"));
+      });
+      expect(resolved).toBe(expected);
+    });
+
+    it("honours NVM_DIR and VOLTA_HOME", async () => {
+      const nvm = await withHome(
+        (home) => launcher(join(home, "custom-nvm/versions/node/v22.1.0/bin")),
+        { NVM_DIR: "$HOME/custom-nvm" },
+      );
+      expect(nvm.resolved).toBe(nvm.expected);
+      const volta = await withHome(
+        (home) => launcher(join(home, "custom-volta/bin")),
+        { VOLTA_HOME: "$HOME/custom-volta" },
+      );
+      expect(volta.resolved).toBe(volta.expected);
+    });
   },
 );

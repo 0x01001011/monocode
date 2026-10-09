@@ -1,8 +1,4 @@
-Draft inferred during an automated audit; please review.
-
 # Product
-
-This draft was inferred from `README.md`, `CONTRIBUTING.md`, `docs/remote-access.md`, `CLAUDE.md` and the UI code under `src/`. No interview took place. Treat every statement as a hypothesis until a maintainer confirms it.
 
 ## Register
 
@@ -10,44 +6,35 @@ product
 
 ## Users
 
-Developers who already pay for one or more coding-agent subscriptions (Claude Code, Codex, Cursor CLI, Grok Build, OpenCode, Antigravity, Pi, omp, fx, Hermes Agent) and want to run them side by side. Most are comfortable in a terminal and a code editor. They keep MonoCode open all day on a laptop or desktop display. Some run agents on an always-on remote machine over SSH and drive them from the desktop.
-
-The usual context: several projects open at once, each with git worktrees and several agent sessions running in parallel. The user switches between sessions, approves tool calls, reviews diffs, answers agent questions and starts new work. They often glance at the app while doing something else, so status has to be readable at a glance.
+Developers who supervise coding agents (Claude Code, Codex, Cursor, and others) from one desktop app. They often run long work in parallel: superpowers plans executed by subagents, orchestration runs with workers, several sessions at once. They glance at MonoCode between their own tasks and need answers in seconds: what is running, is anything stuck, how long has it taken, and what needs me.
 
 ## Product Purpose
 
-MonoCode is a desktop UI for coding agents. Tabs are sessions and the composer is the input. It finds the provider CLIs that are installed and signed in, runs them, and shows their transcripts, tool calls, diffs and approvals in one window. It also covers the work around a session: projects and worktrees, source control, a file tree and editor tabs, an inbox of issues and pull requests, notes, automations, Monos (long-lived assistant agents) and a quick composer.
-
-It does not sell tokens. Success means a developer can supervise many agents across many projects without losing track of which one needs them, and can move from "agent asked for approval" to "approved and back to work" in a few seconds.
+MonoCode is a desktop UI for coding agents that uses the user's existing subscriptions. Tabs are sessions; the composer is the input. Success is a user who trusts the agents enough to look away, because MonoCode makes progress, time, and problems visible the moment they glance back.
 
 ## Brand Personality
 
-Quiet, dense, precise. The interface steps back so agent output and code carry the screen. The voice is plain and direct, with sentence-case labels and verb-first actions. Small moments of play exist (mascots, the welcome animations, the "btw" burst), but they stay rare and never sit in the path of routine work.
-
-Reference points, inferred from the code: native macOS chrome (vibrancy, traffic lights, title-bar tabs), VS Code conventions in the editor and source-control panels, and the calm density of Linear and Raycast.
+Warm, friendly, approachable. Plain words over jargon, short sentences that explain what happened, and states that read like a helpful colleague's note ("Waiting on review, 2m") rather than a log line. Friendly does not mean loud: warmth comes from copy, rounded but modest shapes, and gentle motion, not from decoration.
 
 ## Anti-references
 
-- Generic AI-tool marketing UI: gradient text, glowing purple-blue hero art, sparkle icons on every action.
-- SaaS dashboard clichés: hero metric cards, card grids of equal tiles, decorative charts.
-- Chat-app softness that wastes space: oversized bubbles, avatars on every turn, playful copy in error states.
-- Web-app chrome that ignores the desktop: custom scrollbars on macOS, non-native-feeling modals as the default answer, layout that shifts while agents stream.
+- Jira-style boards: heavy cards, colored swimlanes, badge clutter, columns for their own sake.
+- Dashboards built from hero metrics and stat tiles.
+- Log dumps presented as UI (raw ledger lines, unformatted status strings).
+
+References to borrow from, for specific qualities:
+- Linear: status glyphs, tabular metadata, restraint, keyboard navigation.
+- GitHub Actions run view: job and step tree with durations and unmistakable failure states.
+- Raycast: compact keyboard-first lists with crisp secondary text.
 
 ## Design Principles
 
-1. **The work is the interface.** Transcripts, diffs and code get the space and contrast. Chrome uses tinted neutrals and steps back.
-2. **Status at a glance.** Working, waiting for approval, done and failed must be readable from the rail and sidebar without opening a session, and never by color alone.
-3. **Density without strain.** Pack information like a professional tool, but keep text legible, targets reachable and contrast within WCAG AA.
-4. **Keyboard first.** Everything a mouse can do, the keyboard can do, with a visible focus ring and the shortcut shown next to the command.
-5. **Calm motion.** Motion confirms a state change and then gets out of the way. Reduced-motion settings are honored everywhere.
+1. Answer the glance. The first line of any surface says what is happening now and whether the user is needed.
+2. Show real state only. Never invent progress; unknown is shown as unknown.
+3. Calm until it matters. Quiet chrome by default; color and motion are spent on running, failed, and needs-you states.
+4. Speak like a colleague. Copy explains in plain words; raw machine text is one click away, not the headline.
+5. One vocabulary everywhere. The same glyph, color, and duration format mean the same thing in every panel.
 
 ## Accessibility & Inclusion
 
-Inferred target: WCAG 2.2 AA for both the dark and light themes. Existing commitments in the code:
-
-- Colorblind-safe and high-contrast diff palettes, with a +/- glyph so color is never the only cue (`src/styles/index.css`).
-- An interface scale from 50% to 200% (`src/features/settings/model/uiScale.ts`).
-- Wide `prefers-reduced-motion` coverage in CSS and in the JavaScript motion hooks.
-- User-adjustable theme hue, saturation and dark-mode lightness. These change rendered contrast, so contrast must hold across the whole allowed range.
-
-Open questions for a maintainer: confirm the WCAG level, whether screen-reader support for live agent status is a goal, and whether Windows High Contrast (forced colors) is in scope.
+WCAG 2.2 AA: 4.5:1 body text contrast, 3:1 for glyphs and large text, full keyboard operation with visible focus, `prefers-reduced-motion` honored, and status never conveyed by color alone (always a glyph or word too).

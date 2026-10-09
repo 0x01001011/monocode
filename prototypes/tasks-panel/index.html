@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Tasks panel prototype, round 4</title>
+<style>
+  :root {
+    --sidebar: hsl(240 2% 11%);
+    --bg: hsl(240 0% 9%);
+    --content: hsl(240 0% 92%);
+    --stroke: color-mix(in srgb, var(--content) 7%, transparent);
+    --sel: color-mix(in srgb, var(--content) 10%, transparent);
+    --sel-subtle: color-mix(in srgb, var(--content) 6%, transparent);
+    --muted: color-mix(in srgb, var(--content) 66%, transparent);
+    --faint: color-mix(in srgb, var(--content) 55%, transparent);
+    --line: color-mix(in srgb, var(--content) 45%, transparent);
+    --accent: hsl(211 92% 62%);
+    --done: #34d399;
+    --fail: #fb7185;
+    --warn: #f5c451;
+    --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --fs-meta: 11.5px; --fs-body: 12.5px; --fs-title: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0d0d0e; color: var(--content); font-family: var(--font); font-size: var(--fs-body); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-align: inherit; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-radius: 6px; }
+  .stage { display: flex; gap: 28px; padding: 28px; align-items: flex-start; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 18px; }
+  .caption { font-size: var(--fs-meta); color: var(--faint); margin: 0 0 8px 2px; }
+  .frame { width: 300px; background: var(--sidebar); border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .frame.tall { height: 860px; }
+  .tabs { display: flex; gap: 2px; margin: 8px 8px 6px; padding: 3px; border-radius: 8px; background: var(--sel-subtle); }
+  .tab { flex: 1; height: 24px; display: flex; align-items: center; justify-content: center; gap: 5px; font-size: var(--fs-meta); border-radius: 6px; color: var(--faint); }
+  .tab[aria-selected="true"] { background: var(--sel); color: var(--content); }
+  /* tab badge: shape AND color differ per state; none while merely running */
+  .tb { display: grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; font-size: 9px; font-weight: 800; line-height: 1; }
+  .tb.ask { background: var(--fail); color: #2a0a10; border-radius: 3px; }
+  .tb.quiet { border: 1.5px solid var(--warn); width: 11px; height: 11px; }
+  .tb.fail { background: var(--warn); color: #1b1606; }
+  .scroll { flex: 1; overflow: auto; padding: 2px 0 14px; }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+  .meta { font-size: var(--fs-meta); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .now { margin: 4px 8px 8px; padding: 10px; border-radius: 10px; background: var(--sel-subtle); }
+  .now.warn { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+  .now.ask { background: color-mix(in srgb, var(--fail) 14%, transparent); }
+  .now.fail { background: color-mix(in srgb, var(--fail) 12%, transparent); }
+  .now .l1 { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-title); font-weight: 600; line-height: 1.3; }
+  .now .l2 { margin: 3px 0 0 24px; line-height: 1.4; }
+  .now .ok { color: var(--done); }
+  .now .act { display: flex; gap: 6px; margin: 8px 0 0 24px; flex-wrap: wrap; }
+  .btn { white-space: nowrap; font-size: var(--fs-meta); min-height: 24px; padding: 4px 10px; border-radius: 7px; background: var(--sel); }
+  .btn.primary { background: var(--fail); color: #2a0a10; font-weight: 600; }
+  .btn.ghost { background: transparent; color: var(--muted); }
+  kbd { font-family: var(--font); font-size: 10.5px; color: var(--faint); margin-left: 4px; }
+
+  .sec { display: flex; align-items: center; gap: 6px; padding: 8px 8px 0 12px; }
+  .sec .h { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sec .r { margin-left: auto; white-space: nowrap; }
+  .sub-h { padding: 1px 12px 6px; }
+  .label { padding: 10px 12px 2px; color: var(--faint); font-size: var(--fs-meta); }
+
+  [role="tree"], [role="group"] { list-style: none; margin: 0; padding: 0; }
+  .row { display: flex; align-items: center; gap: 8px; width: calc(100% - 8px); min-height: 26px; padding: 3px 8px 3px 6px; margin: 0 4px; border-radius: 6px; }
+  .row:hover { background: var(--sel-subtle); }
+  .row.cur { background: color-mix(in srgb, var(--accent) 11%, transparent); }
+  .row.cur.warn { background: color-mix(in srgb, var(--warn) 11%, transparent); }
+  .row.cur.fail { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .ix { width: 12px; text-align: right; color: var(--faint); font-size: var(--fs-meta); flex: none; }
+  .row .d { font-size: var(--fs-meta); color: var(--muted); }
+  .chev { width: 12px; flex: none; color: var(--muted); font-size: 10px; text-align: center; }
+
+  .g { width: 16px; height: 16px; flex: none; display: grid; place-items: center; border-radius: 50%; font-size: 10px; line-height: 1; }
+  .g.pending { border: 1px solid var(--line); width: 14px; height: 14px; margin: 1px; }
+  .g.done { background: color-mix(in srgb, var(--done) 20%, transparent); color: var(--done); }
+  .g.spin { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  .g.spin::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s var(--ease, ease-out) infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  .g.live { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  .g.live::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .g.ask { background: var(--fail); color: #2a0a10; font-weight: 800; font-size: 11px; border-radius: 4px; }
+  .g.quiet { border: 1.5px solid var(--warn); width: 14px; height: 14px; margin: 1px; }
+  .g.fail { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); font-weight: 800; }
+  .g.sm { transform: scale(0.82); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .g.spin::after { animation: none; } }
+
+  .kids { padding-left: 20px; }
+  .kids .row { min-height: 24px; }
+  .explain { padding: 0 12px 6px 46px; color: var(--faint); font-size: var(--fs-meta); line-height: 1.45; }
+  .item { display: flex; gap: 8px; padding: 4px 12px 4px 32px; line-height: 1.4; }
+  .item .src { white-space: nowrap; color: var(--faint); font-size: var(--fs-meta); }
+  .more { padding: 2px 12px 6px 32px; }
+  .more button { color: var(--accent); font-size: var(--fs-meta); min-height: 24px; }
+  .then { padding: 6px 12px 0 32px; color: var(--faint); font-size: var(--fs-meta); }
+  .tag { font-size: var(--fs-meta); white-space: nowrap; }
+  .tag.fail { color: var(--warn); }
+  .tag.warn { color: var(--warn); }
+
+  .empty { padding: 14px 16px 18px; line-height: 1.5; }
+  .empty h3 { margin: 0 0 6px; font-size: var(--fs-title); font-weight: 600; }
+  .empty p { margin: 0 0 10px; color: var(--muted); }
+  .empty ul { margin: 0; padding-left: 16px; color: var(--muted); }
+
+  /* full tab */
+  .full { width: 980px; background: var(--bg); border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; }
+  .full-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--stroke); }
+  .full-head h2 { margin: 0; font-size: var(--fs-title); font-weight: 600; }
+  .full-head .ok { color: var(--done); font-weight: 400; }
+  table { border-collapse: collapse; width: 100%; }
+  th { text-align: left; font-weight: 500; font-size: var(--fs-meta); color: var(--faint); padding: 8px 10px; border-bottom: 1px solid var(--stroke); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--stroke); vertical-align: middle; }
+  tr.cur td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  tr.detail td { background: var(--sel-subtle); padding: 8px 10px 10px 56px; }
+  .flow { display: flex; align-items: center; gap: 6px; }
+  .step { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-meta); color: var(--muted); white-space: nowrap; }
+  .step .n { width: 9px; height: 9px; border-radius: 50%; background: var(--done); }
+  .step .n.findings { background: var(--warn); }
+  .step .n.live { background: var(--accent); }
+  .step .n.off { background: transparent; border: 1px solid var(--line); }
+  .arrow { color: var(--line); font-size: 11px; }
+  .step.warn { color: var(--warn); }
+  .step.run { color: var(--accent); }
+  .mono { font-family: var(--mono); font-size: var(--fs-meta); color: var(--muted); }
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 16px 18px 18px; }
+  .notes h4 { margin: 0 0 2px; font-size: var(--fs-body); font-weight: 600; }
+  .notes .explain { padding: 0 0 8px; }
+  .notes ol { margin: 0; padding: 0; list-style: none; }
+  .notes li { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: start; margin: 0 0 8px; line-height: 1.45; }
+  .notes li .why { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="stage">
+
+<div>
+  <p class="caption">R4 · Running, nothing needs you</p>
+  <div class="frame tall">
+    <div class="tabs" role="tablist" aria-label="Workspace">
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1">Sessions</button>
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1">Explorer</button>
+      <button class="tab" role="tab" aria-selected="false" tabindex="-1">Changes</button>
+      <button class="tab" role="tab" aria-selected="true" tabindex="0">Tasks</button>
+    </div>
+    <div class="scroll">
+      <div class="now">
+        <div class="l1" role="status"><span class="g spin" aria-hidden="true"></span><span>A reviewer is checking Task 6</span></div>
+        <div class="l2 muted">Desktop remote wiring · <span class="num">2m 14s</span> so far</div>
+        <div class="l2 ok">✓ Nothing needs you</div>
+        <div class="act"><button class="btn ghost" style="padding-left:0">Stop after this task</button><button class="btn ghost">Open session</button></div>
+      </div>
+      <button class="row" style="margin-bottom:4px"><span class="g quiet sm" aria-label="quiet"></span><span class="t muted">2 other runs · ssh-hardening quiet 6m</span><span class="chev">›</span></button>
+
+      <div class="sec"><span class="h">Skills index remote ranking</span><span class="r"><button class="btn ghost" aria-label="What the symbols mean">?</button><button class="btn ghost" title="Open as tab">Open as tab</button></span></div>
+      <div class="sub-h faint meta num">5 of 8 done · 1h 01m so far · about 35m left</div>
+
+      <ul role="tree" aria-label="Plan tasks">
+        <li role="treeitem" aria-selected="false"><div class="row" tabindex="-1"><span class="chev"></span><span class="g done" aria-label="done">✓</span><span class="ix">1</span><span class="t">Rust memoized scan and revision</span><span class="d num">2m</span></div></li>
+        <li role="treeitem" aria-expanded="true"><div class="row" tabindex="-1"><span class="chev" aria-hidden="true">⌄</span><span class="g done" aria-label="done">✓</span><span class="ix">2</span><span class="t">Watcher, event, frontend invalidation</span><span class="d num">19m</span></div>
+          <div class="explain">Review found 3 issues. Fixed in 1 round, then passed. <button style="color:var(--accent)">Open review</button></div>
+        </li>
+        <li role="treeitem" aria-expanded="false"><div class="row" tabindex="-1"><span class="chev" aria-hidden="true">›</span><span class="g done" aria-label="done">✓</span><span class="ix">3</span><span class="t">Usage store (Rust)</span><span class="d num">10m</span></div></li>
+        <li role="treeitem" aria-expanded="false"><div class="row" tabindex="-1"><span class="chev" aria-hidden="true">›</span><span class="g done" aria-label="done">✓</span><span class="ix">4</span><span class="t">Ranking with usage (TS)</span><span class="d num">11m</span></div></li>
+        <li role="treeitem" aria-expanded="false"><div class="row" tabindex="-1"><span class="chev" aria-hidden="true">›</span><span class="g done" aria-label="done">✓</span><span class="ix">5</span><span class="t">Host TS scanner and list_skills</span><span class="d num">12m</span></div></li>
+        <li role="treeitem" aria-expanded="true" aria-selected="true"><div class="row cur" tabindex="0"><span class="chev" aria-hidden="true">⌄</span><span class="g live" aria-label="running"></span><span class="ix">6</span><span class="t" style="font-weight:600">Desktop remote wiring</span><span class="d num" style="color:var(--content)">7m 50s</span></div>
+          <ul role="group" class="kids">
+            <li role="treeitem"><div class="row" tabindex="-1" title="Implementer · sonnet"><span class="g done sm">✓</span><span class="t">Code written</span><span class="d num">5m</span></div></li>
+            <li role="treeitem"><div class="row" tabindex="-1" title="Reviewer · opus"><span class="g live sm" aria-label="running"></span><span class="t">Review in progress</span><span class="d num" style="color:var(--accent)">2m 14s</span></div></li>
+          </ul>
+        </li>
+        <li role="treeitem"><div class="row" tabindex="-1"><span class="chev"></span><span class="g pending" aria-label="not started"></span><span class="ix">7</span><span class="t muted">Real verification</span></div></li>
+        <li role="treeitem"><div class="row" tabindex="-1"><span class="chev"></span><span class="g pending" aria-label="not started"></span><span class="ix">8</span><span class="t muted">Build, install as kcode, ship</span></div></li>
+      </ul>
+      <div class="then">Then one last review of the whole branch.</div>
+
+      <div style="margin-top:10px">
+        <button class="row" aria-expanded="true"><span class="chev" aria-hidden="true">⌄</span><span class="t">Decisions made for you</span><span class="d num">9</span></button>
+        <div class="item"><span>Count a skill when you send it, not when you pick it, so nothing counts twice.</span><span class="src">Task 4</span></div>
+        <div class="item"><span>Keep disabled skills visible on the Skills page.</span><span class="src">Task 2</span></div>
+        <div class="item"><span>Skip symlinked skills on the host, for safety.</span><span class="src">Task 5</span></div>
+        <div class="more"><button>Show all 9</button></div>
+        <button class="row" aria-expanded="false"><span class="chev" aria-hidden="true">›</span><span class="t">Small issues saved for the end</span><span class="d num">14</span></button>
+      </div>
+
+      <div class="label">Other agents here</div>
+      <button class="row"><span class="g done sm" aria-label="done">✓</span><span class="t muted">Explore · map sidebar tabs</span><span class="d num">3m</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="col">
+  <div>
+    <p class="caption">R4 · Needs you (raised from another session, named)</p>
+    <div class="frame">
+      <div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="false">Sessions</button><button class="tab" role="tab" aria-selected="false">Explorer</button><button class="tab" role="tab" aria-selected="false">Changes</button><button class="tab" role="tab" aria-selected="true" aria-label="Tasks, needs you">Tasks<span class="tb ask" aria-hidden="true">?</span></button></div>
+      <div class="now ask">
+        <div class="l1"><span class="g ask" aria-hidden="true">?</span><span>ssh-hardening is waiting for your answer</span></div>
+        <div class="l2 muted">Task 3 asks: “Keep password login as a fallback?” · <span class="num">3m</span> ago</div>
+        <div class="act"><button class="btn primary">Answer in ssh-hardening</button><button class="btn ghost">Remind me in 10m</button></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="caption">R4 · Quiet too long</p>
+    <div class="frame">
+      <div class="tabs" role="tablist"><button class="tab" role="tab">Sessions</button><button class="tab" role="tab">Explorer</button><button class="tab" role="tab">Changes</button><button class="tab" role="tab" aria-selected="true" aria-label="Tasks, quiet for 6 minutes">Tasks<span class="tb quiet" aria-hidden="true"></span></button></div>
+      <div class="now warn" role="status">
+        <div class="l1"><span class="g quiet" aria-hidden="true"></span><span>No activity on Task 6 for 6m</span></div>
+        <div class="l2 muted">The reviewer last wrote at 15:02. It may be running a long test.</div>
+        <div class="act"><button class="btn">Open reviewer</button><button class="btn ghost">Keep waiting</button></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="caption">R4 · Struggling</p>
+    <div class="frame">
+      <div class="tabs" role="tablist"><button class="tab" role="tab">Sessions</button><button class="tab" role="tab">Explorer</button><button class="tab" role="tab">Changes</button><button class="tab" role="tab" aria-selected="true" aria-label="Tasks, a task is failing review">Tasks<span class="tb fail" aria-hidden="true">!</span></button></div>
+      <div class="now warn">
+        <div class="l1"><span class="g fail" aria-hidden="true">!</span><span>Task 6 is on fix round 3 of 5</span></div>
+        <div class="l2 muted">The reviewer has sent it back 3 times. If round 5 fails, it stops and asks you.</div>
+        <div class="act"><button class="btn">See the 2 open issues</button></div>
+      </div>
+      <ul role="tree" style="margin-bottom:10px"><li role="treeitem"><div class="row cur fail" tabindex="0"><span class="chev"></span><span class="g fail sm">!</span><span class="ix">6</span><span class="t">Desktop remote wiring</span><span class="tag fail">fix 3 of 5</span><span class="d num">31m</span></div></li></ul>
+    </div>
+  </div>
+  <div>
+    <p class="caption">R4 · Empty</p>
+    <div class="frame">
+      <div class="tabs" role="tablist"><button class="tab" role="tab">Sessions</button><button class="tab" role="tab">Explorer</button><button class="tab" role="tab">Changes</button><button class="tab" role="tab" aria-selected="true">Tasks</button></div>
+      <div class="empty">
+        <h3>Nothing to track yet</h3>
+        <p>When the agent works through a plan or hands work to other agents, each task shows up here with its status and time.</p>
+        <ul><li>Plans run with superpowers</li><li>Todo lists the agent writes</li><li>Subagents and orchestration workers</li></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <p class="caption">R4 · Full tab</p>
+  <div class="full">
+    <div class="full-head"><span class="g spin" aria-hidden="true" style="margin-top:1px"></span>
+      <div><h2>A reviewer is checking Task 6 · <span class="ok">✓ Nothing needs you</span></h2>
+        <div class="muted meta num" style="margin-top:3px">Skills index remote ranking · 5 of 8 done · 1h 01m so far · about 35m left</div></div>
+      <span style="margin-left:auto"></span><button class="btn" title="docs/superpowers/plans/2026-10-07-skills-index-remote-ranking.md">Open plan</button></div>
+    <table>
+      <thead><tr><th style="width:44px"></th><th>Task</th><th>What happened</th><th style="text-align:right;width:90px">Time</th></tr></thead>
+      <tbody>
+        <tr><td><span class="g done">✓</span></td><td>1 · Rust memoized scan and revision</td><td><div class="flow"><span class="step"><i class="n"></i>passed first review</span></div></td><td class="num muted" style="text-align:right">2m</td></tr>
+        <tr><td><span class="g done">✓</span></td><td>2 · Watcher, event, frontend invalidation</td><td><div class="flow"><span class="step"><i class="n"></i>written</span><span class="arrow">→</span><span class="step warn"><i class="n findings"></i>review: 3 issues</span><span class="arrow">→</span><span class="step"><i class="n"></i>fixed in 1 round, passed</span></div></td><td class="num muted" style="text-align:right">19m</td></tr>
+        <tr class="detail"><td colspan="4"><span class="muted meta">Commits</span> <button class="mono">129e9e2..e704fdd</button> · <span class="muted meta">Implementer sonnet, reviewer opus</span> · <button style="color:var(--accent)" class="meta">Open review</button> · <button style="color:var(--accent)" class="meta">Open transcript</button></td></tr>
+        <tr><td><span class="g done">✓</span></td><td>3 · Usage store (Rust)</td><td><div class="flow"><span class="step"><i class="n"></i>passed after 1 fix</span></div></td><td class="num muted" style="text-align:right">10m</td></tr>
+        <tr><td><span class="g done">✓</span></td><td>4 · Ranking with usage (TS)</td><td><div class="flow"><span class="step"><i class="n"></i>passed after 1 fix</span></div></td><td class="num muted" style="text-align:right">11m</td></tr>
+        <tr><td><span class="g done">✓</span></td><td>5 · Host TS scanner and list_skills</td><td><div class="flow"><span class="step"><i class="n"></i>passed after 1 fix</span></div></td><td class="num muted" style="text-align:right">12m</td></tr>
+        <tr class="cur"><td><span class="g live"></span></td><td><b style="font-weight:600">6 · Desktop remote wiring</b></td><td><div class="flow"><span class="step"><i class="n"></i>written</span><span class="arrow">→</span><span class="step run"><i class="n live"></i>in review</span></div></td><td class="num" style="text-align:right">7m 50s</td></tr>
+        <tr><td><span class="g pending"></span></td><td class="muted">7 · Real verification</td><td></td><td></td></tr>
+        <tr><td><span class="g pending"></span></td><td class="muted">8 · Build, install as kcode, ship</td><td></td><td></td></tr>
+        <tr><td><span class="g pending"></span></td><td class="muted">Last review of the whole branch</td><td></td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="notes">
+      <div><h4>Decisions made for you · 9</h4><div class="explain">Calls the agent made without stopping to ask. Change any of them by telling the agent.</div><ol>
+        <li><span class="faint meta">Task 4</span><span>Count a skill when you send it, not when you pick it, so nothing counts twice. <span class="why">If wrong: picks you never send are not counted.</span></span><button class="btn ghost">Change this</button></li>
+        <li><span class="faint meta">Task 2</span><span>Keep disabled skills visible on the Skills page. <span class="why">If wrong: a second cache to keep in sync.</span></span><button class="btn ghost">Change this</button></li>
+        <li><span class="faint meta">Task 5</span><span>Skip symlinked skills on the host, for safety. <span class="why">If wrong: host and desktop lists differ.</span></span><button class="btn ghost">Change this</button></li>
+      </ol></div>
+      <div><h4>Small issues saved for the end · 14</h4><div class="explain">Things the reviewer chose not to block on. The final review decides which to fix.</div><ol>
+        <li><span class="faint meta">Task 1</span><span>Memo entries for unscanned roots live for the whole process.</span><span></span></li>
+        <li><span class="faint meta">Task 2</span><span>No tests for a root created later or for debounce coalescing.</span><span></span></li>
+        <li><span class="faint meta">Task 3</span><span>A Skill call after a typed /name counts twice.</span><span></span></li>
+      </ol></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

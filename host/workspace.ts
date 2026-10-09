@@ -1,17 +1,22 @@
 import { execFile, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 import {
+  chmod,
+  copyFile,
+  mkdtemp,
   lstat,
   mkdir,
   open,
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
-  writeFile,
 } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
   GitChangedFile,
   GitDiffIndex,
@@ -67,9 +72,48 @@ async function git(root: string, args: string[], maxBuffer = 4 * 1024 * 1024) {
       timeout: 10_000,
       maxBuffer,
       encoding: "utf8",
-      env: { ...process.env, LC_ALL: "C" },
+      // Background polling must not refresh (rewrite) the user's index or take
+      // its lock, which an agent's own `git add` could then collide with.
+      env: { ...process.env, LC_ALL: "C", GIT_OPTIONAL_LOCKS: "0" },
     })
   ).stdout;
+}
+
+/**
+ * `git diff` refreshes stale stat data and writes the index back even with
+ * GIT_OPTIONAL_LOCKS=0 (only `status` honours it). Run read-only polling diffs
+ * against a throwaway copy so they never touch the repository's own index.
+ */
+async function gitWithIndexCopy(root: string, args: string[]) {
+  let scratch: string | undefined;
+  try {
+    const index = (
+      await git(root, ["rev-parse", "--path-format=absolute", "--git-path", "index"])
+    ).trim();
+    scratch = await mkdtemp(join(tmpdir(), "monocode-index-"));
+    const copy = join(scratch, "index");
+    await copyFile(index, copy);
+    return (
+      await exec("git", ["-c", "core.pager=cat", ...args], {
+        cwd: root,
+        timeout: 10_000,
+        maxBuffer: 4 * 1024 * 1024,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          LC_ALL: "C",
+          GIT_OPTIONAL_LOCKS: "0",
+          GIT_INDEX_FILE: copy,
+        },
+      })
+    ).stdout;
+  } catch (error) {
+    // No index to copy yet (or an old git): read normally.
+    if (!scratch) return git(root, args);
+    throw error;
+  } finally {
+    if (scratch) await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 function gitWithInput(
@@ -459,7 +503,30 @@ export async function writeHostFile(
   const current = await readHostFile(root, input);
   if (current !== expected)
     throw new Error("File changed on the host; reload before saving");
-  await writeFile(path, content, "utf8");
+  // Write a sibling temp file and swap it in, so a crash or full disk never
+  // leaves a truncated file, and re-check right before the swap so an edit that
+  // landed after the first read (an agent working in the same folder) wins.
+  const mode = (await stat(path)).mode & 0o7777;
+  const temp = join(
+    dirname(path),
+    `.${basename(path)}.monocode-${randomBytes(6).toString("hex")}`,
+  );
+  try {
+    const handle = await open(temp, "wx", 0o600);
+    try {
+      await handle.writeFile(content, "utf8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await chmod(temp, mode);
+    if ((await readHostFile(root, input)) !== expected)
+      throw new Error("File changed on the host; reload before saving");
+    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
+  }
 }
 
 /** Create a new file or folder under an existing workspace directory. */
@@ -564,7 +631,7 @@ export async function hostGitIndex(root: string): Promise<GitDiffIndex> {
     git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]).catch(() => ""),
     git(root, ["rev-parse", "--verify", "HEAD"]).catch(() => ""),
     git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    git(root, [
+    gitWithIndexCopy(root, [
       "diff",
       "--no-ext-diff",
       "--no-textconv",

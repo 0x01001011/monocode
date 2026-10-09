@@ -87,7 +87,7 @@ export function applyHarnessEvent(
         status: event.status,
         detail: event.detail,
         preview: event.preview,
-        streaming: event.status !== "completed" && event.status !== "failed",
+        streaming: !isTerminalToolStatus(event.status),
         agentModel: event.agentModel,
       });
     case "agent.step":
@@ -937,6 +937,10 @@ function normalizeLabel(value: string): string {
     .toLowerCase();
 }
 
+function isTerminalToolStatus(status: string | undefined): boolean {
+  return status === "completed" || status === "failed";
+}
+
 function upsertTool(
   session: Session,
   patch: {
@@ -953,6 +957,7 @@ function upsertTool(
 ): Session {
   const index = findToolIndex(session, patch);
   if (index < 0) {
+    const startedAt = Date.now();
     const detail = capToolDetail(patch.detail);
     const preview = fillPreview(patch.preview, detail, patch.kind, patch.title);
     const label = finalToolLabel(
@@ -966,6 +971,8 @@ function upsertTool(
       role: "tool",
       text: label,
       streaming: patch.streaming,
+      toolStartedAt: startedAt,
+      ...(isTerminalToolStatus(patch.status) ? { toolEndedAt: startedAt } : {}),
       ...(patch.agentModel
         ? { agentRun: { name: label, model: patch.agentModel, steps: [] } }
         : {}),
@@ -1015,6 +1022,9 @@ function upsertTool(
     ...prev,
     text: label,
     streaming: patch.streaming,
+    ...(prev.toolEndedAt === undefined && isTerminalToolStatus(patch.status)
+      ? { toolEndedAt: Date.now() }
+      : {}),
     ...(patch.agentModel || prev.agentRun
       ? {
           agentRun: {

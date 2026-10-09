@@ -202,7 +202,9 @@ import {
   openCommitTab,
   newAgentTab,
   openEditorTab,
+  editorTabKey,
   openSessionChangesTab,
+  openTaskBoardTab,
   pinEditorFile,
   openWorkspaceFile,
   previewWorkspaceFile,
@@ -258,6 +260,7 @@ import {
   confirmCloseTerminals,
 } from "../features/terminal/model/terminalClose";
 import {
+  canOpenTerminal,
   listRunningTerminals,
   newTerminalCwd,
   terminalTabLabel,
@@ -420,6 +423,13 @@ import {
   ADD_TO_CHAT_EVENT,
   type AddToChatRequest,
 } from "../features/sessions/model/quoteDraft";
+import { requestComposerPrefill } from "../features/sessions/model/composerPrefill";
+import {
+  TaskActionsContext,
+  useTaskActions,
+} from "../features/tasks/hooks/useTaskActions";
+import { buildTaskActionHost } from "../features/tasks/hooks/taskActionHost";
+import { planRootFor } from "../features/tasks/model/planRoot";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
 import {
@@ -1896,6 +1906,8 @@ function Workspace({
     session: active,
     fallback: sidebarCwd,
   });
+  // Hide terminal controls where opening one would do nothing.
+  const terminalAvailable = canOpenTerminal(projectCwd);
   const gitCwdBranches = useProjectBranches(
     gitCwd,
     Boolean(gitCwd) && gitCwd !== "~" && !isRemoteProjectPath(sidebarCwd),
@@ -2908,8 +2920,7 @@ function Workspace({
   const onOpenTerminal = useCallback(
     (cwd: string, asWorkspaceTab = false, occupySessionId?: string) => {
       const workdir = cwd || terminalCwd;
-      if (!isLocalProject(projectCwdRef.current) || !isLocalProject(workdir))
-        return;
+      if (!canOpenTerminal(projectCwdRef.current, workdir)) return;
       if (openProjectTerminal(workdir)) return;
 
       if (asWorkspaceTab || !activeTab) {
@@ -4082,6 +4093,25 @@ function Workspace({
     },
     [activeTabId],
   );
+
+  /** The Tasks tab's "Open as tab": the active session's board in the workspace. */
+  const onOpenTasksTab = useCallback(() => {
+    const session = sessionsRef.current.find(
+      (entry) => entry.id === activeSessionIdRef.current,
+    );
+    if (!session) return;
+    const projectCwd = sidebarCwdRef.current;
+    // The tab's cwd is where the plan is read: the session's working copy.
+    const planCwd = planRootFor(projectCwd, session);
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === activeTabId
+          ? openTaskBoardTab(tab, planCwd, session.id, projectCwd, true)
+          : tab,
+      ),
+    );
+    setComposerFocused(false);
+  }, [activeTabId]);
 
   // A Mono view covers the workspace, so its session changes open beside the
   // chat instead of in a project tab hidden behind it.
@@ -8624,6 +8654,28 @@ function Workspace({
     [ensureAutomationRecovery, launchAutomation],
   );
 
+  // The Tasks tab and board tabs act through one host; the hook owns what each button means.
+  const taskActionHost = buildTaskActionHost({
+    selectSession: (sessionId) => onSelectHistorySession(sessionId),
+    isBusy: (sessionId) => busySessionIds.has(sessionId),
+    canSteer: (sessionId) => {
+      const target = sessionsRef.current.find((s) => s.id === sessionId);
+      return !!target && isLiveHarness(target.harness) && canSteerHarness(target.harness);
+    },
+    submit: (sessionId, text, options) => submitSession(sessionId, text, [], options),
+    isMono: isMonoSession,
+    requestComposerPrefill,
+    scheduleReminder: (sessionIds, dueAt) => sessionReminders.schedule(sessionIds, dueAt),
+    openFile: (path, options) => onOpenFile(path, undefined, options),
+    openCommit: (sha, subject) =>
+      onOpenCommit({ sha, shortSha: sha.slice(0, 7), parents: [], author: "", timestamp: 0, subject, refs: [], head: false }),
+    scrollToBlock: requestTranscriptJump,
+  });
+  const taskActions = useTaskActions(taskActionHost, {
+    projectCwd: sidebarCwd,
+    activeSessionId,
+  });
+
   const onUpdatePlan = useCallback(
     (sessionId: string, blockId: string, text: string) => {
       setSessions((prev) =>
@@ -10919,6 +10971,14 @@ function Workspace({
                   projects: mono.projects,
                   showStartedSessionsInSidebar:
                     mono.showStartedSessionsInSidebar,
+                  ...(mono.useSidebarFolders
+                    ? {
+                        folder: {
+                          name: monoLook(mono).name,
+                          color: mono.color,
+                        },
+                      }
+                    : {}),
                 }
               );
             },
@@ -12457,7 +12517,7 @@ function Workspace({
       onToggleSidebar={onToggleSidebar}
       onToggleSessionSidebar={onToggleSessionSidebar}
       onSelect={activateTab}
-      onNewTerminal={onNewTerminal}
+      onNewTerminal={terminalAvailable ? onNewTerminal : undefined}
       onOpenSettings={onOpenSettings}
       onOpenInbox={onOpenInbox}
       onOpenNotes={notesEnabled ? onOpenNotes : undefined}
@@ -12476,6 +12536,7 @@ function Workspace({
   return (
     <OrchestrationActions.Provider value={orchestrationActions}>
       <OrchestrationWorkers.Provider value={orchestrationWorkers}>
+        <TaskActionsContext.Provider value={taskActions}>
         <div
           className={`workspace-background flex h-full flex-col text-content ${
             HAS_NATIVE_GLASS
@@ -12502,6 +12563,9 @@ function Workspace({
               open={sessionSidebarOpen}
               tab={sidebarTab}
               onTabChange={setSidebarTab}
+              onOpenTasksTab={onOpenTasksTab}
+              onTasksAction={taskActions.onAction}
+              onOpenTaskNode={taskActions.onOpenNode}
               filesSearchOpen={filesSearchOpen}
               onFilesSearchOpenChange={setFilesSearchOpen}
               onOpenFilesSearch={onFindInProject}
@@ -12510,6 +12574,10 @@ function Workspace({
               busySessionIds={busySessionIds}
               approvalSessionIds={approvalSessionIds}
               activeSessionId={activeSessionId}
+              activeSession={sessions.find(
+                (session) => session.id === activeSessionId,
+              )}
+              loadedSessions={sessions}
               status={historyFailed ? "error" : "idle"}
               pending={historyPending}
               onSelectSession={onSelectHistorySession}
@@ -12584,7 +12652,7 @@ function Workspace({
               monoViewActive={monoCovers}
               onNew={onNew}
               openSessions={openProjectSessions}
-              onNewTerminal={onNewTerminal}
+              onNewTerminal={terminalAvailable ? onNewTerminal : undefined}
               onSearch={onOpenSearch}
               onOpenInbox={onOpenInbox}
               onOpenInboxItem={onOpenLinkedWorkItem}
@@ -12644,7 +12712,7 @@ function Workspace({
                 {!IS_MAC ? (
                   <MenuBar
                     onNew={onNew}
-                    onNewTerminal={onNewTerminal}
+                    onNewTerminal={terminalAvailable ? onNewTerminal : undefined}
                     onToggleTerminal={onToggleProjectTerminal}
                     onGoToFile={onGoToFile}
                     onToggleSidebar={onToggleSidebar}
@@ -13041,12 +13109,12 @@ function Workspace({
                   terminalOpen={!monoCovers && runningTerminalOpen}
                   onToggleTerminal={onToggleRunningTerminal}
                   onNewTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
+                    !monoCovers && terminalAvailable
                       ? onNewTerminal
                       : undefined
                   }
                   onShowTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
+                    !monoCovers && terminalAvailable
                       ? onShowProjectTerminal
                       : undefined
                   }
@@ -13135,6 +13203,7 @@ function Workspace({
           ) : null}
         </div>
         <TranscriptPoolOutlet pool={transcriptPool} />
+        </TaskActionsContext.Provider>
       </OrchestrationWorkers.Provider>
     </OrchestrationActions.Provider>
   );
@@ -13255,7 +13324,9 @@ function toTitleTab(
         ? `plan:${file.plan.blockId}`
         : file.releaseNotes
           ? `release-notes:${file.releaseNotes.version}`
-          : file.path;
+          : file.taskBoard
+            ? editorTabKey(file)
+            : file.path;
     if (seenKeys.has(key)) return;
     seenKeys.add(key);
     files.push(
@@ -13264,7 +13335,9 @@ function toTitleTab(
           ? releaseNotesTitle(file.releaseNotes.version)
           : file.terminal
             ? terminalTabLabel(file)
-            : basename(file.path)),
+            : file.taskBoard
+              ? "Tasks"
+              : basename(file.path)),
     );
   };
   const focusedPane =

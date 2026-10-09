@@ -5091,21 +5091,37 @@ pub(crate) fn expand_home(path: &str) -> PathBuf {
 }
 
 pub(crate) fn path_to_js(path: &Path) -> String {
-    let text = path.to_string_lossy();
-    if cfg!(windows) {
-        let text = text.replace('\\', "/");
-        // `canonicalize` yields verbatim paths (`\\?\D:\x`, `\\?\UNC\host\share`);
-        // JS callers and the file tree expect the plain drive or UNC form.
-        if let Some(rest) = text.strip_prefix("//?/UNC/") {
-            return format!("//{rest}");
-        }
-        match text.strip_prefix("//?/") {
-            Some(rest) => rest.to_string(),
-            None => text,
-        }
-    } else {
-        text.into_owned()
+    js_path_text(&path.to_string_lossy(), cfg!(windows))
+}
+
+/// Forward slashes on Windows, without the verbatim prefix `canonicalize` adds
+/// (`\\?\C:\x` and `\\?\UNC\host\share`), which JavaScript and most tools reject.
+fn js_path_text(text: &str, windows: bool) -> String {
+    if !windows {
+        return text.to_string();
     }
+    let text = text.replace('\\', "/");
+    if let Some(unc) = text.strip_prefix("//?/UNC/") {
+        format!("//{unc}")
+    } else {
+        text.strip_prefix("//?/").unwrap_or(&text).to_string()
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn js_paths_drop_the_windows_verbatim_prefix() {
+    assert_eq!(
+        js_path_text(r"\\?\D:\a\b\SKILL.md", true),
+        "D:/a/b/SKILL.md"
+    );
+    assert_eq!(
+        js_path_text(r"\\?\UNC\server\share\skills", true),
+        "//server/share/skills"
+    );
+    assert_eq!(js_path_text(r"C:\Users\me\x", true), "C:/Users/me/x");
+    // A backslash is an ordinary character in a Unix file name.
+    assert_eq!(js_path_text(r"/tmp/a\b.txt", false), r"/tmp/a\b.txt");
 }
 
 #[cfg(all(test, unix))]

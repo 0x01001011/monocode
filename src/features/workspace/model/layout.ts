@@ -55,6 +55,11 @@ export type SessionChangesSource = {
   sessionId: string;
 };
 
+/** One session's task board (plan progress and agent work) as a full tab. */
+export type TaskBoardSource = {
+  sessionId: string;
+};
+
 export type FilePaneTab = {
   id: string;
   path: string;
@@ -70,6 +75,8 @@ export type FilePaneTab = {
   changeKind?: GitFileDiffKind;
   /** Read-only diff built from one session's captured before/after snapshots. */
   sessionChanges?: SessionChangesSource;
+  /** Task board for one session: plan progress and agent work (virtual document). */
+  taskBoard?: TaskBoardSource;
   /** Historical commit review (unified diff, read-only). */
   commit?: CommitTabSource;
   /** Read-only transcript of an orchestration worker. Live only — not persisted. */
@@ -182,6 +189,20 @@ export function newSessionChangesTab(
     ...(projectCwd && projectCwd !== cwd ? { projectCwd } : {}),
     review: true,
     sessionChanges: { sessionId },
+  };
+}
+
+export function newTaskBoardTab(
+  cwd: string,
+  sessionId: string,
+  projectCwd?: string,
+): FilePaneTab {
+  return {
+    id: crypto.randomUUID(),
+    path: cwd,
+    cwd,
+    ...(projectCwd && projectCwd !== cwd ? { projectCwd } : {}),
+    taskBoard: { sessionId },
   };
 }
 
@@ -420,6 +441,12 @@ export function isCommitTab(
   return !!file.commit;
 }
 
+export function isTaskBoardTab(
+  file: FilePaneTab,
+): file is FilePaneTab & { taskBoard: TaskBoardSource } {
+  return !!file.taskBoard;
+}
+
 export function isTerminalTab(file: FilePaneTab): boolean {
   return !!file.terminal;
 }
@@ -435,7 +462,8 @@ export function isVirtualDocumentTab(file: FilePaneTab): boolean {
     isPlanTab(file) ||
     isReleaseNotesTab(file) ||
     isCommitTab(file) ||
-    isAgentTab(file)
+    isAgentTab(file) ||
+    isTaskBoardTab(file)
   );
 }
 
@@ -519,6 +547,8 @@ export function editorTabKey(file: FilePaneTab): string {
   if (file.commit) return `commit:${file.cwd}:${file.commit.sha}`;
   if (file.sessionChanges)
     return `session-changes:${file.cwd}:${file.sessionChanges.sessionId}`;
+  if (file.taskBoard)
+    return `task-board:${file.cwd}:${file.taskBoard.sessionId}`;
   if (file.changes) return `changes:${file.cwd}`;
   return file.review ? `review:${file.path}` : `file:${file.path}`;
 }
@@ -545,6 +575,7 @@ export function isPreviewableTab(file: FilePaneTab): boolean {
     !file.agent &&
     !file.plan &&
     !file.releaseNotes &&
+    !file.taskBoard &&
     !file.changes
   );
 }
@@ -764,6 +795,19 @@ export function openSessionChangesTab(
         : pane,
     ),
   };
+}
+
+/** Focus one session's task board, creating the tab if needed. */
+export function openTaskBoardTab(
+  tab: WorkspaceTab,
+  cwd: string,
+  sessionId: string,
+  projectCwd?: string,
+  pin = false,
+): WorkspaceTab {
+  return openEditorTab(tab, newTaskBoardTab(cwd, sessionId, projectCwd), {
+    pin,
+  });
 }
 
 /** Focus a historical commit's unified diff, creating the tab if needed. */

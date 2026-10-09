@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { newTerminalFile } from "../../workspace/model/layout";
 import {
   applyTerminalMeta,
+  canOpenTerminal,
   defaultTerminalTitle,
   listRunningTerminals,
   newTerminalCwd,
@@ -149,5 +150,28 @@ describe("newTerminalCwd", () => {
     expect(
       newTerminalCwd({ activeFile: { cwd: "/notes" }, fallback: "/repo" }),
     ).toBe("/notes");
+  });
+});
+
+describe("canOpenTerminal", () => {
+  it("allows a terminal in a local project and its folders", () => {
+    expect(canOpenTerminal("/Users/dev/app")).toBe(true);
+    expect(canOpenTerminal("/Users/dev/app", "/Users/dev/app/packages/ui")).toBe(true);
+  });
+
+  it("refuses a project on another machine, which has no terminal yet", () => {
+    expect(canOpenTerminal("remote://machine-1/home/k/app")).toBe(false);
+    expect(
+      canOpenTerminal("/Users/dev/app", "remote://machine-1/home/k/app"),
+    ).toBe(false);
+    expect(
+      canOpenTerminal("remote://machine-1/home/k/app", "/Users/dev/app"),
+    ).toBe(false);
+  });
+
+  it("refuses a missing or home-only folder", () => {
+    expect(canOpenTerminal("")).toBe(false);
+    expect(canOpenTerminal("~")).toBe(false);
+    expect(canOpenTerminal("/Users/dev/app", "")).toBe(false);
   });
 });

@@ -1582,3 +1582,72 @@ describe("subagent steps", () => {
     expect(session.blocks[0].agentRun?.steps).toHaveLength(1);
   });
 });
+
+describe("tool timing", () => {
+  const start = (session: Session) =>
+    applyHarnessEvent(session, {
+      type: "tool.started",
+      callId: "t-1",
+      title: "Bash",
+      kind: "execute",
+      status: "in_progress",
+    });
+
+  it("stamps toolStartedAt when a tool starts", () => {
+    now = 1_000_000;
+    const session = start(newSession("claude", "/tmp"));
+
+    expect(session.blocks[0].toolStartedAt).toBe(1_000_000);
+    expect(session.blocks[0].toolEndedAt).toBeUndefined();
+  });
+
+  it("stamps toolEndedAt once, on the first terminal status", () => {
+    now = 1_000_000;
+    let session = start(newSession("claude", "/tmp"));
+    now = 1_005_000;
+    session = applyHarnessEvent(session, {
+      type: "tool.updated",
+      callId: "t-1",
+      status: "completed",
+    });
+    now = 1_009_000;
+    session = applyHarnessEvent(session, {
+      type: "tool.updated",
+      callId: "t-1",
+      status: "completed",
+      detail: "done",
+    });
+
+    expect(session.blocks[0].toolStartedAt).toBe(1_000_000);
+    expect(session.blocks[0].toolEndedAt).toBe(1_005_000);
+  });
+
+  it("does not stamp toolEndedAt for in_progress updates", () => {
+    now = 1_000_000;
+    let session = start(newSession("claude", "/tmp"));
+    now = 1_002_000;
+    session = applyHarnessEvent(session, {
+      type: "tool.updated",
+      callId: "t-1",
+      status: "in_progress",
+      detail: "working",
+    });
+
+    expect(session.blocks[0].toolStartedAt).toBe(1_000_000);
+    expect(session.blocks[0].toolEndedAt).toBeUndefined();
+  });
+
+  it("a tool first seen as completed gets both stamps equal", () => {
+    now = 2_000_000;
+    const session = applyHarnessEvent(newSession("claude", "/tmp"), {
+      type: "tool.updated",
+      callId: "t-2",
+      title: "Bash",
+      kind: "execute",
+      status: "completed",
+    });
+
+    expect(session.blocks[0].toolStartedAt).toBe(2_000_000);
+    expect(session.blocks[0].toolEndedAt).toBe(2_000_000);
+  });
+});

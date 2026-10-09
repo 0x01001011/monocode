@@ -14,6 +14,7 @@ import {
   type LayoutNode,
   type PlanTabSource,
   type SessionChangesSource,
+  type TaskBoardSource,
   type WorkspaceTab,
 } from "./layout";
 import type { ReleaseNotesTabSource } from "../../../app/model/releaseNotes";
@@ -566,11 +567,14 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
   const commit = sanitizeCommit(value.commit);
   const hasSessionChanges = "sessionChanges" in value;
   const sessionChanges = sanitizeSessionChanges(value.sessionChanges);
+  const hasTaskBoard = "taskBoard" in value;
+  const taskBoard = sanitizeTaskBoard(value.taskBoard);
   const hasRemoteFile = "remoteFile" in value;
   const remoteFile = sanitizeRemoteFile(value.remoteFile);
   if (hasReleaseNotes && !releaseNotes) return null;
   if (hasCommit && !commit) return null;
   if (hasSessionChanges && !sessionChanges) return null;
+  if (hasTaskBoard && !taskBoard) return null;
   if (hasRemoteFile && !remoteFile) return null;
   const remoteOwner =
     remoteFile && typeof value.projectCwd === "string"
@@ -583,6 +587,7 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
       releaseNotes ||
       commit ||
       sessionChanges ||
+      taskBoard ||
       value.terminal === true)
   )
     return null;
@@ -591,6 +596,19 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
     (value.plan != null ||
       releaseNotes != null ||
       commit != null ||
+      taskBoard != null ||
+      value.changes === true ||
+      value.terminal === true)
+  ) {
+    return null;
+  }
+  if (
+    taskBoard &&
+    (value.plan != null ||
+      releaseNotes != null ||
+      commit != null ||
+      sessionChanges != null ||
+      value.review === true ||
       value.changes === true ||
       value.terminal === true)
   ) {
@@ -602,6 +620,7 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
       value.review === true ||
       value.changes === true ||
       sessionChanges != null ||
+      taskBoard != null ||
       value.terminal === true ||
       commit != null)
   ) {
@@ -613,6 +632,7 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
       value.review === true ||
       value.changes === true ||
       sessionChanges != null ||
+      taskBoard != null ||
       value.terminal === true)
   ) {
     return null;
@@ -628,6 +648,7 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
     ...(releaseNotes ? { releaseNotes } : {}),
     ...(commit ? { commit } : {}),
     ...(sessionChanges ? { sessionChanges, review: true } : {}),
+    ...(taskBoard ? { taskBoard } : {}),
     ...(value.review === true ? { review: true } : {}),
     ...(value.changes === true ? { changes: true, review: true } : {}),
     ...(value.changeKind === "staged" || value.changeKind === "unstaged"
@@ -660,6 +681,14 @@ function sanitizeRemoteFile(raw: unknown): { machineId: string; projectId: strin
 function sanitizeSessionChanges(
   raw: unknown,
 ): SessionChangesSource | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const sessionId = (raw as Record<string, unknown>).sessionId;
+  return typeof sessionId === "string" && sessionId.trim()
+    ? { sessionId: sessionId.trim() }
+    : undefined;
+}
+
+function sanitizeTaskBoard(raw: unknown): TaskBoardSource | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const sessionId = (raw as Record<string, unknown>).sessionId;
   return typeof sessionId === "string" && sessionId.trim()

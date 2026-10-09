@@ -172,6 +172,56 @@ export async function uninstallService(
   throw new Error("MonoCode Host supports Windows, Linux and macOS");
 }
 
+/** PATH for the service: the install shell's PATH plus standard locations. */
+export function servicePath(
+  basePath: string,
+  home: string,
+  platform: NodeJS.Platform,
+): string {
+  return [
+    ...new Set(
+      [
+        ...basePath.split(":"),
+        join(home, ".local/bin"),
+        ...(platform === "darwin" ? ["/opt/homebrew/bin"] : []),
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+      ].filter(Boolean),
+    ),
+  ].join(":");
+}
+
+/** Refresh only the PATH of an existing unit, keeping any local edits. */
+export function withServicePath(unit: string, path: string): string {
+  const line = `Environment=${unitQuote(`PATH=${path}`)}`;
+  return unit.replace(/^Environment="PATH=.*"$/m, () => line);
+}
+
+/** What to tell the user when `loginctl` could not enable lingering. */
+export function systemdSetupFailure(error: unknown, username: string): string {
+  const { code, stderr } = (error ?? {}) as { code?: unknown; stderr?: unknown };
+  const text = typeof stderr === "string" ? stderr : "";
+  if (
+    code === "ENOENT" ||
+    /failed to connect to .*bus|not been booted with systemd/i.test(text)
+  )
+    return `There is no systemd user manager for ${username} on this host (for example a container, WSL 1 or a minimal image), so the background service cannot be installed. Run "monocode-host start" on the host to run it without a service; it keeps running after you disconnect but is not restarted after a reboot.`;
+  return `This host needs systemd user services and lingering to keep sessions running after SSH disconnects. An administrator can enable it with: sudo loginctl enable-linger ${username}`;
+}
+
+/** Where each platform's service writes the output of a host that failed to start. */
+export function hostStartFailure(
+  platform: NodeJS.Platform,
+  directory: string,
+): string {
+  if (platform === "win32")
+    return `The host task did not start. Sign in to the Windows desktop as the SSH user and keep that account signed in (locking is fine), then reconnect. Check Task Scheduler and ${join(directory, "host.log")}.`;
+  if (platform === "linux")
+    return "The host service was installed but did not start. Check its output with: journalctl --user -u monocode-host.service";
+  return `The host service was installed but did not start. Check ${join(directory, "host.log")}.`;
+}
+
 export async function installService(
   options: ServiceOptions,
 ): Promise<{ port: number; pid: number }> {
@@ -181,16 +231,7 @@ export async function installService(
   } catch {
     /* install/start */
   }
-  const path = [
-    ...new Set([
-      process.env.PATH ?? "",
-      join(homedir(), ".local/bin"),
-      "/opt/homebrew/bin",
-      "/usr/local/bin",
-      "/usr/bin",
-      "/bin",
-    ]),
-  ].join(":");
+  const path = servicePath(process.env.PATH ?? "", homedir(), process.platform);
   const run = async (command: string, args: string[], env = process.env) =>
     exec(command, args, { env, timeout: 15_000, maxBuffer: 128 * 1024 });
   if (process.platform === "darwin") {
@@ -235,19 +276,21 @@ export async function installService(
         env,
       );
       if (linger.stdout.trim() !== "yes") throw new Error("linger disabled");
-    } catch {
-      throw new Error(
-        `This host needs systemd user services and lingering to keep sessions running after SSH disconnects. An administrator can enable it with: sudo loginctl enable-linger ${user.username}`,
-      );
+    } catch (error) {
+      throw new Error(systemdSetupFailure(error, user.username));
     }
     const folder = join(homedir(), ".config/systemd/user");
     await mkdir(folder, { recursive: true });
     const file = join(folder, "monocode-host.service");
-    try {
-      await readFile(file);
-    } catch {
-      await writeFile(file, systemdUnit(options, path), { mode: 0o600 });
-    }
+    // A unit from an earlier install keeps its edits but gets the current PATH,
+    // so providers installed since then are found. This runs only while the
+    // host is stopped (a running host returned above).
+    const existing = await readFile(file, "utf8").catch(() => undefined);
+    const unit =
+      existing === undefined
+        ? systemdUnit(options, path)
+        : withServicePath(existing, path);
+    if (unit !== existing) await writeFile(file, unit, { mode: 0o600 });
     await run("systemctl", ["--user", "daemon-reload"], env);
     await run(
       "systemctl",
@@ -267,9 +310,5 @@ export async function installService(
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  throw new Error(
-    process.platform === "win32"
-      ? `The host task did not start. Sign in to the Windows desktop as the SSH user and keep that account signed in (locking is fine), then reconnect. Check Task Scheduler and ${join(options.directory, "host.log")}.`
-      : `The host service was installed but did not start. Check ${join(options.directory, "host.log")}.`,
-  );
+  throw new Error(hostStartFailure(process.platform, options.directory));
 }
