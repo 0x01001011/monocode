@@ -33,9 +33,9 @@ vi.mock("../model/monoHabits", async (original) => ({
 }));
 
 const stored = [
-  { id: "mine-1", kind: "html", title: "My dashboard", body: "<p>", sourceSessionId: "mono-session", createdAt: 1, updatedAt: 30 },
-  { id: "other", kind: "document", title: "Another bot's report", body: "#", sourceSessionId: "other-session", createdAt: 1, updatedAt: 20 },
-  { id: "mine-2", kind: "document", title: "My report", body: "#", sourceSessionId: "mono-session", createdAt: 1, updatedAt: 10 },
+  { id: "mine-1", kind: "html", title: "My dashboard", sourceSessionId: "mono-session", createdAt: 1, updatedAt: 30 },
+  { id: "other", kind: "document", title: "Another bot's report", sourceSessionId: "other-session", createdAt: 1, updatedAt: 20 },
+  { id: "mine-2", kind: "document", title: "My report", sourceSessionId: "mono-session", createdAt: 1, updatedAt: 10 },
 ];
 
 let root: Root;
@@ -50,7 +50,7 @@ beforeEach(() => {
   });
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.mocked(invoke).mockImplementation(async (command) =>
-    command === "artifacts_list" ? stored : undefined,
+    command === "artifacts_summaries" ? stored : undefined,
   );
   container = document.createElement("div");
   document.body.append(container);

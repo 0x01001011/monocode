@@ -1,13 +1,19 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ARTIFACTS_CHANGED_EVENT, type Artifact } from "../../artifacts/artifacts";
+import {
+  ARTIFACTS_CHANGED_EVENT,
+  type ArtifactSummary,
+} from "../../artifacts/artifacts";
 
 /**
- * The artifacts one Mono saved, newest first, or undefined while loading.
+ * The artifacts one Mono saved, newest first and without their bodies, or
+ * undefined while loading.
  * Follows later saves and refreshes when the window regains focus.
  */
-export function useMonoArtifacts(sessionId: string | undefined): Artifact[] | undefined {
-  const [artifacts, setArtifacts] = useState<Artifact[]>();
+export function useMonoArtifacts(
+  sessionId: string | undefined,
+): ArtifactSummary[] | undefined {
+  const [artifacts, setArtifacts] = useState<ArtifactSummary[]>();
   useEffect(() => {
     if (!sessionId) {
       setArtifacts(undefined);
@@ -17,7 +23,7 @@ export function useMonoArtifacts(sessionId: string | undefined): Artifact[] | un
     let request = 0;
     const refresh = () => {
       const token = ++request;
-      void invoke<Artifact[]>("artifacts_list").then(
+      void invoke<ArtifactSummary[]>("artifacts_summaries").then(
         (all) => {
           if (!live || token !== request) return;
           setArtifacts(all.filter((artifact) => artifact.sourceSessionId === sessionId));

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { artifactWording } from "../../artifacts/artifactWording";
-import type { Artifact } from "../../artifacts/artifacts";
+import type { ArtifactSummary } from "../../artifacts/artifacts";
 import { PageHeader } from "./monoPanelParts";
 
 /** The documents and web pages a Mono saved, searchable, newest first. */
@@ -9,7 +9,7 @@ export function MonoArtifactsPage({
   onOpen,
   onBack,
 }: {
-  artifacts: Artifact[] | undefined;
+  artifacts: ArtifactSummary[] | undefined;
   onOpen: (id: string) => void;
   onBack: () => void;
 }) {

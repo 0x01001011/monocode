@@ -13,6 +13,8 @@ export type Artifact = {
   createdAt: number;
   updatedAt: number;
 };
+/** An artifact without its body or folder, for lists that only show what it is. */
+export type ArtifactSummary = Omit<Artifact, "body" | "sourceCwd">;
 export type ArtifactUpsert = Omit<Artifact, "createdAt" | "updatedAt">;
 export type ArtifactCard = Pick<Artifact, "id" | "kind" | "title"> & {
   summary?: string;

@@ -67,6 +67,25 @@ impl Artifact {
     }
 }
 
+/// An artifact without its body, for lists that only show what it is.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactSummary {
+    pub id: String,
+    pub kind: ArtifactKind,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_session_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[tauri::command(async)]
+pub fn artifacts_summaries(store: State<'_, SessionStore>) -> Result<Vec<ArtifactSummary>, String> {
+    let conn = store.lock_conn()?;
+    list_artifact_summaries(&conn).map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn artifacts_list(store: State<'_, SessionStore>) -> Result<Vec<Artifact>, String> {
     let conn = store.lock_conn()?;
@@ -189,6 +208,35 @@ pub fn artifacts_upsert(
         .map(|saved| Artifact::from_saved(saved, kind))
 }
 
+fn list_artifact_summaries(conn: &Connection) -> rusqlite::Result<Vec<ArtifactSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, artifact_kind, title, source_session_id, created_at, updated_at
+         FROM notes WHERE content_kind = 'artifact'
+         ORDER BY updated_at DESC, id ASC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        let kind: String = row.get(1)?;
+        let kind = match kind.as_str() {
+            "document" => ArtifactKind::Document,
+            "html" => ArtifactKind::Html,
+            _ => {
+                return Err(rusqlite::Error::InvalidParameterName(
+                    "Unsupported artifact kind".into(),
+                ))
+            }
+        };
+        Ok(ArtifactSummary {
+            id: row.get(0)?,
+            kind,
+            title: row.get(2)?,
+            source_session_id: row.get(3)?,
+            created_at: row.get(4)?,
+            updated_at: row.get(5)?,
+        })
+    })?;
+    rows.collect()
+}
+
 fn list_artifacts(conn: &Connection) -> rusqlite::Result<Vec<Artifact>> {
     let mut stmt = conn.prepare(
         "SELECT id, artifact_kind, title, body, source_session_id, source_cwd,
@@ -299,6 +347,70 @@ mod tests {
             "id": "artifact-2", "kind": "code", "title": "Code", "body": "code"
         }))
         .is_err());
+    }
+
+    #[test]
+    fn summaries_list_artifacts_newest_first_without_their_bodies() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let save = |id: &str, kind: &str, body: &str, session: Option<&str>| {
+            upsert_content(
+                &conn,
+                &NoteUpsert {
+                    id: id.into(),
+                    title: format!("Title {id}"),
+                    body: body.into(),
+                    tags: Vec::new(),
+                    source_session_id: session.map(Into::into),
+                    source_cwd: None,
+                    finalize_slug: false,
+                },
+                "artifact",
+                Some(kind),
+            )
+            .unwrap();
+        };
+        save("older", "document", "# a long report body", Some("mono-1"));
+        save("newer", "html", "<p>a whole page</p>", None);
+        // A personal note is not an artifact.
+        upsert_content(
+            &conn,
+            &NoteUpsert {
+                id: "note".into(),
+                title: "Note".into(),
+                body: "secret".into(),
+                tags: Vec::new(),
+                source_session_id: None,
+                source_cwd: None,
+                finalize_slug: false,
+            },
+            "note",
+            None,
+        )
+        .unwrap();
+        let summaries = list_artifact_summaries(&conn).unwrap();
+        assert_eq!(summaries.len(), 2);
+        let json = serde_json::to_value(&summaries).unwrap();
+        for entry in json.as_array().unwrap() {
+            assert!(entry.get("body").is_none(), "{entry}");
+        }
+        let ids: Vec<&str> = json
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect();
+        assert!(ids.contains(&"older") && ids.contains(&"newer") && !ids.contains(&"note"));
+        let older = json
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["id"] == "older")
+            .unwrap();
+        assert_eq!(older["kind"], "document");
+        assert_eq!(older["title"], "Title older");
+        assert_eq!(older["sourceSessionId"], "mono-1");
+        assert!(older["updatedAt"].as_i64().unwrap() > 0);
     }
 
     #[test]
