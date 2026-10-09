@@ -92,8 +92,7 @@ export function useTaskActions(host: TaskActionHost, ctx: { projectCwd: string; 
   latest.current = { host, ctx };
 
   const onAction = useCallback((action: StatusAction, card: StatusCard) => {
-    const { host, ctx } = latest.current;
-    run(host, effectForAction(action, card, { activeSessionId: ctx.activeSessionId }));
+    run(latest.current.host, effectForAction(action, card));
   }, []);
   const onOpenNode = useCallback((node: BoardNode, section: BoardSection, sessionId?: string) => {
     const { host, ctx } = latest.current;

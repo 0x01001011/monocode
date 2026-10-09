@@ -34,6 +34,8 @@ export function useTaskAlerts(card: StatusCard, options: Options): void {
     if (before === undefined || before.projectCwd !== projectCwd) return;
     const { findSession, activeSessionId, notify = notifyTaskAlert } = latest.current;
     for (const alert of taskAlertsBetween(before.card, card)) {
+      // The card names the plan's owner; with no single owner the active session only
+      // carries the alert to this project's notification settings.
       const sessionId = card.sessionId ?? activeSessionId;
       const target = sessionId ? findSession(sessionId) : undefined;
       if (!target) continue;

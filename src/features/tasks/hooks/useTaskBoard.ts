@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { orchestrator } from "../../orchestration/model/orchestration";
+import { sameProjectPath } from "../../projects/model/recents";
 import type { Session } from "../../sessions/model/session";
 import { buildSddSection } from "../model/sddBoard";
 import {
@@ -159,6 +160,11 @@ export function useTaskBoard(input: Input): TaskBoard {
     }, [visible, plan, run, blocks, clock]),
   );
 
+  // Only sessions working in the plan root can run the plan; the active one is not assumed.
+  const planOwnerIds = useStable(
+    sessions.filter((s) => s.workCwd !== undefined && sameProjectPath(s.workCwd, planCwd)).map((s) => s.id),
+  );
+
   // A snooze changes the card at once, without waiting for the next poll.
   const snoozes = useSyncExternalStore(subscribeSnoozes, snoozeVersion, snoozeVersion);
   const statusCard = useStable(
@@ -168,10 +174,11 @@ export function useTaskBoard(input: Input): TaskBoard {
           sessions: [...applySnoozes(sessions, nowRef.current())],
           ...(sessionId ? { activeSessionId: sessionId } : {}),
           ...(plan ? { plan } : {}),
+          planOwnerIds,
           now: nowRef.current(),
           quietAfterMs,
         }),
-      [sessions, sessionId, plan, clock, quietAfterMs, snoozes],
+      [sessions, sessionId, plan, planOwnerIds, clock, quietAfterMs, snoozes],
     ),
   );
 

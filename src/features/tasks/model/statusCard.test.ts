@@ -92,6 +92,7 @@ describe("deriveStatusCard", () => {
         }),
       ],
       activeSessionId: "s1",
+      planOwnerIds: ["s1"],
       plan: runningPlan(),
       now: NOW,
       quietAfterMs: QUIET,
@@ -105,7 +106,7 @@ describe("deriveStatusCard", () => {
   });
 
   it("needs-you has no detail without a question and drops the age without askedAt", () => {
-    const base = { activeSessionId: "s1", now: NOW, quietAfterMs: QUIET };
+    const base = { activeSessionId: "s1", planOwnerIds: ["s1"], now: NOW, quietAfterMs: QUIET };
     expect(
       deriveStatusCard({ ...base, sessions: [active({ needsInput: true, askedAt: NOW - MIN })] }).detail,
     ).toBeUndefined();
@@ -151,6 +152,7 @@ describe("deriveStatusCard", () => {
     const card = deriveStatusCard({
       sessions: [active({ lastActivityAt: NOW - MIN })],
       activeSessionId: "s1",
+      planOwnerIds: ["s1"],
       plan: strugglingPlan(),
       now: NOW,
       quietAfterMs: QUIET,
@@ -181,6 +183,7 @@ describe("deriveStatusCard", () => {
     const card = deriveStatusCard({
       sessions: [active({ lastActivityAt: NOW - 20 * MIN })],
       activeSessionId: "s1",
+      planOwnerIds: ["s1"],
       plan: strugglingPlan(4),
       now: NOW,
       quietAfterMs: QUIET,
@@ -190,7 +193,7 @@ describe("deriveStatusCard", () => {
   });
 
   it("quiet needs lastActivityAt older than quietAfterMs and ignores a session that is not busy", () => {
-    const base = { activeSessionId: "s1", plan: runningPlan(), now: NOW, quietAfterMs: QUIET };
+    const base = { activeSessionId: "s1", planOwnerIds: ["s1"], plan: runningPlan(), now: NOW, quietAfterMs: QUIET };
     const quiet = deriveStatusCard({ ...base, sessions: [active({ lastActivityAt: NOW - 6 * MIN })] });
     expect(quiet).toMatchObject({
       kind: "quiet",
@@ -232,7 +235,7 @@ describe("deriveStatusCard", () => {
   });
 
   it("running names the task, the stage and how long it has run", () => {
-    const base = { sessions: [active({ lastActivityAt: NOW - 10_000 })], activeSessionId: "s1", now: NOW, quietAfterMs: QUIET };
+    const base = { sessions: [active({ lastActivityAt: NOW - 10_000 })], activeSessionId: "s1", planOwnerIds: ["s1"], now: NOW, quietAfterMs: QUIET };
     const working = deriveStatusCard({ ...base, plan: runningPlan("implement") });
     expect(working).toMatchObject({
       kind: "running",
@@ -249,7 +252,7 @@ describe("deriveStatusCard", () => {
   });
 
   it("running falls back when there is no indexed task", () => {
-    const base = { activeSessionId: "s1", now: NOW, quietAfterMs: QUIET };
+    const base = { activeSessionId: "s1", planOwnerIds: ["s1"], now: NOW, quietAfterMs: QUIET };
     expect(deriveStatusCard({ ...base, sessions: [active()] }).headline).toBe("The agent is working");
     const p = plan([{ id: "a", title: "Wire the remote", status: "running" }]);
     const card = deriveStatusCard({ ...base, sessions: [active()], plan: p });
@@ -257,7 +260,7 @@ describe("deriveStatusCard", () => {
     expect(card.detail).toBe("Wire the remote");
   });
 
-  it("a running plan node counts even when no session reports busy", () => {
+  it("a running plan node alone never shows running: the plan's owner must be busy", () => {
     const card = deriveStatusCard({
       sessions: [active({ busy: false })],
       activeSessionId: "s1",
@@ -265,7 +268,7 @@ describe("deriveStatusCard", () => {
       now: NOW,
       quietAfterMs: QUIET,
     });
-    expect(card.kind).toBe("running");
+    expect(card.kind).toBe("idle");
   });
 
   it("done when every task is finished and nothing runs", () => {
@@ -397,13 +400,14 @@ describe("deriveStatusCard", () => {
     expect(card.others?.text).not.toContain("ssh-hardening");
   });
 
-  it("a running plan node belongs to the active session even when another one is busy", () => {
+  it("a running plan node belongs to its owner even when another one is busy", () => {
     const card = deriveStatusCard({
       sessions: [
         session({ id: "s0", title: "docs", busy: true, lastActivityAt: NOW - MIN }),
         active({ lastActivityAt: NOW - MIN }),
       ],
       activeSessionId: "s1",
+      planOwnerIds: ["s1"],
       plan: runningPlan(),
       now: NOW,
       quietAfterMs: QUIET,
@@ -439,6 +443,128 @@ describe("deriveStatusCard", () => {
     } finally {
       Date.now = realNow;
     }
+  });
+});
+
+describe("deriveStatusCard: the plan's owner", () => {
+  const base = { now: NOW, quietAfterMs: QUIET };
+  const owner = (over: Partial<StatusSessionInput> = {}) =>
+    session({ id: "a", title: "plan-run", busy: true, lastActivityAt: NOW - MIN, ...over });
+  const viewer = (over: Partial<StatusSessionInput> = {}) =>
+    session({ id: "b", title: "viewer", busy: true, lastActivityAt: NOW - MIN, ...over });
+
+  it("credits a running plan to its busy owner, not the active session", () => {
+    const card = deriveStatusCard({
+      ...base,
+      sessions: [owner(), viewer()],
+      activeSessionId: "b",
+      planOwnerIds: ["a"],
+      plan: runningPlan("review"),
+    });
+    expect(card).toMatchObject({
+      kind: "running",
+      sessionId: "a",
+      sessionTitle: "plan-run",
+      headline: "A reviewer is checking Task 6",
+      actions: ["stop-after-task", "open-session"],
+    });
+    expect(card.others).toEqual({ count: 1, kind: "running", text: "1 other run" });
+  });
+
+  it("a busy non-owner never makes the plan run: the card names that session's own work", () => {
+    const card = deriveStatusCard({
+      ...base,
+      sessions: [owner({ busy: false }), viewer(), session({ id: "c", title: "worker" })],
+      activeSessionId: "b",
+      planOwnerIds: ["a", "c"],
+      plan: runningPlan(),
+    });
+    expect(card.kind).toBe("running");
+    expect(card.sessionId).toBe("b");
+    expect(card.headline).toBe("The agent is working");
+    expect(card.detail).toBeUndefined();
+  });
+
+  it("with several owners prefers the busy one", () => {
+    const card = deriveStatusCard({
+      ...base,
+      sessions: [owner({ busy: false }), session({ id: "c", title: "worker", busy: true, lastActivityAt: NOW - MIN })],
+      planOwnerIds: ["a", "c"],
+      plan: runningPlan(),
+    });
+    expect(card.kind).toBe("running");
+    expect(card.sessionId).toBe("c");
+    expect(card.headline).toBe("The agent is working on Task 6");
+  });
+
+  it("an unfinished plan whose owner is idle has stopped and needs you", () => {
+    const card = deriveStatusCard({ ...base, sessions: [owner({ busy: false }), viewer()], activeSessionId: "b", planOwnerIds: ["a"], plan: runningPlan() });
+    expect(card).toMatchObject({
+      kind: "needs-you",
+      sessionId: "a",
+      headline: "The plan stopped at Task 6",
+      detail: "Desktop remote wiring",
+      actions: ["open-session"],
+    });
+    expect(card.reassurance).toBeUndefined();
+  });
+
+  it("an unfinished plan with no known owner and nothing busy is idle, with no ticking time", () => {
+    const card = deriveStatusCard({ ...base, sessions: [viewer({ busy: false })], activeSessionId: "b", plan: runningPlan() });
+    expect(card).toEqual({ kind: "idle", headline: "", actions: [] });
+    const twoIdleOwners = deriveStatusCard({
+      ...base,
+      sessions: [owner({ busy: false }), viewer({ busy: false })],
+      planOwnerIds: ["a", "b"],
+      plan: runningPlan(),
+    });
+    expect(twoIdleOwners.kind).toBe("idle");
+  });
+
+  it("a blocked task needs you, with Open session only when the owner is known", () => {
+    const blocked = plan([doneNode(5), { id: "task-6", title: "Desktop remote wiring", index: 6, status: "blocked", startedAt: T0 }]);
+    const known = deriveStatusCard({ ...base, sessions: [owner()], planOwnerIds: ["a"], plan: blocked });
+    expect(known).toMatchObject({
+      kind: "needs-you",
+      sessionId: "a",
+      headline: "Task 6 is blocked",
+      detail: "Desktop remote wiring",
+      actions: ["open-session"],
+    });
+    const unknown = deriveStatusCard({ ...base, sessions: [viewer()], activeSessionId: "b", plan: blocked });
+    expect(unknown.kind).toBe("needs-you");
+    expect(unknown.sessionId).toBeUndefined();
+    expect(unknown.actions).toEqual([]);
+  });
+
+  it("struggling and a finished plan are credited to the owner", () => {
+    const stuck = deriveStatusCard({ ...base, sessions: [owner(), viewer()], activeSessionId: "b", planOwnerIds: ["a"], plan: strugglingPlan() });
+    expect(stuck.kind).toBe("struggling");
+    expect(stuck.sessionId).toBe("a");
+    const done = deriveStatusCard({
+      ...base,
+      sessions: [owner({ busy: false }), viewer({ busy: false })],
+      activeSessionId: "b",
+      planOwnerIds: ["a"],
+      plan: plan([doneNode(1), doneNode(2)]),
+    });
+    expect(done.kind).toBe("done");
+    expect(done.sessionId).toBe("a");
+  });
+
+  it("a stopped plan at the final review names it plainly", () => {
+    const p = plan([doneNode(1)], {
+      finalReview: { id: "final-review", title: "Last review of the whole branch", status: "attention", startedAt: T0 },
+    });
+    const stopped = deriveStatusCard({ ...base, sessions: [owner({ busy: false })], planOwnerIds: ["a"], plan: p });
+    expect(stopped.headline).toBe("The plan stopped at the final review");
+    const running = deriveStatusCard({
+      ...base,
+      sessions: [owner()],
+      planOwnerIds: ["a"],
+      plan: { ...p, finalReview: { ...p.finalReview!, status: "running" } },
+    });
+    expect(running.headline).toBe("The agent is working on the final review");
   });
 });
 

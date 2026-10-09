@@ -21,25 +21,24 @@ const ctx = { projectCwd: "/proj", sddDir: "/proj/.superpowers/sdd/x", sessionId
 
 describe("effectForAction", () => {
   it.each(["answer-in-session", "open-session", "open-reviewer"] as const)("%s selects the card's session", (action) => {
-    expect(effectForAction(action, card(), { activeSessionId: "a" })).toEqual({ kind: "select-session", sessionId: "s1" });
+    expect(effectForAction(action, card())).toEqual({ kind: "select-session", sessionId: "s1" });
   });
 
-  it("falls back to the active session when the card names none", () => {
-    expect(effectForAction("open-session", card({ sessionId: undefined }), { activeSessionId: "a" })).toEqual({
-      kind: "select-session",
-      sessionId: "a",
-    });
+  it("never guesses the active session when the card names none", () => {
+    for (const action of ["open-session", "stop-after-task", "open-reviewer"] as const) {
+      expect(effectForAction(action, card({ sessionId: undefined }))).toEqual({ kind: "none" });
+    }
   });
 
   it("does nothing when no session is known", () => {
-    expect(effectForAction("open-session", card({ sessionId: undefined }), {})).toEqual({ kind: "none" });
-    expect(effectForAction("stop-after-task", card({ sessionId: undefined }), {})).toEqual({ kind: "none" });
-    expect(effectForAction("keep-waiting", card({ sessionId: undefined }), {})).toEqual({ kind: "none" });
-    expect(effectForAction("remind-later", card({ sessionId: undefined }), {})).toEqual({ kind: "none" });
+    expect(effectForAction("open-session", card({ sessionId: undefined }))).toEqual({ kind: "none" });
+    expect(effectForAction("stop-after-task", card({ sessionId: undefined }))).toEqual({ kind: "none" });
+    expect(effectForAction("keep-waiting", card({ sessionId: undefined }))).toEqual({ kind: "none" });
+    expect(effectForAction("remind-later", card({ sessionId: undefined }))).toEqual({ kind: "none" });
   });
 
   it("stop-after-task queues the stop message and never interrupts", () => {
-    expect(effectForAction("stop-after-task", card(), {})).toEqual({
+    expect(effectForAction("stop-after-task", card())).toEqual({
       kind: "queue-message",
       sessionId: "s1",
       text: STOP_AFTER_TASK_TEXT,
@@ -48,16 +47,16 @@ describe("effectForAction", () => {
   });
 
   it("remind-later schedules a reminder in 10 minutes", () => {
-    expect(effectForAction("remind-later", card(), {})).toEqual({ kind: "remind", sessionId: "s1", ms: 600_000 });
+    expect(effectForAction("remind-later", card())).toEqual({ kind: "remind", sessionId: "s1", ms: 600_000 });
   });
 
   it("keep-waiting snoozes the quiet state for 10 minutes", () => {
-    expect(effectForAction("keep-waiting", card(), {})).toEqual({ kind: "snooze", sessionId: "s1", ms: 600_000 });
+    expect(effectForAction("keep-waiting", card())).toEqual({ kind: "snooze", sessionId: "s1", ms: 600_000 });
   });
 
   it("see-issues and review-decisions are handled locally by the UI", () => {
-    expect(effectForAction("see-issues", card(), {})).toEqual({ kind: "none" });
-    expect(effectForAction("review-decisions", card(), {})).toEqual({ kind: "none" });
+    expect(effectForAction("see-issues", card())).toEqual({ kind: "none" });
+    expect(effectForAction("review-decisions", card())).toEqual({ kind: "none" });
   });
 });
 

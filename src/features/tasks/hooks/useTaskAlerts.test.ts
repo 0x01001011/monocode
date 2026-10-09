@@ -111,6 +111,12 @@ describe("useTaskAlerts", () => {
     expect(notify).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kind: "struggling" }), true);
   });
 
+  it("alerts a finished plan on the plan's owner the card names, not the active session", () => {
+    render({ card: card("running", { sessionId: "s1" }), activeSessionId: "s2" });
+    render({ card: card("done", { sessionId: "s1", headline: "Plan finished in 3m" }), activeSessionId: "s2" });
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ id: "s1" }), expect.objectContaining({ kind: "plan-done" }), false);
+  });
+
   it("alerts a finished plan on the active session when the card names none", () => {
     render({ card: card("running", { sessionId: undefined }), activeSessionId: "s2" });
     render({ card: card("done", { sessionId: undefined, headline: "Plan finished in 3m" }), activeSessionId: "s2" });

@@ -120,9 +120,14 @@ describe("useSidebarTasks", () => {
   it("builds one status input per session from the busy and approval sets", () => {
     render(base({ busySessionIds: new Set(["a"]), approvalSessionIds: new Set(["b"]) }));
     expect(lastInput().sessions).toEqual([
-      { id: "a", title: "Title a", busy: true, needsInput: false, lastActivityAt: T0 - 5_000 },
-      { id: "b", title: "Title b", busy: false, needsInput: true, lastActivityAt: T0 - 5_000 },
+      { id: "a", title: "Title a", busy: true, needsInput: false, lastActivityAt: T0 - 5_000, workCwd: "/proj" },
+      { id: "b", title: "Title b", busy: false, needsInput: true, lastActivityAt: T0 - 5_000, workCwd: "/proj" },
     ]);
+  });
+
+  it("gives each session its working copy so the plan's owners can be found", () => {
+    render(base({ sessions: [summary("a", { worktreeCwd: "/wt/mc-1" }), summary("b")] }));
+    expect(lastInput().sessions.map((s) => s.workCwd)).toEqual(["/wt/mc-1", "/proj"]);
   });
 
   it("skips hidden sessions", () => {
@@ -226,8 +231,8 @@ describe("statusSessionsFromLoaded", () => {
       loaded("temp", { ephemeral: true }),
     ];
     expect(statusSessionsFromLoaded(sessions, "/proj", "a")).toEqual([
-      { id: "a", title: "a", busy: true, needsInput: false },
-      { id: "b", title: "b", busy: false, needsInput: true },
+      { id: "a", title: "a", busy: true, needsInput: false, workCwd: "/proj" },
+      { id: "b", title: "b", busy: false, needsInput: true, workCwd: "/proj" },
     ]);
   });
 

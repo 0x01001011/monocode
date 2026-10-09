@@ -235,6 +235,7 @@ describe("buildSddSection", () => {
       const card = deriveStatusCard({
         sessions: [{ id: "s1", title: "Run", busy: true, needsInput: false, lastActivityAt: NOW }],
         activeSessionId: "s1",
+        planOwnerIds: ["s1"],
         plan,
         now: NOW,
         quietAfterMs: 5 * MIN,

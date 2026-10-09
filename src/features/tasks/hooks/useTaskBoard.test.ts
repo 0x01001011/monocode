@@ -341,6 +341,16 @@ describe("useTaskBoard", () => {
     expect(latest?.sections.map((x) => x.source)).toContain("todos");
   });
 
+  it("credits the plan to the session working in the plan root, not the active one", async () => {
+    const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+    const sessions = [
+      { id: "viewer", title: "viewer", busy: true, needsInput: false, workCwd: "/elsewhere" },
+      { id: "runner", title: "runner", busy: true, needsInput: false, workCwd: "/proj/" },
+    ];
+    await mount(base(fs, { sessions, activeSession: session("viewer") }));
+    expect(latest?.statusCard).toMatchObject({ kind: "running", sessionId: "runner", headline: "A reviewer is checking Task 1" });
+  });
+
   it("keeps the status card current from the plan while hidden", async () => {
     const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
     const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];

@@ -18,13 +18,15 @@ export const STOP_AFTER_TASK_TEXT = "Stop after the current task and summarize w
 const NONE: TaskActionEffect = { kind: "none" };
 const SNOOZE_MS = 10 * 60_000;
 
-/** What a status card button does. Local-only buttons (`see-issues`, `review-decisions`) map to `none`. */
+/**
+ * What a status card button does. Local-only buttons (`see-issues`, `review-decisions`) map to `none`.
+ * Only the session the card names is acted on: the active one may not be the plan's owner.
+ */
 export function effectForAction(
   action: StatusAction,
   card: StatusCard,
-  ctx: { activeSessionId?: string },
 ): TaskActionEffect {
-  const sessionId = card.sessionId ?? ctx.activeSessionId;
+  const sessionId = card.sessionId;
   switch (action) {
     case "answer-in-session":
     case "open-session":

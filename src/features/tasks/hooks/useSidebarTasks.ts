@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import { useQuietAfterMinutes } from "../../settings/model/tasksPrefs";
 import { sameProjectPath } from "../../projects/model/recents";
-import { sessionNeedsInput, type Block, type Session } from "../../sessions/model/session";
+import { sessionNeedsInput, sessionWorkCwd, type Block, type Session } from "../../sessions/model/session";
 import { planRootFor } from "../model/planRoot";
 import type { StatusSessionInput } from "../model/statusCard";
 import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
@@ -48,6 +48,8 @@ function questionLine(session: Session | undefined): string | undefined {
 
 /** The few session fields a status input needs; a loaded `Session` fits too. */
 type StatusSessionSource = Pick<SessionSummary, "id" | "title" | "sidebarHidden"> & {
+  cwd?: string;
+  worktreeCwd?: string;
   updatedAt?: number;
   blocks?: readonly Block[];
 };
@@ -82,6 +84,7 @@ export function buildStatusSessions(input: StatusSessionsInput): StatusSessionIn
         needsInput: approvalSessionIds.has(session.id),
         ...(isActive && question ? { question } : {}),
         ...(times.length ? { lastActivityAt: Math.max(...times) } : {}),
+        ...(session.cwd !== undefined ? { workCwd: sessionWorkCwd({ cwd: session.cwd, worktreeCwd: session.worktreeCwd }) } : {}),
       };
     });
 }
@@ -129,7 +132,7 @@ export function statusSessionsFromLoaded(
   const here = sessions.filter((session) => !session.ephemeral && sameProjectPath(session.cwd, projectCwd));
   const byId = new Map(here.map((session) => [session.id, session]));
   return buildStatusSessions({
-    sessions: here.map(({ id, title, sidebarHidden }) => ({ id, title, sidebarHidden })),
+    sessions: here.map(({ id, title, sidebarHidden, cwd, worktreeCwd }) => ({ id, title, sidebarHidden, cwd, worktreeCwd })),
     busySessionIds,
     approvalSessionIds,
     activeSessionId,

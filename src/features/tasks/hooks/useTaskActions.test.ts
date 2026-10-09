@@ -62,11 +62,12 @@ describe("useTaskActions", () => {
     expect(calls).toEqual([["selectSession", "s1"], ["selectSession", "s1"], ["selectSession", "s1"]]);
   });
 
-  it("falls back to the active session when the card has none", () => {
+  it("never acts on the active session when the card names none (it may not own the plan)", () => {
     const { host, calls } = fakeHost();
     mount(host);
     actions.onAction("open-session", card({ sessionId: undefined }));
-    expect(calls).toEqual([["selectSession", "active"]]);
+    actions.onAction("stop-after-task", card({ sessionId: undefined }));
+    expect(calls).toEqual([]);
   });
 
   it("stop after task queues the stop message and selects nothing", () => {
