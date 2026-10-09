@@ -128,11 +128,20 @@ describe("Build", () => {
     expect(build(["done", "running"], { subagentsRunning: 1 })?.detail).toBe("1 of 2, 1 subagent working");
   });
 
-  it("shows subagents alone when no task has finished yet", () => {
-    expect(build(["pending", "pending"], { subagentsRunning: 1 })).toMatchObject({
-      status: "pending",
-      detail: "1 subagent working",
-    });
+  it("adds the subagents working while the build needs a look too", () => {
+    const p = plan(["done", "attention"]);
+    p.nodes[1] = task(2, "attention", { fixRounds: 3 });
+    expect(phase(flow(p, { subagentsRunning: 1 }), "build")?.detail).toBe("1 of 2, 1 subagent working");
+  });
+
+  it.each([
+    ["pending", ["pending", "pending"]],
+    ["done", ["done", "done"]],
+    ["blocked", ["done", "blocked"]],
+  ] as const)("leaves the subagents out when Build is %s", (status, statuses) => {
+    const found = build([...statuses], { subagentsRunning: 2 });
+    expect(found?.status).toBe(status);
+    expect(found?.detail ?? "").not.toContain("subagent");
   });
 });
 
@@ -186,6 +195,33 @@ describe("Check", () => {
     expect(check({}, "attention")).toMatchObject({ status: "attention", detail: "final review found issues" });
   });
 
+  it("an unknown run (piped) says the tests ran, never passed or failed", () => {
+    expect(check({ blocks: [shell("npm test | tail")] })).toEqual({
+      id: "check",
+      label: "Check",
+      status: "pending",
+      detail: "tests ran 4m ago",
+    });
+    expect(check({ blocks: [shell("npm test | tail", "failed", 75 * MIN)] })?.detail).toBe("tests ran 1h 15m ago");
+    const bare = { ...shell("npm test | tail"), toolStartedAt: undefined, toolEndedAt: undefined } as Block;
+    expect(check({ blocks: [bare] })?.detail).toBe("tests ran");
+  });
+
+  it("an unknown run never makes Check done or failed by itself", () => {
+    const blocks = [shell("npx vitest run 2>&1 | tail -20", "completed")];
+    expect(check({ blocks })?.status).toBe("pending");
+    expect(check({ blocks: [shell("npm test | head", "failed")] })?.status).toBe("pending");
+    expect(check({ blocks }, "done")).toMatchObject({ status: "done", detail: "tests ran 4m ago, final review done" });
+    expect(check({ blocks }, "attention")?.status).toBe("attention");
+  });
+
+  it("a piped run still running is running", () => {
+    expect(check({ blocks: [shell("npm test | tail", "running")] })).toMatchObject({
+      status: "running",
+      detail: "tests running",
+    });
+  });
+
   it("is done when the final review is done and the latest run passed", () => {
     expect(check({ blocks: [shell("npm test")] }, "done")).toMatchObject({
       status: "done",
@@ -193,8 +229,9 @@ describe("Check", () => {
     });
   });
 
-  it("a finished final review without a passing run is not done", () => {
-    expect(check({}, "done")?.status).toBe("pending");
+  it("a finished final review with no test run found is done, on the review alone", () => {
+    expect(check({}, "done")).toEqual({ id: "check", label: "Check", status: "done", detail: "final review done" });
+    expect(check({ blocks: [shell("git status")] }, "done")?.detail).toBe("final review done");
   });
 
   it("the newest run decides: a pass after a failure is passed", () => {
@@ -221,6 +258,10 @@ describe("Check", () => {
 
     it("a running final review beats a passed run", () => {
       expect(check({ blocks: [shell("npm test")] }, "running")?.status).toBe("running");
+    });
+
+    it("a running or failed test beats a finished review", () => {
+      expect(check({ blocks: [shell("npm test", "running")] }, "done")?.status).toBe("running");
     });
 
     it("findings beat a passed run", () => {

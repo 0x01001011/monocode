@@ -47,13 +47,18 @@ function buildStatus(plan: BoardSection): BoardStatus {
 function buildDetail(plan: BoardSection, status: BoardStatus, subagentsRunning: number): string | undefined {
   const parts: string[] = [];
   if (status !== "pending") parts.push(`${plan.done} of ${plan.total}`);
-  if (subagentsRunning > 0) parts.push(`${plural(subagentsRunning, "subagent", "subagents")} working`);
+  // Only while the build is moving: elsewhere the count is another phase's business (a final
+  // review shows in Check) and "N subagents working" next to a pending or done Build misleads.
+  if (subagentsRunning > 0 && (status === "running" || status === "attention")) {
+    parts.push(`${plural(subagentsRunning, "subagent", "subagents")} working`);
+  }
   return parts.length ? parts.join(", ") : undefined;
 }
 
 function testPart(run: TestRun, now: number): string {
   if (run.status === "running") return "tests running";
-  const verdict = run.status === "passed" ? "passed" : "failed";
+  // An unknown run (piped, so its exit status is the last stage's) is not claimed either way.
+  const verdict = run.status === "passed" ? "passed" : run.status === "failed" ? "failed" : "ran";
   if (run.at === undefined) return `tests ${verdict}`;
   return `tests ${verdict} ${formatDuration(Math.max(0, now - run.at), false)} ago`;
 }
@@ -65,12 +70,16 @@ function finalPart(status: BoardStatus | undefined): string | undefined {
   return undefined;
 }
 
-/** failed > running > attention > done > pending. Pending is a fact: nothing has run yet. */
+/**
+ * failed > running > attention > done > pending. Pending is a fact: nothing has run yet.
+ * An unknown test run (see `TestRunStatus`) never decides the status. A finished final
+ * review is done on its own: with no test run found, the review is the evidence.
+ */
 function checkStatus(run: TestRun | undefined, final: BoardStatus | undefined): BoardStatus {
   if (run?.status === "failed") return "failed";
   if (run?.status === "running" || final === "running") return "running";
   if (final === "attention") return "attention";
-  if (final === "done" && run?.status === "passed") return "done";
+  if (final === "done") return "done";
   return "pending";
 }
 

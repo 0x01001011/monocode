@@ -117,13 +117,17 @@ deriveFlow(input: { plan: BoardSection; blocks?: readonly Block[]; subagentsRunn
 |---|---|---|---|
 | Spec | ledger line `Spec: <path>` (first path-like token) | done | "Open" target `path` |
 | Plan | `plan.planPath` | done | "<total> tasks" |
-| Build | plan nodes | pending when no task started, running while any is running, attention while a task is in fix round 3 or more, done when `done >= total` | "3 of 6", plus "2 subagents working" when `subagentsRunning > 0` |
+| Build | plan nodes | pending when no task started, running while any is running, attention while a task is in fix round 3 or more, done when `done >= total` | "3 of 6", plus "2 subagents working" while Build is running or needs attention |
 | Check | last test run and the final review | see below | "tests passed 4m ago", "final review running" |
 
 Check status: `failed` when the latest test run failed; `running` while a test
 run is in flight or the final review runs; `attention` when the final review
-ended with findings; `done` when the final review is done and the latest run
-passed; otherwise `pending` (nothing has run yet, which is a fact).
+ended with findings; `done` when the final review is done (the review alone is
+evidence when no test run was found); otherwise `pending` (nothing has run yet,
+which is a fact). A test run whose command is piped (`npx vitest run | tail`) has
+an unknown outcome, because the harness reports the last stage's exit code: it
+reads "tests ran 4m ago" and never decides the status. Denied and cancelled calls
+never ran and are skipped.
 
 ### Test runs (`src/features/tasks/model/testRuns.ts`)
 

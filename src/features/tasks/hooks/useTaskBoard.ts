@@ -86,11 +86,12 @@ function completedTools(blocks: readonly Block[] | undefined): number {
 /**
  * Subagents working right now: the transcript's own running agents, plus the plan's
  * running implementer and reviewer stages (the plan section leaves those agents out of
- * the agents section, so nothing is counted twice).
+ * the agents section, so nothing is counted twice). The final review's stages are not
+ * counted: they show in Check as "final review running".
  */
 function countSubagentsRunning(sections: readonly BoardSection[], plan: BoardSection): number {
   const agents = sections.find((s) => s.source === "agents")?.nodes.filter((n) => n.status === "running").length ?? 0;
-  const stages = [...plan.nodes, ...(plan.finalReview ? [plan.finalReview] : [])].reduce(
+  const stages = plan.nodes.reduce(
     (sum, node) => sum + (node.stages?.filter((stage) => stage.status === "running").length ?? 0),
     0,
   );

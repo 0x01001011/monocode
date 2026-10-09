@@ -571,6 +571,20 @@ describe("useTaskBoard", () => {
       expect(latest?.flow.find((p) => p.id === "build")?.detail).toBe("0 of 1, 2 subagents working");
     });
 
+    it("does not count the final review's stages: Check already says it is running", async () => {
+      const ledger =
+        "# SDD ledger — plan: docs/plan.md\nTask 1: implemented (abc1234); review pending\nFINAL REVIEW: Ready to merge with fixes\nFinal fix wave: dispatched\n";
+      const { fs } = fakeFs({
+        ...workspace("2026-10-05-plan", "A", 9_000),
+        [`${ROOT}/2026-10-05-plan/progress.md`]: { text: ledger, mtimeMs: 9_000 },
+      });
+      await mount(flowInput(fs));
+      expect(latest?.plan?.finalReview?.stages?.filter((st) => st.status === "running")).toHaveLength(1);
+      const flow = latest?.flow;
+      expect(flow?.find((p) => p.id === "build")?.detail).toBe("0 of 1, 1 subagent working");
+      expect(flow?.find((p) => p.id === "check")).toMatchObject({ status: "running", detail: "final review running" });
+    });
+
     it("is empty while hidden, and fills in when shown", async () => {
       const { fs } = fakeFs(flowWorkspace());
       const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
