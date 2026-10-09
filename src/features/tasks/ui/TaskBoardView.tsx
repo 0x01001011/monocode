@@ -73,7 +73,16 @@ function revealHeading(heading: Element | null | undefined) {
 
 /** The whole plan as a table: every task, the final review, then decisions and small issues. */
 export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessions, visible = true, quietAfterMs, onAction, onOpenNode, onOpenPlan, onChangeDecision }: Props) {
-  const board = useTaskBoard({ projectCwd, planCwd, ...(session ? { activeSession: session } : {}), sessions, visible, ...(quietAfterMs !== undefined ? { quietAfterMs } : {}) });
+  // Nothing reads a hidden board tab (the sidebar owns the badge and alerts), so it never polls hidden.
+  const board = useTaskBoard({
+    projectCwd,
+    planCwd,
+    ...(session ? { activeSession: session } : {}),
+    sessions,
+    visible,
+    needsStatusWhenHidden: false,
+    ...(quietAfterMs !== undefined ? { quietAfterMs } : {}),
+  });
   const card = board.statusCard;
   const plan = board.plan;
   const notesRef = useRef<HTMLDivElement>(null);

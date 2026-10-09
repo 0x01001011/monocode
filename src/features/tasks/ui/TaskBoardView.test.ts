@@ -165,10 +165,12 @@ describe("TaskBoardView", () => {
   it("uses the live board with the visible flag, the session and its siblings", () => {
     const sessions = [{ id: "s1", title: "One", busy: true, needsInput: false }];
     render({ sessions });
-    const input = hook.calls.at(-1) as { projectCwd: string; visible: boolean; sessions: unknown };
+    const input = hook.calls.at(-1) as { projectCwd: string; visible: boolean; sessions: unknown; needsStatusWhenHidden?: boolean };
     expect(input.projectCwd).toBe("/repo");
     expect(input.visible).toBe(true);
     expect(input.sessions).toBe(sessions);
+    // A hidden board tab is read by no one: it skips the hidden poll.
+    expect(input.needsStatusWhenHidden).toBe(false);
   });
 
   it("ordinary tasks show one phrase and the running task shows a chain", () => {

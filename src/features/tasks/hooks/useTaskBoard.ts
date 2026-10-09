@@ -48,6 +48,11 @@ type Input = {
   now?: () => number;
   fs?: SddFs;
   pollMs?: { visible: number; hiddenBusy: number };
+  /**
+   * The status card is read while hidden (the sidebar's tab badge and alerts), so busy
+   * sessions keep the slow hidden poll going. Default true; a board tab passes false.
+   */
+  needsStatusWhenHidden?: boolean;
 };
 
 type Loaded = { cwd: string; workspaces: SddWorkspaceRef[]; selected?: string; plan?: BoardSection };
@@ -103,12 +108,15 @@ export function useTaskBoard(input: Input): TaskBoard {
   // A completed tool call reloads at once, only for a panel on screen; a hidden one keeps its cadence.
   const toolsDone = visible ? completedTools(blocks) : 0;
   const anyBusy = sessions.some((s) => s.busy);
-  const polling = visible || anyBusy;
+  const polling = visible || (anyBusy && (input.needsStatusWhenHidden ?? true));
   const interval = visible ? pollVisible : pollHidden;
   const intervalRef = useRef(interval);
   intervalRef.current = interval;
 
   const [loaded, setLoaded] = useState<Loaded>();
+  // Another plan root drops the old result at once, even with polling off, so coming
+  // back to it never reads as loaded before a fresh read.
+  if (loaded && loaded.cwd !== planCwd) setLoaded(undefined);
   const [choice, setChoice] = useState<{ cwd: string; slug: string }>();
   const [clock, setClock] = useState(() => nowRef.current());
   const request = useRef(0);
