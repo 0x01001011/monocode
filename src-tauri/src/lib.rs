@@ -518,6 +518,7 @@ pub fn run() {
             notes::notes_upsert,
             artifacts::artifacts_list,
             artifacts::artifacts_get,
+            artifacts::artifacts_summaries,
             artifacts::artifacts_upsert,
             artifacts::artifacts_delete,
             html_preview::preview_open,

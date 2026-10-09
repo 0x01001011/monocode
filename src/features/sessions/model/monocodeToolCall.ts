@@ -23,6 +23,7 @@ const ACTION_LABELS: Record<string, string> = {
   "notes.write": "Write a note",
   "artifacts.list": "List artifacts",
   "artifacts.read": "Read an artifact",
+  "artifacts.logs": "Read a page's console",
   "artifacts.write": "Write an artifact",
 };
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
-import { HtmlFrame } from "../../html-preview/ui/HtmlFrame";
+import { artifactWording } from "../artifactWording";
+import { HtmlPreview } from "../../html-preview/ui/HtmlPreview";
 import {
   ARTIFACTS_CHANGED_EVENT,
   getArtifact,
@@ -29,7 +30,7 @@ export function useArtifact(id: string) {
         },
         () => {
           if (!live || token !== request) return;
-          setError("Could not load this document.");
+          setError(artifactWording().loadFailed);
           setLoaded(true);
         },
       );
@@ -65,15 +66,12 @@ export function ArtifactContent({
         />
       );
     case "html":
-      // Readers scroll their article, so the page gets a fixed viewport.
       return (
-        <div className="h-[min(70vh,720px)] overflow-hidden rounded-lg border border-content/10">
-          <HtmlFrame
-            source={{ kind: "artifact", id: artifact.id }}
-            title={artifact.title}
-            version={artifact.updatedAt}
-          />
-        </div>
+        <HtmlPreview
+          source={{ kind: "artifact", id: artifact.id }}
+          title={artifact.title}
+          version={artifact.updatedAt}
+        />
       );
   }
 }

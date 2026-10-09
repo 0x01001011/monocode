@@ -134,6 +134,11 @@ it("says how to keep memory and update the soul only at the user's request", () 
   expect(full).not.toContain("never edit that file yourself");
   expect(full).toContain("app memory.add");
   expect(full).toContain('app artifacts.write {"kind":"document"');
+  // HTML artifacts are a supported kind, and the rules tell Monos how to use them.
+  expect(full).not.toContain("The only supported artifact kind is document");
+  expect(full).toContain('app artifacts.write {"kind":"html"');
+  expect(full).toContain("warnings");
+  expect(full).toContain("artifacts.logs");
   expect(full).toContain("Artifacts are separate from the user's Notes");
   expect(full).toContain("without repeating its contents");
   expect(full).not.toContain("app documents.write");

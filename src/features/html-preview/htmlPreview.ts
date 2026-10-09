@@ -95,3 +95,45 @@ export function createHtmlAutoOpener(open: (path: string) => void) {
     if (first) open(first);
   };
 }
+
+const MAX_WARNINGS = 5;
+
+/**
+ * Problems an agent should hear about right after saving an HTML artifact. An
+ * artifact is one file served from `index.html`, so any relative resource 404s,
+ * and the preview's CSP blocks plain `http:`. Returns at most a handful of
+ * short, deduplicated sentences; an empty list means nothing to report.
+ */
+export function htmlWarnings(html: string): string[] {
+  const markup = html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<script\b([^>]*)>[\s\S]*?<\/script\s*>/gi, "<script$1></script>");
+  const found = new Set<string>();
+  for (const tag of markup.matchAll(
+    /<(link|script|img|source|video|audio|iframe|embed)\b([^>]*)>/gi,
+  )) {
+    const attribute = tag[1].toLowerCase() === "link" ? "href" : "src";
+    const match = new RegExp(
+      `\\b${attribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'>]+))`,
+      "i",
+    ).exec(tag[2]);
+    const value = (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").trim();
+    if (!value || value.startsWith("#")) continue;
+    if (/^(?:https:|data:|blob:)/i.test(value)) continue;
+    if (/^http:\/\//i.test(value) || value.startsWith("//")) {
+      found.add(
+        `"${value}" would not load: the preview blocks plain http and protocol-relative URLs, so use https://.`,
+      );
+    } else if (!/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+      found.add(
+        `"${value}" cannot load: an HTML artifact is a single file, so inline it or use an https:// URL.`,
+      );
+    }
+  }
+  const all = [...found];
+  if (all.length <= MAX_WARNINGS) return all;
+  return [
+    ...all.slice(0, MAX_WARNINGS),
+    `...and ${all.length - MAX_WARNINGS} more.`,
+  ];
+}

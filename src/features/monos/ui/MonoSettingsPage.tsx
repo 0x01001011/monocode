@@ -14,7 +14,7 @@ import {
 } from "../model/mono";
 import { ColorPicker, MascotPicker, PageHeader } from "./monoPanelParts";
 
-export type SettingsPage = "habits" | "soul" | "memory" | "settings";
+export type SettingsPage = "habits" | "soul" | "memory" | "artifacts" | "settings";
 
 /**
  * Who the Mono is: its face and name up top, then what it does, who it is,
@@ -26,12 +26,15 @@ export function MonoSettingsPage({
   onOpen,
   onBack,
   counts,
+  showArtifacts,
   children,
 }: {
   monoId: string;
   agent: MonoLook;
   /** How many habits and facts it has, beside their rows once loaded. */
-  counts?: { habits?: number; memory?: number };
+  counts?: { habits?: number; memory?: number; artifacts?: number };
+  /** Offer the artifacts page; the app passes it only when it can open them. */
+  showArtifacts?: boolean;
   onOpen: (page: SettingsPage) => void;
   onBack?: () => void;
   /** Model and project controls, alongside the profile on the front panel. */
@@ -88,6 +91,14 @@ export function MonoSettingsPage({
             count={counts?.memory}
             onClick={() => onOpen("memory")}
           />
+          {showArtifacts ? (
+            <NavRow
+              label="Artifacts"
+              description="Documents and web pages this bot saved."
+              count={counts?.artifacts}
+              onClick={() => onOpen("artifacts")}
+            />
+          ) : null}
         </nav>
         <div className="mt-auto p-2">
           <NavRow

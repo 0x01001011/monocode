@@ -12445,6 +12445,8 @@ function Workspace({
         }
         monoId={monoViewMono.id}
         cwd={monoViewSession.cwd}
+        sessionId={monoViewSession.id}
+        onOpenArtifact={(id) => onOpenMonoArtifact(monoViewSession.id, id)}
         agent={monoLook(monoViewMono)}
         state={monoState(monoViewSession)}
         harness={monoViewSession.harness}

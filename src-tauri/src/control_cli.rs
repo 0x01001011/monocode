@@ -82,7 +82,7 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 32] = [
+const APP_ACTIONS: [&str; 33] = [
     "models.list",
     "sessions.list",
     "sessions.read",
@@ -101,6 +101,7 @@ const APP_ACTIONS: [&str; 32] = [
     "notes.write",
     "artifacts.list",
     "artifacts.read",
+    "artifacts.logs",
     "artifacts.write",
     "soul.read",
     "soul.update",
@@ -209,6 +210,9 @@ Actions:
                   Omitted fields stay unchanged. Reuse --request-id on retries.
   artifacts.list {"limit":30,"offset":0}  Mono or habit only. Saved artifact titles.
   artifacts.read {"id":"..."}  Full content of one artifact.
+  artifacts.logs {"id":"...","limit":50}  Console output and errors of an html
+                  artifact's page (newest last, up to 200). Recorded while the
+                  person has the page open; "loaded":false means it was not shown yet.
   artifacts.write {"kind":"document","title":"PR review",
                    "summary":"Merge queue and blockers",
                    "body":"<complete Markdown>"}
@@ -222,7 +226,9 @@ Actions:
                    "body":"<!doctype html>..."}
                   Save one self-contained HTML page (inline CSS and JS; https
                   CDNs work) shown live in a sandbox. Omit title to use the
-                  page's <title>. For multi-file sites, write .html files in
+                  page's <title>. The result lists "warnings" when the page
+                  references files it cannot load (relative paths, plain http);
+                  fix them and write again. For multi-file sites, write .html files in
                   the project instead: MonoCode previews them automatically.
   soul.read      {}  Mono's own conversation only. Current SOUL.md text and hash.
   soul.update    {"text":"<complete Markdown>","expectedHash":"<hash from soul.read>"}
@@ -665,6 +671,7 @@ mod tests {
             "worktrees.create",
             "artifacts.list",
             "artifacts.read",
+            "artifacts.logs",
             "artifacts.write",
         ] {
             assert!(matches!(

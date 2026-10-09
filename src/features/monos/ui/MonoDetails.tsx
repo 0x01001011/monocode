@@ -15,6 +15,8 @@ import { memoryLines } from "../model/monoMemory";
 import { HabitPage } from "./HabitPage";
 import { NewHabitPage } from "./NewHabitPage";
 import { MonoProjects } from "./MonoProjects";
+import { MonoArtifactsPage } from "./MonoArtifactsPage";
+import { useMonoArtifacts } from "../model/useMonoArtifacts";
 import { MonoPreferencesPage } from "./MonoPreferencesPage";
 import { MonoSettingsPage } from "./MonoSettingsPage";
 import { habitActions, HabitsList, useHabits } from "./MonoHabits";
@@ -25,7 +27,7 @@ import { MonoSidebar, MonoSidebarHeader } from "./MonoSidebar";
 
 /** A page opened directly from Details, or one habit inside its list. */
 type Route =
-  | { kind: "habits" | "soul" | "memory" | "settings" | "new-habit" }
+  | { kind: "habits" | "soul" | "memory" | "artifacts" | "settings" | "new-habit" }
   | { kind: "habit"; id: string };
 
 type Props = {
@@ -33,6 +35,10 @@ type Props = {
   monoId: string;
   /** Its conversation's folder, which the model picker reads settings from. */
   cwd: string;
+  /** Its conversation, whose saved artifacts the Artifacts page lists. */
+  sessionId?: string;
+  /** Open one of its artifacts beside the chat. The Artifacts page needs it. */
+  onOpenArtifact?: (id: string) => void;
   agent: MonoLook;
   state: MonoState;
   harness: HarnessId;
@@ -56,6 +62,8 @@ export function MonoDetails({
   open,
   monoId,
   cwd,
+  sessionId,
+  onOpenArtifact,
   agent,
   state,
   harness,
@@ -72,6 +80,7 @@ export function MonoDetails({
 }: Props) {
   const files = useMonoFiles(monoId, state.status);
   const habits = useHabits(monoId, state.status);
+  const artifacts = useMonoArtifacts(onOpenArtifact ? sessionId : undefined);
   const actions = habitActions(monoId);
   const [routes, setRoutes] = useState<Route[]>([]);
   // Another Mono starts at its own front page.
@@ -129,6 +138,19 @@ export function MonoDetails({
         {
           key: "memory",
           node: <MemoryPage monoId={monoId} files={files} onBack={back} />,
+        },
+      ];
+    if (route.kind === "artifacts" && onOpenArtifact)
+      return [
+        {
+          key: "artifacts",
+          node: (
+            <MonoArtifactsPage
+              artifacts={artifacts}
+              onOpen={onOpenArtifact}
+              onBack={back}
+            />
+          ),
         },
       ];
     if (route.kind === "settings")
@@ -192,7 +214,9 @@ export function MonoDetails({
           monoId={monoId}
           agent={agent}
           onOpen={(page) => push({ kind: page })}
+          showArtifacts={!!onOpenArtifact}
           counts={{
+            artifacts: artifacts?.length,
             habits: habits?.length,
             memory: files ? memoryLines(files.memory).length : undefined,
           }}
