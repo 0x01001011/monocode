@@ -53,6 +53,15 @@ describe("TasksPanelLive", () => {
     expect(seen.at(-1)).toBe(T0 + 3_000);
   });
 
+  it("never shows a stale clock for a frame when work starts again", () => {
+    render(true);
+    render(false);
+    vi.setSystemTime(T0 + 60_000);
+    const before = seen.length;
+    render(true);
+    expect(seen.slice(before).every((now) => now >= T0 + 60_000)).toBe(true);
+  });
+
   it("sets no timer when nothing is running", () => {
     render(false);
     expect(vi.getTimerCount()).toBe(0);

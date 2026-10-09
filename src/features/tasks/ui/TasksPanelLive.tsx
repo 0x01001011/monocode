@@ -14,9 +14,14 @@ const TICK_MS = 1000;
  */
 export function TasksPanelLive({ running, ...panel }: Props) {
   const [now, setNow] = useState(() => Date.now());
+  // Work starting again refreshes the clock before that render shows, never a frame later.
+  const [wasRunning, setWasRunning] = useState(running);
+  if (running !== wasRunning) {
+    setWasRunning(running);
+    if (running) setNow(Date.now());
+  }
   useEffect(() => {
     if (!running) return;
-    setNow(Date.now());
     const id = window.setInterval(() => setNow(Date.now()), TICK_MS);
     return () => window.clearInterval(id);
   }, [running]);
