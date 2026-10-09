@@ -240,6 +240,24 @@ describe("buildSddSection", () => {
     expect(node(buildSddSection(snap, NOW), 7).status).toBe("running");
   });
 
+  it("the first unfinished task runs once the ledger has Task lines, even with no report", () => {
+    const snap = fixtureSnapshot({ ledgerText: ledgerThroughTask6() });
+    delete snap.reports[7];
+    delete snap.mtimes["task-7-report.md"];
+    const section = buildSddSection(snap, NOW);
+    expect(node(section, 7).status).toBe("running");
+    expect(node(section, 8).status).toBe("pending");
+  });
+
+  it("a stray later report does not skip the first unfinished task", () => {
+    const snap = fixtureSnapshot({ ledgerText: ledgerThroughTask6() });
+    delete snap.reports[7];
+    snap.reports[8] = "Status: DONE\n";
+    const section = buildSddSection(snap, NOW);
+    expect(node(section, 7).status).toBe("running");
+    expect(node(section, 8).status).toBe("pending");
+  });
+
   it("a brief alone does not start a task", () => {
     const snap = fixtureSnapshot({ ledgerText: "" });
     snap.reports = {};
@@ -266,6 +284,33 @@ describe("buildSddSection", () => {
     const section = buildSddSection(snap, NOW);
     expect(node(section, 1).endedAt).toBe(reportAt(1));
     expect(node(section, 2).endedAt).toBe(reportAt(2));
+  });
+
+  describe("plan-base packages", () => {
+    const ledger = [
+      "Task 1: implemented (129e9e2); review: spec ✅",
+      "Task 1: complete (commits ebb5db1..129e9e2, review clean)",
+      "Task 2: complete (commits 129e9e2..e704fdd, review clean)",
+    ].join("\n");
+
+    it("keeps the first task's own package and drops the whole-branch one", () => {
+      const own1 = { name: "review-ebb5db1..129e9e2.diff", mtimeMs: reportAt(1) + 3 * MIN };
+      const own2 = { name: "review-129e9e2..e704fdd.diff", mtimeMs: reportAt(2) + 3 * MIN };
+      const whole = { name: "review-ebb5db1..e704fdd.diff", mtimeMs: reportAt(2) + 8 * MIN };
+      const snap = fixtureSnapshot({ ledgerText: ledger });
+      snap.reviews = [own1, own2, whole];
+      const section = buildSddSection(snap, NOW);
+      expect(node(section, 1).endedAt).toBe(own1.mtimeMs);
+      expect(node(section, 1).stages?.find((x) => x.kind === "review")?.startedAt).toBe(own1.mtimeMs);
+      expect(node(section, 2).endedAt).toBe(own2.mtimeMs);
+    });
+
+    it("does not filter when the first task has no commit range", () => {
+      const snap = fixtureSnapshot({ ledgerText: "Task 1: complete — done by hand\nTask 2: complete (commits 129e9e2..e704fdd, review clean)" });
+      const pkg = { name: "review-129e9e2..e704fdd.diff", mtimeMs: reportAt(2) + 3 * MIN };
+      snap.reviews = [pkg];
+      expect(node(buildSddSection(snap, NOW), 2).endedAt).toBe(pkg.mtimeMs);
+    });
   });
 
   describe("whole-branch review packages", () => {

@@ -122,17 +122,36 @@ function notBefore(start: number | undefined, time: number | undefined): number 
   return start !== undefined && time < start ? undefined : time;
 }
 
+/** Every sha that identifies work done by this task. */
+function taskShas(task: LedgerTask | undefined): string[] {
+  const shas = [
+    task?.implemented?.sha,
+    ...(task?.fixes.map((f) => (f.commits ? endSha(f.commits) : undefined)) ?? []),
+    task?.complete?.commits ? endSha(task.complete.commits) : undefined,
+  ];
+  return shas.filter((s): s is string => Boolean(s));
+}
+
 /**
- * Review packages that span the whole branch (they start at the plan's base sha
- * or at the final review's base), so they never belong to a single task.
+ * Drops review packages that span the whole branch. Those start at the plan base
+ * (the first task's commit range start) or at the FINAL REVIEW base, and end at a
+ * sha the first task does not own. Task 1's own package also starts at the plan
+ * base, so it is kept.
  */
-function wholeBranchStarts(ledger: ParsedLedger): string[] {
-  const starts: string[] = [];
-  const first = ledger.tasks.find((t) => t.complete?.commits?.includes(".."));
-  if (first?.complete?.commits) starts.push(first.complete.commits.split("..")[0]);
+function withoutWholeBranch(reviews: Review[], ledger: ParsedLedger): Review[] {
+  const bases: string[] = [];
+  const first = ledger.tasks[0];
+  const firstCommits = first?.n === 1 ? first.complete?.commits : undefined;
+  if (firstCommits?.includes("..")) bases.push(firstCommits.split("..")[0]);
   const final = SHA_RANGE.exec(ledger.final.review ?? "");
-  if (final) starts.push(final[1]);
-  return starts;
+  if (final) bases.push(final[1]);
+  if (bases.length === 0) return reviews;
+  const firstOwn = first?.n === 1 ? taskShas(first) : [];
+  return reviews.filter((r) => {
+    const [, start, end] = REVIEW_RANGE.exec(r.name) ?? [];
+    if (!start || !bases.some((b) => sameSha(b, start))) return true;
+    return firstOwn.some((s) => sameSha(s, end));
+  });
 }
 
 /**
@@ -146,11 +165,7 @@ function reviewEnd(
   reportAt: number | undefined,
   nextReportAt: number | undefined,
 ): number | undefined {
-  const shas = [
-    task?.implemented?.sha,
-    ...(task?.fixes.map((f) => (f.commits ? endSha(f.commits) : undefined)) ?? []),
-    task?.complete?.commits ? endSha(task.complete.commits) : undefined,
-  ];
+  const shas = taskShas(task);
   const own = reviews.filter((r) => shas.some((s) => packagesFor([r], s).length > 0));
   const inWindow = own.filter(
     (r) => r.mtimeMs >= (reportAt ?? -Infinity) && r.mtimeMs <= (nextReportAt ?? Infinity),
@@ -189,11 +204,10 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     Object.entries(snapshot.briefs).map(([n, text]) => [Number(n), parseBrief(text)]),
   );
   const { mtimes } = snapshot;
-  const branchStarts = wholeBranchStarts(ledger);
-  const reviews = snapshot.reviews.filter((r) => {
-    const start = REVIEW_RANGE.exec(r.name)?.[1];
-    return Number.isFinite(r.mtimeMs) && !(start && branchStarts.some((b) => sameSha(b, start)));
-  });
+  const reviews = withoutWholeBranch(
+    snapshot.reviews.filter((r) => Number.isFinite(r.mtimeMs)),
+    ledger,
+  );
   const reportMtime = (n: number): number | undefined => mtimes[`task-${n}-report.md`];
 
   const seen = [
@@ -213,8 +227,9 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     const task = ledgerTasks.get(n);
     const brief = briefs.get(n);
     const report = snapshot.reports[n];
-    // A brief alone is not evidence of work: briefs may all be extracted up front.
-    const hasSignal = report !== undefined || task !== undefined;
+    // Briefs alone are not evidence (they may all be extracted up front). Once the
+    // ledger has any Task line, the first unfinished task is the one in progress.
+    const hasSignal = report !== undefined || ledger.tasks.length > 0;
     const maxRound = Math.max(0, ...(task?.fixes.map((f) => f.round) ?? []));
 
     let status: BoardStatus = "pending";
