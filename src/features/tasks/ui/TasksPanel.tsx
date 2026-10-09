@@ -102,9 +102,16 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab }: Pick<Props, "b
   const [legend, setLegend] = useState(false);
   const [decisionsOpen, setDecisionsOpen] = useState<boolean>();
   const [minorsOpen, setMinorsOpen] = useState(false);
+  // The running task opens by itself (and the next one when it starts); a user toggle wins.
+  const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const finished = plan.total > 0 && plan.done >= plan.total;
   const final = plan.finalReview;
   const nodes = final && final.status !== "pending" ? [...plan.nodes, final] : plan.nodes;
+  const runningId = nodes.find((n) => n.status === "running" || n.status === "attention")?.id;
+  const isExpanded = (id: string) => toggled.get(id) ?? id === runningId;
+  const expandedIds = new Set([...toggled].filter(([, open]) => open).map(([id]) => id));
+  if (runningId !== undefined && isExpanded(runningId)) expandedIds.add(runningId);
+  const onToggle = (id: string) => setToggled((prev) => new Map(prev).set(id, !isExpanded(id)));
   const smallIssues = [
     ...(plan.minors ?? []),
     ...(plan.parked ?? []).map((n) => ({ ...n, parked: true })),
@@ -139,7 +146,14 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab }: Pick<Props, "b
       </div>
       <div className="px-3 pb-1.5 text-[11.5px] text-content/66 tabular-nums">{progressLine(plan, now)}</div>
       {legend ? <Legend /> : null}
-      <TaskTree nodes={nodes} label="Plan tasks" now={now} onOpen={(node) => onOpenNode?.(node, plan)} />
+      <TaskTree
+        nodes={nodes}
+        label="Plan tasks"
+        now={now}
+        onOpen={(node) => onOpenNode?.(node, plan)}
+        expandedIds={expandedIds}
+        onToggle={onToggle}
+      />
       {final?.status === "pending" ? (
         <div className="pt-1.5 pl-8 text-[11.5px] text-content/55">Then one last review of the whole branch.</div>
       ) : null}

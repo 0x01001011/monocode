@@ -288,3 +288,37 @@ describe("TasksPanel", () => {
     expect(container.querySelector("[aria-label='Symbol legend']")).toBeNull();
   });
 });
+
+describe("TasksPanel running task", () => {
+  const stages = (n: number): Partial<BoardNode> => ({
+    status: "running",
+    endedAt: undefined,
+    stages: [
+      { kind: "implement", label: "Implement", status: "done", startedAt: T0 + (n - 1) * 10 * MIN, endedAt: T0 + (n - 1) * 10 * MIN + 5 * MIN },
+      { kind: "review", label: "Review in progress", status: "running", startedAt: T0 + 48 * MIN },
+    ],
+  });
+  const withRunning = (n: number) => {
+    const p = plan();
+    return { ...p, nodes: p.nodes.map((node) => (node.index === n ? { ...node, ...stages(n) } : { ...node, status: node.index! < n ? ("done" as const) : ("pending" as const) })) };
+  };
+
+  it("is expanded and shows its stages, follows the running task, and a user toggle wins", () => {
+    render({ board: board({ plan: withRunning(4) }) });
+    expect(text()).toContain("Review in progress");
+    const task4 = container.querySelector('[role="treeitem"][aria-expanded="true"]');
+    expect(task4?.textContent).toContain("Step 4 title");
+
+    // The user collapses it: it stays collapsed across updates.
+    click(task4?.querySelector("[data-row]") ?? undefined);
+    expect(text()).not.toContain("Review in progress");
+    render({ board: board({ plan: withRunning(4) }) });
+    expect(text()).not.toContain("Review in progress");
+
+    // The next task starts running: it opens by itself.
+    render({ board: board({ plan: withRunning(5) }) });
+    const open = container.querySelectorAll('[role="treeitem"][aria-expanded="true"]');
+    expect(open).toHaveLength(1);
+    expect(open[0].textContent).toContain("Step 5 title");
+  });
+});
