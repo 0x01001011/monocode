@@ -5093,7 +5093,16 @@ pub(crate) fn expand_home(path: &str) -> PathBuf {
 pub(crate) fn path_to_js(path: &Path) -> String {
     let text = path.to_string_lossy();
     if cfg!(windows) {
-        text.replace('\\', "/")
+        let text = text.replace('\\', "/");
+        // `canonicalize` yields verbatim paths (`\\?\D:\x`, `\\?\UNC\host\share`);
+        // JS callers and the file tree expect the plain drive or UNC form.
+        if let Some(rest) = text.strip_prefix("//?/UNC/") {
+            return format!("//{rest}");
+        }
+        match text.strip_prefix("//?/") {
+            Some(rest) => rest.to_string(),
+            None => text,
+        }
     } else {
         text.into_owned()
     }
