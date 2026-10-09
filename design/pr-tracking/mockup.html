@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MonoCode · Chat PRs and stacks (mockup)</title>
+<style>
+  /* Mirrors src/styles/index.css: hsl theme vars, content-alpha ink, selection fills.
+     New tokens this feature proposes for index.css are marked "proposed". */
+  :root {
+    --theme-hue: 240; --theme-sat: 0%;
+    --bg-l: 9%; --ink-l: 92%;
+    --sel-subtle: 8%; --sel: 10%; --sel-hover: 15%; --sel-emph: 20%;
+    /* proposed: theme-scaled ink steps, so muted text clears 4.5:1 in both themes */
+    --ink-muted: 58%;    /* secondary text on base and selected surfaces */
+    --ink-on-fill: 70%;  /* text on tag / kbd fills */
+    --ink-faint: 35%;    /* decorative glyphs only (separators, arrows); never text */
+    --bg: hsl(var(--theme-hue) var(--theme-sat) var(--bg-l));
+    --ink: hsl(var(--theme-hue) var(--theme-sat) var(--ink-l));
+    --stroke: color-mix(in srgb, var(--ink) 7%, transparent);
+    --accent: hsl(211 92% 62%);
+    /* proposed: PR status tokens. Icon values clear 3:1, -text values clear 4.5:1. */
+    --color-pr-open: #34d399; --color-pr-merged: #a78bfa; --color-pr-closed: #fb7185; --color-pr-warn: #fbbf24;
+    --color-pr-open-text: #34d399; --color-pr-closed-text: #fb7185; --color-pr-warn-text: #fbbf24;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    /* z-index scale from shared/lib/layers.ts */
+    --z-popover: 80; --z-toast: 100;
+    color-scheme: dark;
+  }
+  html.theme-light {
+    --bg-l: 97%; --ink-l: 18%;
+    --sel-subtle: 5%; --sel: 6%; --sel-hover: 10%; --sel-emph: 14%;
+    --ink-muted: 70%; --ink-on-fill: 80%;
+    --accent: hsl(211 92% 45%);
+    --color-pr-open: #047857; --color-pr-merged: #7c3aed; --color-pr-closed: #e11d48; --color-pr-warn: #b45309;
+    --color-pr-open-text: #047857; --color-pr-closed-text: #be123c; --color-pr-warn-text: #92400e;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.4 var(--font-sans); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  @media (forced-colors: active) { :focus-visible { outline-color: Highlight; } }
+  .muted { color: color-mix(in srgb, var(--ink) var(--ink-muted), transparent); }
+  .faint { color: color-mix(in srgb, var(--ink) var(--ink-faint), transparent); }
+  .ink-70 { color: color-mix(in srgb, var(--ink) 72%, transparent); }
+  .mono { font-family: var(--font-mono); }
+  .tnum { font-variant-numeric: tabular-nums; }
+  svg.i { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  svg.i.s12 { width: 12px; height: 12px; }
+  svg.i.s16 { width: 16px; height: 16px; }
+  .c-open { color: var(--color-pr-open); } .c-merged { color: var(--color-pr-merged); } .c-closed { color: var(--color-pr-closed); }
+  .c-draft, .c-neutral { color: color-mix(in srgb, var(--ink) 55%, transparent); }
+  .c-warn { color: var(--color-pr-warn); }
+  .t-open { color: var(--color-pr-open-text); } .t-closed { color: var(--color-pr-closed-text); } .t-warn { color: var(--color-pr-warn-text); }
+
+  /* ---------- page chrome (not part of the design) ---------- */
+  .page { max-width: 1240px; margin: 0 auto; padding: 28px 24px 80px; }
+  .page-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 18px; }
+  .page-head h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  .page-head p { margin: 0; font-size: 12px; }
+  .page-head .theme { margin-left: auto; font-size: 12px; min-height: 24px; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--ink) var(--sel), transparent); }
+  .section-label { font-size: 12px; font-weight: 600; margin: 40px 0 4px; }
+  .section-note { font-size: 12px; margin: 0 0 14px; max-width: 72ch; text-wrap: pretty; }
+
+  /* ---------- app window ---------- */
+  .window { display: grid; grid-template-columns: 240px 1fr 300px; height: 600px; border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; }
+  .sidebar { border-right: 1px solid var(--stroke); background: color-mix(in srgb, var(--ink) 3%, var(--bg)); padding: 10px 6px; display: flex; flex-direction: column; gap: 1px; }
+  .sb-group { font-size: 11px; padding: 10px 8px 4px; }
+  .sb-row { position: relative; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 6px; font-size: 12px; }
+  .sb-row:hover { background: color-mix(in srgb, var(--ink) var(--sel-subtle), transparent); }
+  .sb-row[aria-current="true"] { background: color-mix(in srgb, var(--ink) var(--sel), transparent); }
+  .sb-row .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sb-glyph { position: relative; display: inline-flex; align-items: center; gap: 2px; font-size: 11px; padding: 2px 3px; border-radius: 4px; }
+  .sb-glyph::after { content: ""; position: absolute; inset: -4px -3px; } /* 24×24 hit area */
+  .sb-glyph:hover { background: color-mix(in srgb, var(--ink) var(--sel-hover), transparent); }
+  .sb-glyph.stale { outline: 1px dashed color-mix(in srgb, var(--ink) var(--ink-muted), transparent); outline-offset: 1px; }
+  .sb-glyph.stale:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Attention marks: filled dot = blocking, ring = needs action. Shape carries the meaning, hue repeats it. */
+  .att { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .att.block { background: var(--color-pr-closed); }
+  .att.action { box-shadow: inset 0 0 0 1.5px var(--color-pr-warn); }
+  .sb-glyph .att { position: absolute; top: -1px; right: -2px; }
+  .sb-glyph .att.block { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ink) 3%, var(--bg)); }
+  .sb-glyph .att.action { background: color-mix(in srgb, var(--ink) 3%, var(--bg)); }
+
+  .chat { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .transcript { flex: 1; padding: 22px 28px; overflow: hidden; display: flex; flex-direction: column; gap: 12px; }
+  .msg-user { align-self: flex-end; max-width: 70%; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--ink) var(--sel), transparent); font-size: 13px; }
+  .msg-agent { max-width: 64ch; font-size: 13px; }
+  .tool { font-family: var(--font-mono); font-size: 12px; padding: 6px 10px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 4%, transparent); overflow-wrap: anywhere; }
+
+  .composer { margin: 0 16px 16px; border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--ink) 3%, var(--bg)); }
+  .composer-top { container: composer / inline-size; display: flex; align-items: center; gap: 10px; padding: 10px 12px 0; min-width: 0; }
+  .ws-id { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; margin-left: -6px; font-size: 12px; flex: none; }
+  .trigger { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px; margin-left: -6px; border-radius: 6px; font-size: 12px; max-width: 256px; min-width: 0; color: color-mix(in srgb, var(--ink) var(--ink-muted), transparent); transition: transform 120ms var(--ease-out); }
+  .trigger:hover, .trigger[aria-expanded="true"] { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
+  .trigger:active { transform: scale(0.97); }
+  .trigger .lbl { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .branch-trigger { min-width: min(14ch, 45%); }
+  .ctx-ring { margin-left: auto; flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--ink) 18%, transparent); border-top-color: color-mix(in srgb, var(--ink) 55%, transparent); }
+  .composer-input { padding: 12px 12px 14px; font-size: 13px; }
+
+  /* ---------- PrChip ---------- */
+  .pr-chip { position: relative; max-width: 168px; flex: none; }
+  .pr-chip .num { font-variant-numeric: tabular-nums; }
+  /* Stack strip shape vocabulary: tall = this chat's current PR, short = merged, hollow = draft, hairline = someone else's. */
+  .strip { display: inline-flex; gap: 1px; align-items: center; margin-left: 2px; height: 12px; }
+  .strip i { display: block; width: 3px; height: 10px; border-radius: 1px; background: currentColor; opacity: 0.6; }
+  .strip i.cur { opacity: 1; height: 12px; }
+  .strip i.s-merged { height: 6px; }
+  .strip i.s-draft { background: transparent; box-shadow: inset 0 0 0 1px currentColor; }
+  .strip i.ghost { width: 1px; }
+  .more { color: color-mix(in srgb, var(--ink) var(--ink-muted), transparent); font-variant-numeric: tabular-nums; }
+  .skeleton-num { display: inline-block; width: 26px; height: 6px; border-radius: 3px; background: currentColor; opacity: 0.4; }
+  /* Narrow composers: keep the branch readable, shed the chip's extras first, then the "Worktree" label. */
+  @container composer (max-width: 400px) { .pr-chip .strip, .pr-chip .more { display: none; } }
+  @container composer (max-width: 320px) { .ws-id .ws-label { display: none; } }
+
+  /* ---------- Popover frame (shared/ui/Popover.tsx FRAME + .popover-backdrop) ---------- */
+  .popover { position: absolute; z-index: var(--z-popover); width: min(360px, calc(100vw - 16px)); max-height: 440px; display: flex; flex-direction: column; border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent); border-radius: 10px; overflow: hidden;
+    background: color-mix(in srgb, var(--ink) 2%, color-mix(in srgb, var(--bg) 88%, transparent));
+    -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4);
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.35), 0 8px 10px -6px rgb(0 0 0 / 0.3); }
+  html.theme-light .popover { background: var(--bg); box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.12), 0 8px 10px -6px rgb(0 0 0 / 0.1); }
+  .popover.open-anim > .pop-inner { animation: popover-open 170ms cubic-bezier(0.16, 1, 0.3, 1) backwards; transform-origin: var(--origin, 0% 100%); }
+  @keyframes popover-open { from { opacity: 0; transform: translateY(4px) scale(0.94); } to { opacity: 1; transform: none; } }
+  .pop-inner { display: flex; flex-direction: column; min-height: 0; }
+  /* Gallery copies sit in page flow; they don't need the overlay blur. */
+  .popover.static { position: relative; z-index: auto; -webkit-backdrop-filter: none; backdrop-filter: none; background: color-mix(in srgb, var(--ink) 3%, var(--bg)); }
+
+  /* ---------- PrSetCard ---------- */
+  .card-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; font-size: 12px; }
+  .card-head .title { font-weight: 600; }
+  .card-head .upd { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .icon-btn { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 5px; color: color-mix(in srgb, var(--ink) var(--ink-muted), transparent); }
+  .icon-btn:hover { background: color-mix(in srgb, var(--ink) var(--sel-hover), transparent); color: var(--ink); }
+  .icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .card-body { container: prlist / inline-size; overflow: auto; overscroll-behavior: contain; padding: 0 6px 6px; min-height: 0; }
+  .group-label { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 8px 6px 4px; }
+  .pr-list { list-style: none; margin: 0; padding: 0; position: relative; }
+  .pr-row { position: relative; display: flex; align-items: flex-start; gap: 8px; padding: 6px; border-radius: 6px; }
+  .pr-row:hover, .pr-row:focus-within { background: color-mix(in srgb, var(--ink) var(--sel-subtle), transparent); }
+  .pr-row.is-head { background: color-mix(in srgb, var(--ink) var(--sel), transparent); }
+  .pr-row .ico { position: relative; z-index: 1; padding-top: 1px; display: grid; place-items: center; width: 16px; }
+  .pr-row .ico::before { content: ""; position: absolute; inset: -1px -2px; border-radius: 50%; background: color-mix(in srgb, var(--ink) 2%, var(--bg)); z-index: -1; }
+  html.theme-light .pr-row .ico::before { background: var(--bg); }
+  .popover.static .pr-row .ico::before { background: color-mix(in srgb, var(--ink) 3%, var(--bg)); }
+  .pr-row.is-head .ico::before { background: color-mix(in srgb, var(--ink) 12%, var(--bg)); }
+  .stack .pr-list::before { content: ""; position: absolute; left: 13.5px; top: 18px; bottom: 18px; width: 1px; background: color-mix(in srgb, var(--ink) 14%, transparent); }
+  /* Row grid: number, title, signals on line 1; refs and tags on line 2. Narrow lists move signals down so the title keeps the line. */
+  .pr-main { flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "n ttl sig" "l2 l2 l2"; column-gap: 6px; row-gap: 1px; align-items: center; border-radius: 4px; font-size: 12px; }
+  .pr-main .n { grid-area: n; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--ink) 72%, transparent); }
+  .pr-main .ttl { grid-area: ttl; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pr-main .sig { grid-area: sig; justify-self: end; display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .pr-main .sig span { display: inline-flex; align-items: center; gap: 2px; }
+  .pr-l2 { grid-area: l2; display: flex; align-items: center; gap: 6px; font-size: 11px; min-width: 0; color: color-mix(in srgb, var(--ink) var(--ink-muted), transparent); }
+  .pr-l2 .ref { font-family: var(--font-mono); font-size: 10px; min-width: min(10ch, 45%); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @container prlist (max-width: 340px) { .pr-main { grid-template-areas: "n ttl ttl" "l2 l2 sig"; } }
+  .tag { flex: none; font-size: 10px; padding: 0 5px; line-height: 16px; border-radius: 4px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: color-mix(in srgb, var(--ink) var(--ink-on-fill), transparent); white-space: nowrap; }
+  .tag.head { background: color-mix(in srgb, var(--accent) 18%, transparent); color: color-mix(in srgb, var(--accent) 60%, var(--ink)); }
+  .tag.warn { color: var(--color-pr-warn-text); }
+  .row-more { opacity: 0; flex: none; margin-top: -3px; }
+  .pr-row:hover .row-more, .pr-row:focus-within .row-more { opacity: 1; }
+  @media (hover: none) { .row-more { opacity: 1; } }
+  .card-foot { display: flex; align-items: center; gap: 12px; border-top: 1px solid color-mix(in srgb, var(--ink) 7%, transparent); padding: 7px 12px; font-size: 10px; color: color-mix(in srgb, var(--ink) var(--ink-muted), transparent); white-space: nowrap; overflow: hidden; }
+  .card-foot kbd, .page-head kbd { font: inherit; font-family: var(--font-mono); font-size: 10px; padding: 0 3px; margin-right: 3px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: color-mix(in srgb, var(--ink) var(--ink-on-fill), transparent); }
+  .notice { display: flex; align-items: flex-start; gap: 8px; margin: 2px 6px 6px; padding: 8px 10px; border-radius: 6px; font-size: 11px; line-height: 1.45; background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .notice.warn { background: color-mix(in srgb, var(--color-pr-warn) 10%, transparent); }
+  .notice .act { margin-left: auto; flex: none; font-size: 11px; min-height: 24px; padding: 2px 8px; border-radius: 5px; background: color-mix(in srgb, var(--ink) 10%, transparent); align-self: center; }
+  .notice .act:hover { background: color-mix(in srgb, var(--ink) 15%, transparent); }
+  .notice code { font-family: var(--font-mono); font-size: 11px; }
+  .sk { display: block; border-radius: 3px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+  @media (prefers-reduced-motion: no-preference) { .sk { animation: pulse 1.6s ease-in-out infinite; } }
+  @keyframes pulse { 50% { opacity: 0.5; } }
+
+  /* ---------- GitChangesPanel ---------- */
+  .changes { border-left: 1px solid var(--stroke); padding: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; overflow: hidden; }
+  .changes h3 { margin: 0; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .file { display: flex; gap: 8px; align-items: center; height: 22px; font-size: 12px; }
+  .file .st { margin-left: auto; font-family: var(--font-mono); font-size: 11px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 6px; height: 28px; width: 100%; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 500; background: color-mix(in srgb, var(--ink) 10%, transparent); }
+  .btn:hover { background: color-mix(in srgb, var(--ink) 15%, transparent); }
+  .btn-split { display: flex; gap: 1px; }
+  .btn-split .btn:first-child { border-radius: 6px 0 0 6px; justify-content: flex-start; }
+  .btn-split .btn:last-child { width: 28px; flex: none; border-radius: 0 6px 6px 0; }
+  .pr-section { container: prlist / inline-size; margin-top: 8px; border-top: 1px solid var(--stroke); padding-top: 10px; }
+  .pr-section .hdr { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .pr-section .hdr .upd { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .pr-section .pr-row { padding-left: 4px; padding-right: 2px; }
+  .base-field { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 11px; min-width: 0; }
+  .select { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; min-height: 24px; padding: 0 6px; border-radius: 5px; background: color-mix(in srgb, var(--ink) 6%, transparent); font-size: 11px; }
+  .select:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); }
+  .select .v { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 10px; }
+  .select svg { margin-left: auto; }
+
+  /* ---------- Inbox stack rail ---------- */
+  .inbox { border: 1px solid var(--stroke); border-radius: 12px; padding: 16px 18px; }
+  .rail { display: flex; align-items: center; gap: 4px; list-style: none; margin: 0; padding: 2px; overflow: hidden; }
+  .rail li { display: flex; align-items: center; gap: 4px; flex: none; }
+  .rail.scroll { overflow-x: auto; scrollbar-width: none; -webkit-mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent); mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent); }
+  .rail .trunk { font-family: var(--font-mono); font-size: 11px; padding: 0 4px; }
+  .node { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent); }
+  .node:hover { background: color-mix(in srgb, var(--ink) var(--sel-subtle), transparent); }
+  .node[aria-current="step"] { background: color-mix(in srgb, var(--ink) var(--sel-emph), transparent); border-color: transparent; }
+  .node .ttl { max-width: 18ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .node.compact .ttl { display: none; }
+  .node .n { font-variant-numeric: tabular-nums; }
+  .health { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--color-pr-warn) 9%, transparent); }
+  .health .act { margin-left: auto; font-size: 11px; min-height: 24px; padding: 3px 9px; border-radius: 5px; background: color-mix(in srgb, var(--ink) 10%, transparent); flex: none; }
+  .health .act:hover { background: color-mix(in srgb, var(--ink) 15%, transparent); }
+  .inbox-title { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+  .inbox-title h2 { margin: 0; font-size: 15px; font-weight: 600; text-wrap: balance; }
+  .rail-demo { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--stroke); max-width: 560px; }
+  .rail-demo .cap { font-size: 11px; margin-bottom: 8px; }
+
+  /* ---------- states gallery ---------- */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+  .cell { border: 1px solid var(--stroke); border-radius: 10px; padding: 12px; min-width: 0; }
+  .cell .cap { font-size: 11px; margin-bottom: 8px; }
+  .cell .stage { display: flex; align-items: center; gap: 10px; min-height: 24px; flex-wrap: wrap; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; align-items: start; }
+  .cards .cap { font-size: 11px; margin-bottom: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+  .toast { position: fixed; z-index: var(--z-toast); left: 50%; bottom: 24px; transform: translateX(-50%); font-size: 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--ink) 14%, var(--bg)); border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent); opacity: 0; transition: opacity 160ms var(--ease-out); pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .popover.open-anim > .pop-inner { animation: none; }
+    .trigger { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <h1>Chat PRs and stacks</h1>
+    <p class="muted">Mockup. Hover the PR chip or a sidebar icon to preview; click or press <kbd>↵</kbd> to pin, then use <kbd>↑</kbd><kbd>↓</kbd> and <kbd>Esc</kbd>.</p>
+    <button class="theme" id="themeBtn" type="button">Use light theme</button>
+  </header>
+
+  <!-- ============ App window ============ -->
+  <div class="window" id="window">
+    <nav class="sidebar" aria-label="Sessions">
+      <div class="sb-group muted">monocode</div>
+      <div id="sbRows"></div>
+    </nav>
+
+    <main class="chat">
+      <div class="transcript">
+        <div class="msg-user">Fix the keyboard audit findings in the tasks panel, stacked on the virtualized list PR.</div>
+        <div class="tool ink-70">$ git switch -c mc/tasks-panel-keyboard</div>
+        <div class="tool ink-70">$ gh pr create --base mc/tasks-panel-virtual --title "Tasks panel: keyboard audit fixes"</div>
+        <div class="msg-agent ink-70">Opened #482 on top of #480. Two checks are failing on lint; I'll look at those next.</div>
+      </div>
+      <div class="composer">
+        <div class="composer-top">
+          <div class="ws-id muted" title="Workspace: Worktree" aria-label="Workspace Worktree"><svg class="i" aria-hidden="true"><use href="#i-tree"/></svg><span class="ws-label">Worktree</span></div>
+          <button class="trigger branch-trigger" type="button" aria-haspopup="dialog" aria-label="Branch mc/tasks-panel-keyboard" title="mc/tasks-panel-keyboard"><svg class="i" aria-hidden="true"><use href="#i-branch"/></svg><span class="lbl">mc/tasks-panel-keyboard</span></button>
+          <span id="mainChip" style="display:contents"></span>
+          <span class="ctx-ring" title="Context usage" aria-hidden="true"></span>
+        </div>
+        <div class="composer-input muted">Ask, build, / for commands, @ for references...</div>
+      </div>
+    </main>
+
+    <aside class="changes" aria-label="Source control">
+      <h3><svg class="i" aria-hidden="true"><use href="#i-branch"/></svg>Changes <span class="muted tnum" style="font-weight:400">3</span></h3>
+      <div class="file"><span class="ink-70">TasksPanel.tsx</span><span class="st t-warn" aria-label="Modified">M</span></div>
+      <div class="file"><span class="ink-70">useRovingFocus.ts</span><span class="st t-open" aria-label="Added">A</span></div>
+      <div class="file"><span class="ink-70">tasksPanel.test.ts</span><span class="st t-warn" aria-label="Modified">M</span></div>
+      <button class="btn" type="button" style="margin-top:6px"><svg class="i" aria-hidden="true"><use href="#i-refresh"/></svg>Sync Changes <span class="muted tnum">↑2</span></button>
+      <section class="pr-section" id="panelPrs" aria-labelledby="panelPrsTitle"></section>
+    </aside>
+  </div>
+
+  <!-- ============ Inbox ============ -->
+  <div class="section-label">Inbox · PR detail with stack rail</div>
+  <p class="section-note muted">Sits above the existing PR overview. Merged parents stay in the chain. The health line states the single most urgent fact, drawn from GitHub data. When the chain runs out of room, PRs farthest from the one you're viewing drop to their numbers first; only then does the rail scroll.</p>
+  <div class="inbox" id="inbox"></div>
+
+  <!-- ============ States ============ -->
+  <div class="section-label">Composer chip and sidebar icon states</div>
+  <p class="section-note muted">With no PRs, nothing renders; Create PR stays in the Changes panel. Width is reserved while a PR is confirming, so the header never jumps. Shape repeats every color cue: a filled dot blocks, a ring needs action, a dashed outline or clock means the status may be out of date.</p>
+  <div class="gallery" id="chipStates"></div>
+
+  <div class="section-label">Card states</div>
+  <p class="section-note muted">Persisted snapshots render first. Network trouble degrades to the last known status with a reason and a time, never a blank card.</p>
+  <div class="cards" id="cardStates"></div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="popLayer"></div>
+
+<!-- lucide icons, same shapes the app imports -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></symbol>
+    <symbol id="i-draft" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M18 6V5"/><path d="M18 11v-1"/><line x1="6" x2="6" y1="9" y2="21"/></symbol>
+    <symbol id="i-merged" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></symbol>
+    <symbol id="i-closed" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><path d="M6 9v12"/><path d="m21 3-6 6"/><path d="m21 9-6-6"/><path d="M18 11.5V15"/><circle cx="18" cy="18" r="3"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+    <symbol id="i-tree" viewBox="0 0 24 24"><path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-ring" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" stroke-dasharray="2.5 3"/></symbol>
+    <symbol id="i-approved" viewBox="0 0 24 24"><path d="m16 11 2 2 4-4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></symbol>
+    <symbol id="i-changes" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="17" x2="22" y1="8" y2="13"/><line x1="22" x2="17" y1="8" y2="13"/></symbol>
+    <symbol id="i-conflict" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  </defs>
+</svg>
+
+<script>
+/* ---------------- data ---------------- */
+const REPO_URL = "https://github.com/hardbeat920/monocode/pull/";
+const chatSet = {
+  stacks: [{
+    trunk: "main",
+    members: [ // base → tip
+      { n: 478, title: "Extract task row model", state: "merged", head: "mc/tasks-row-model", base: "main" },
+      { n: 480, title: "Tasks panel: virtualized list", state: "open", head: "mc/tasks-panel-virtual", base: "mc/tasks-row-model", tags: [{ t: "Not checked out" }],
+        checks: "pass", review: "approved", restack: "contains_merged_parent" },
+      { n: 482, title: "Tasks panel: keyboard audit fixes", state: "open", head: "mc/tasks-panel-keyboard", base: "mc/tasks-panel-virtual", tags: [{ t: "HEAD", cls: "head" }],
+        checks: "fail", failed: 2, review: "review_required", isHead: true },
+    ],
+  }],
+  standalone: [
+    { n: 475, title: "Fix sidebar badge overflow in narrow panes", state: "merged", head: "mc/sidebar-badge", base: "main", tags: [{ t: "Not checked out" }] },
+  ],
+};
+
+/* ---------------- helpers ---------------- */
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const icon = (id, cls = "") => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+const sep = `<span class="faint" aria-hidden="true">·</span>`;
+// Whole templated strings per count (no fragment concatenation), so copy can move to a plural-aware catalog later.
+const plural = (n, one, other) => (n === 1 ? one : other).replace("{n}", n);
+const STATE = {
+  open: { id: "pr", cls: "c-open", label: "Open" },
+  draft: { id: "draft", cls: "c-draft", label: "Draft" },
+  merged: { id: "merged", cls: "c-merged", label: "Merged" },
+  closed: { id: "closed", cls: "c-closed", label: "Closed" },
+  neutral: { id: "pr", cls: "c-neutral", label: "Pull request" },
+};
+const stIcon = (state, size = "") => icon(STATE[state].id, `${STATE[state].cls} ${size}`);
+const allPrs = (set) => [...set.stacks.flatMap((s) => s.members), ...set.standalone];
+
+// Attention order from the brief: conflicting > checks failing > changes requested > restack > behind > pending.
+function attention(pr) {
+  if (pr.state !== "open") return { rank: 9 };
+  if (pr.conflict) return { rank: 1, kind: "block", text: "merge conflict" };
+  if (pr.checks === "fail") return { rank: 2, kind: "block", text: "checks failing" };
+  if (pr.review === "changes_requested") return { rank: 3, kind: "action", text: "changes requested" };
+  if (pr.restack) return { rank: 4, kind: "action", text: "needs restack" };
+  if (pr.behind) return { rank: 5, kind: "action", text: plural(pr.behind, "1 commit behind", "{n} commits behind") };
+  if (pr.checks === "pending") return { rank: 6, text: "checks pending" };
+  return { rank: 7, text: "ready" };
+}
+const worst = (set) => allPrs(set).map(attention).sort((a, b) => a.rank - b.rank)[0] || { rank: 9 };
+function featured(set) {
+  const prs = allPrs(set);
+  return prs.find((p) => p.isHead) || prs.filter((p) => p.state === "open").sort((a, b) => attention(a).rank - attention(b).rank)[0] || prs[0];
+}
+const attMark = (a) => (a.kind ? `<span class="att ${a.kind}" aria-hidden="true"></span>` : "");
+
+/* ---------------- PrChip ---------------- */
+function chipLabel(set, stale) {
+  const f = featured(set);
+  const prs = allPrs(set);
+  const stack = set.stacks.find((s) => s.members.includes(f));
+  const parts = [`PR ${f.n} ${STATE[f.state].label.toLowerCase()}`];
+  const a = attention(f);
+  if (a.text && a.rank < 7) parts.push(a.text);
+  if (stack) parts.push(`stack ${stack.members.indexOf(f) + 1} of ${stack.members.length}`);
+  if (prs.length > 1) parts.push(plural(prs.length, "1 pull request", "{n} pull requests"));
+  if (stale) parts.push(`status may be out of date, updated ${stale}`);
+  return parts.join(", ");
+}
+function chipHTML(set, opts = {}) {
+  if (opts.mode === "hint") {
+    return `<button class="trigger pr-chip" type="button" aria-label="PR ${opts.n}, confirming">${stIcon("neutral")}<span class="num ink-70">#${opts.n}</span></button>`;
+  }
+  if (opts.mode === "loading") {
+    return `<button class="trigger pr-chip" type="button" aria-label="Loading pull requests" aria-busy="true">${stIcon("neutral")}<span class="skeleton-num"></span></button>`;
+  }
+  const f = featured(set);
+  const prs = allPrs(set);
+  const stack = set.stacks.find((s) => s.members.includes(f));
+  const outside = stack ? prs.length - stack.members.length : prs.length - 1;
+  const strip = stack
+    ? `<span class="strip" aria-hidden="true">${stack.members.map((m) => `<i class="${STATE[m.state].cls} s-${m.state}${m === f ? " cur" : ""}${m.ghost ? " ghost" : ""}"></i>`).join("")}</span>` : "";
+  return `<button class="trigger pr-chip" type="button" data-chip aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(chipLabel(set, opts.stale))}"${opts.stale ? ` title="Updated ${opts.stale}"` : ""}>
+    ${stIcon(f.state)}<span class="num">#${f.n}</span>${opts.stale ? icon("clock", "s12 muted") : ""}${strip}${outside > 0 ? `<span class="more">+${outside}</span>` : ""}${attMark(worst(set))}
+  </button>`;
+}
+
+/* ---------------- rows + card ---------------- */
+function signals(pr) {
+  const out = [];
+  if (pr.checks === "pass") out.push(`<span class="t-open" title="Checks passing">${icon("check", "s12")}</span>`);
+  if (pr.checks === "fail") out.push(`<span class="t-closed tnum" title="${plural(pr.failed, "1 check failing", "{n} checks failing")}">${icon("x", "s12")}${pr.failed}</span>`);
+  if (pr.checks === "pending") out.push(`<span class="c-warn" title="Checks pending">${icon("ring", "s12")}</span>`);
+  if (pr.review === "approved") out.push(`<span class="t-open" title="Approved">${icon("approved", "s12")}</span>`);
+  if (pr.review === "changes_requested") out.push(`<span class="c-warn" title="Changes requested">${icon("changes", "s12")}</span>`);
+  if (pr.conflict) out.push(`<span class="t-closed" title="Merge conflict">${icon("conflict", "s12")}</span>`);
+  if (pr.behind) out.push(`<span class="t-warn tnum" title="${plural(pr.behind, "1 commit behind base", "{n} commits behind base")}">↓${pr.behind}</span>`);
+  if (pr.restack) out.push(`<span class="tag warn" title="${pr.restack === "behind" ? "Behind its parent PR" : "Still carries a squash-merged parent's commits"}">restack</span>`);
+  return out.length ? `<span class="sig">${out.join("")}</span>` : "";
+}
+function rowLabel(pr) {
+  const a = attention(pr);
+  return `PR ${pr.n}, ${pr.title}, ${STATE[pr.state].label}${a.text && a.rank < 7 ? ", " + a.text : ""}`;
+}
+function rowHTML(pr) {
+  const tags = (pr.tags || []).map((t) => `<span class="tag ${t.cls || ""}">${esc(t.t)}</span>`).join("");
+  return `<li class="pr-row${pr.isHead ? " is-head" : ""}">
+    <span class="ico" title="${STATE[pr.state].label}">${stIcon(pr.state)}</span>
+    <a class="pr-main" href="${REPO_URL}${pr.n}" data-row data-n="${pr.n}" tabindex="-1" aria-label="${esc(rowLabel(pr))}">
+      <span class="n">#${pr.n}</span><span class="ttl" title="${esc(pr.title)}">${esc(pr.title)}</span>${signals(pr)}
+      <span class="pr-l2"><span class="ref" title="${esc(pr.head)} → ${esc(pr.base)}">${esc(pr.head)} → ${esc(pr.base)}</span>${tags}</span>
+    </a>
+    <button class="icon-btn row-more" type="button" tabindex="-1" aria-label="More actions for PR ${pr.n}" data-more="${pr.n}">${icon("more")}</button>
+  </li>`;
+}
+function stackHTML(stack) {
+  const merged = stack.members.filter((m) => m.state === "merged").length;
+  // tip on top, base at the bottom, so merge order reads bottom-up
+  return `<div class="stack"><div class="group-label muted">Stack ${sep} ${stack.members.length} into <span class="mono">${esc(stack.trunk)}</span>${merged ? ` ${sep} ${merged} merged` : ""}</div>
+    <ul class="pr-list" role="list">${[...stack.members].reverse().map(rowHTML).join("")}</ul></div>`;
+}
+let cardSeq = 0;
+function cardHTML(set, opts = {}) {
+  const prs = allPrs(set);
+  const titleId = `card-title-${++cardSeq}`;
+  const title = prs.length ? plural(prs.length, "1 pull request from this chat", "{n} pull requests from this chat") : "Pull requests";
+  const head = `<div class="card-head"><span class="title" id="${titleId}">${title}</span>
+    <span class="upd ${opts.stale ? "t-warn" : "muted"}">${opts.updated ?? "Updated 12s ago"}</span>
+    <button class="icon-btn" type="button" tabindex="-1" aria-label="Refresh pull request status" ${opts.refreshDisabled ? `disabled title="${esc(opts.refreshDisabled)}"` : ""}>${icon("refresh", "s12")}</button></div>`;
+  let body = "";
+  if (opts.notice) body += opts.notice;
+  if (opts.loading) {
+    body += `<div style="padding:4px 6px 8px" aria-hidden="true">${[0, 1, 2].map(() => `<div style="display:flex;gap:8px;padding:6px 0"><span class="sk" style="width:14px;height:14px;border-radius:50%"></span><div style="flex:1"><span class="sk" style="width:72%;height:9px"></span><span class="sk" style="width:46%;height:7px;margin-top:6px"></span></div></div>`).join("")}</div>`;
+  } else {
+    body += set.stacks.map(stackHTML).join("");
+    if (set.standalone.length) body += `${set.stacks.length ? `<div class="group-label muted">Other</div>` : ""}<ul class="pr-list" role="list">${set.standalone.map(rowHTML).join("")}</ul>`;
+  }
+  const foot = `<div class="card-foot"><span><kbd>↵</kbd>Open in Inbox</span><span><kbd>⌘↵</kbd>Open on GitHub</span><span><kbd>⌥↵</kbd>Copy link</span></div>`;
+  return { titleId, html: `<div class="pop-inner">${head}<div class="card-body" data-roving${opts.loading ? ' aria-busy="true"' : ""}>${body}</div>${opts.noFoot || !prs.length ? "" : foot}</div>` };
+}
+
+/* ---------------- roving focus: one tab stop per PR list, arrows inside ---------------- */
+function initRoving(root) {
+  root.querySelectorAll("[data-roving]").forEach((list) => {
+    list.querySelectorAll("[data-row]").forEach((r, i) => (r.tabIndex = i === 0 ? 0 : -1));
+    list.querySelectorAll(".row-more").forEach((b) => (b.tabIndex = 0));
+  });
+  root.querySelectorAll(".card-head .icon-btn").forEach((b) => (b.tabIndex = 0));
+}
+function quietTabStops(root) {
+  root.querySelectorAll("[data-row], .row-more, .card-head .icon-btn").forEach((e) => (e.tabIndex = -1));
+}
+function activateRow(row, e) {
+  const n = row.dataset.n;
+  toast(e.altKey ? `Copied link to #${n}` : e.metaKey || e.ctrlKey ? `Opening #${n} on GitHub` : `Opening #${n} in Inbox`);
+}
+document.addEventListener("keydown", (e) => {
+  const row = e.target.closest?.("[data-row]");
+  if (!row) return;
+  const list = row.closest("[data-roving]");
+  const rows = [...list.querySelectorAll("[data-row]")];
+  const i = rows.indexOf(row);
+  const move = (j) => { rows.forEach((r) => (r.tabIndex = -1)); const t = rows[(j + rows.length) % rows.length]; t.tabIndex = 0; t.focus(); };
+  if (e.key === "ArrowDown") { e.preventDefault(); move(i + 1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); move(i - 1); }
+  else if (e.key === "Home") { e.preventDefault(); move(0); }
+  else if (e.key === "End") { e.preventDefault(); move(rows.length - 1); }
+  else if (e.key === "Enter") { e.preventDefault(); activateRow(row, e); }
+});
+document.addEventListener("click", (e) => {
+  const more = e.target.closest?.("[data-more]");
+  if (more) { toast(`Actions for #${more.dataset.more}: mark ready, merge, close, copy link`); return; }
+  const row = e.target.closest?.("[data-row]");
+  if (row) { e.preventDefault(); activateRow(row, e); }
+});
+
+/* ---------------- sidebar ---------------- */
+const otherSets = {
+  single: { stacks: [], standalone: [{ n: 471, title: "Usage chip: show reset time", state: "open", head: "mc/usage-reset", base: "main", checks: "pending", tags: [{ t: "HEAD", cls: "head" }], isHead: true }] },
+  draft: { stacks: [], standalone: [{ n: 483, title: "Host metrics footer", state: "draft", head: "mc/host-metrics", base: "main", tags: [{ t: "HEAD", cls: "head" }], isHead: true }] },
+  review: { stacks: [], standalone: [{ n: 469, title: "Jira: map priority icons", state: "open", head: "mc/jira-priority", base: "main", review: "changes_requested", checks: "pass", tags: [{ t: "HEAD", cls: "head" }], isHead: true }] },
+};
+const sessions = [
+  { title: "Tasks panel audit", set: chatSet, current: true },
+  { title: "Usage chip reset time", set: otherSets.single },
+  { title: "Jira priority icons", set: otherSets.review },
+  { title: "Host metrics footer", set: otherSets.draft, stale: "9m ago" },
+  { title: "Explain session_store migrations", set: null },
+];
+function sbGlyph(set, stale) {
+  if (!set) return "";
+  const prs = allPrs(set);
+  const a = worst(set);
+  const f = featured(set);
+  const label = prs.length === 1
+    ? chipLabel(set, stale)
+    : [plural(prs.length, "1 pull request", "{n} pull requests"), a.text && a.rank < 7 ? a.text : "", stale ? `status may be out of date, updated ${stale}` : ""].filter(Boolean).join(", ");
+  return `<button class="sb-glyph${stale ? " stale" : ""}" type="button" data-sb aria-haspopup="dialog" aria-expanded="false" aria-label="${esc(label)}"${stale ? ` title="Updated ${stale}"` : ""}>
+    ${prs.length === 1 ? stIcon(f.state, "s12") : `${icon("pr", "s12 ink-70")}<span class="tnum ink-70">${prs.length}</span>`}${attMark(a)}</button>`;
+}
+document.getElementById("sbRows").innerHTML = sessions.map((s, i) =>
+  `<div class="sb-row" ${s.current ? 'aria-current="true"' : ""} data-session="${i}"><span class="t">${esc(s.title)}</span>${sbGlyph(s.set, s.stale)}</div>`).join("");
+
+/* ---------------- main chip ---------------- */
+document.getElementById("mainChip").innerHTML = chipHTML(chatSet);
+
+/* ---------------- changes panel ---------------- */
+(function panel() {
+  const prs = allPrs(chatSet);
+  const ordered = [prs.find((p) => p.isHead), ...prs.filter((p) => !p.isHead)];
+  const el = document.getElementById("panelPrs");
+  el.innerHTML = `
+    <div class="hdr"><h4 id="panelPrsTitle" style="margin:0;font-size:12px;font-weight:600">Pull requests</h4><span class="muted tnum">${prs.length}</span><span class="upd muted">Updated 40s ago</span></div>
+    <ul class="pr-list" role="list" data-roving>${ordered.map(rowHTML).join("")}</ul>
+    <div class="btn-split" style="margin-top:8px">
+      <button class="btn" type="button">${icon("ext")}<span>View #482</span></button>
+      <button class="btn" type="button" aria-label="More pull request actions">${icon("chev", "s12")}</button>
+    </div>
+    <div class="section-label" style="margin:18px 0 6px;font-size:11px">On a new branch, before a PR exists</div>
+    <button class="btn" type="button">${icon("pr")}Create PR</button>
+    <div class="base-field"><span class="muted" id="baseLbl">Base</span>
+      <button type="button" class="select" aria-haspopup="listbox" aria-labelledby="baseLbl baseVal"><span class="v" id="baseVal">#482 · mc/tasks-panel-keyboard</span><span class="tag">Stacked</span>${icon("chev", "s12 muted")}</button></div>`;
+  initRoving(el);
+})();
+
+/* ---------------- inbox rail ---------------- */
+function railHTML(members, viewing, trunk = "main") {
+  const items = members.map((p) => `<li><span class="faint" aria-hidden="true">←</span><a href="${REPO_URL}${p.n}" class="node" data-node ${p.n === viewing ? 'aria-current="step"' : ""} aria-label="PR ${p.n}, ${esc(p.title)}, ${STATE[p.state].label}" title="#${p.n} ${esc(p.title)}">${stIcon(p.state)}<span class="n">#${p.n}</span><span class="ttl ink-70">${esc(p.title)}</span></a></li>`).join("");
+  return `<nav aria-label="Stack, base to tip"><ol class="rail"><li><span class="trunk muted">${esc(trunk)}</span></li>${items}</ol></nav>`;
+}
+// Shed titles farthest from the viewed PR first; scroll only if numbers alone still don't fit.
+function fitRail(rail) {
+  const nodes = [...rail.querySelectorAll(".node")];
+  rail.classList.remove("scroll");
+  nodes.forEach((n) => n.classList.remove("compact"));
+  const cur = Math.max(0, nodes.findIndex((n) => n.hasAttribute("aria-current")));
+  const byDistance = nodes.map((n, i) => ({ n, d: Math.abs(i - cur) })).filter((x) => x.d > 0).sort((a, b) => b.d - a.d);
+  for (const { n } of byDistance) { if (rail.scrollWidth <= rail.clientWidth) break; n.classList.add("compact"); }
+  if (rail.scrollWidth > rail.clientWidth) {
+    rail.classList.add("scroll");
+    const c = nodes[cur];
+    rail.scrollLeft = c.offsetLeft - (rail.clientWidth - c.offsetWidth) / 2;
+  }
+}
+const railObserver = new ResizeObserver((entries) => entries.forEach((e) => fitRail(e.target)));
+(function inbox() {
+  const long = [
+    { n: 501, title: "Session store: add branch table", state: "merged" },
+    { n: 502, title: "Trace2 listener", state: "merged" },
+    { n: 503, title: "Attribute pushes to chats", state: "merged" },
+    { n: 504, title: "Batched GraphQL tracker", state: "open" },
+    { n: 505, title: "Composer PR chip", state: "draft" },
+    { n: 506, title: "Sidebar PR icon", state: "draft" },
+  ];
+  document.getElementById("inbox").innerHTML = `
+    ${railHTML(chatSet.stacks[0].members, 480)}
+    <div class="health" role="note">${icon("conflict", "c-warn")}<span>#478 was squash-merged. #480 still carries its 4 commits, so rebase onto <span class="mono">main</span>.</span>
+      <button class="act" type="button">Draft restack prompt in “Tasks panel audit”</button></div>
+    <div class="inbox-title">${stIcon("open", "s16")}<h2>Tasks panel: virtualized list</h2><span class="muted tnum">#480</span></div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">The existing PR overview, checks and review threads continue below.</p>
+    <div class="rail-demo"><div class="cap muted">Six-PR stack in a narrow Inbox pane (viewing #504)</div>${railHTML(long, 504)}</div>`;
+  document.querySelectorAll("#inbox .rail").forEach((r) => railObserver.observe(r));
+})();
+
+/* ---------------- states gallery ---------------- */
+(function states() {
+  const one = otherSets.single;
+  const merged1 = { stacks: [], standalone: [{ n: 475, title: "x", state: "merged", head: "a", base: "main" }] };
+  const closed1 = { stacks: [], standalone: [{ n: 466, title: "x", state: "closed", head: "a", base: "main" }] };
+  const sixStack = { stacks: [{ trunk: "main", members: [
+    { n: 501, state: "merged" }, { n: 502, state: "merged" }, { n: 503, state: "merged" }, { n: 504, state: "open", isHead: true, checks: "pending" }, { n: 505, state: "draft" }, { n: 506, state: "draft", ghost: true },
+  ].map((p) => ({ title: "x", head: "b", base: "a", ...p })) }], standalone: [] };
+  const conflict = { stacks: [], standalone: [{ n: 490, title: "x", state: "open", conflict: true, head: "a", base: "main", isHead: true }] };
+  const legend = `<div class="legend muted">
+      <span><span class="strip"><i class="c-open cur" style="opacity:1"></i></span>this chat's PR</span>
+      <span><span class="strip"><i class="c-merged s-merged"></i></span>merged</span>
+      <span><span class="strip"><i class="c-draft s-draft"></i></span>draft</span>
+      <span><span class="strip"><i class="c-draft ghost"></i></span>someone else's</span>
+      <span><span class="att block"></span>blocking</span>
+      <span><span class="att action"></span>needs action</span></div>`;
+  const cells = [
+    ["No PRs: chip hidden", `<span class="muted" style="font-size:12px">Worktree · branch only</span>`, ""],
+    ["Agent-pushed PR, confirming", chipHTML(null, { mode: "hint", n: 484 }), ""],
+    ["First fetch, width reserved", chipHTML(null, { mode: "loading" }), ""],
+    ["One open PR, checks pending", chipHTML(one), sbGlyph(one)],
+    ["Draft", chipHTML(otherSets.draft), sbGlyph(otherSets.draft)],
+    ["Changes requested", chipHTML(otherSets.review), sbGlyph(otherSets.review)],
+    ["Merge conflict", chipHTML(conflict), sbGlyph(conflict)],
+    ["Merged / closed", chipHTML(merged1) + chipHTML(closed1), sbGlyph(merged1)],
+    ["Stack of 6: 3 merged, mine next, someone else's tip", chipHTML(sixStack), sbGlyph(sixStack)],
+    ["Stack + standalone, checks failing", chipHTML(chatSet), sbGlyph(chatSet)],
+    ["Stale (older than 2× its refresh interval)", chipHTML(one, { stale: "9m ago" }), sbGlyph(one, "9m ago")],
+    ["Shape key", legend, ""],
+  ];
+  document.getElementById("chipStates").innerHTML = cells.map(([cap, chip, sb]) =>
+    `<div class="cell"><div class="cap muted">${cap}</div><div class="stage">${chip}${sb ? `<span class="muted" style="font-size:11px">sidebar</span>${sb}` : ""}</div></div>`).join("");
+
+  const n = (cls, ico, text, act) => `<div class="notice ${cls}">${icon(ico, cls === "warn" ? "c-warn" : "muted")}<span>${text}</span>${act ? `<button class="act" type="button">${act}</button>` : ""}</div>`;
+  const many = { stacks: [], standalone: Array.from({ length: 8 }, (_, i) => ({
+    n: 440 + i, state: ["open", "merged", "draft", "closed"][i % 4], head: `mc/very-long-branch-name-for-hardening-${i}`, base: "main",
+    title: i === 0 ? "Handle 😀 emoji, CJK 日本語のタイトル, and a very long title that keeps going well past the card edge" : `Follow-up ${i}: tidy session store migrations`,
+    checks: i % 4 === 0 ? "pending" : undefined, tags: i === 0 ? [{ t: "HEAD", cls: "head" }] : [{ t: "Not checked out" }], isHead: i === 0 })) };
+  const cards = [
+    ["Loading, no snapshot yet", cardHTML({ stacks: [], standalone: [] }, { loading: true, updated: "Loading…" })],
+    ["GitHub CLI signed out", cardHTML(chatSet, { updated: "Last known · 2h ago", notice: n("", "terminal", "GitHub CLI is signed out. Run <code>gh auth login</code>, then refresh.", "Copy command") })],
+    ["Rate limited", cardHTML(chatSet, { updated: "Last known · 6m ago", refreshDisabled: "Available at 14:32", notice: n("warn", "clock", "GitHub rate limit reached. Status refreshes again at 14:32.") })],
+    ["Stale", cardHTML(otherSets.single, { stale: true, updated: "Updated 9m ago", notice: n("warn", "cloud-off", "Couldn't reach GitHub. Check your connection, then retry.", "Retry") })],
+    ["No PRs yet (pinned from the Changes panel)", cardHTML({ stacks: [], standalone: [] }, { updated: "", notice: `<div style="padding:14px 8px 16px;font-size:12px"><div>No pull requests yet</div><div class="muted" style="margin-top:2px">PRs opened from branches this chat creates or pushes appear here.</div><button class="btn" type="button" style="margin-top:10px;width:auto">${icon("pr")}Create PR</button></div>` })],
+    ["Limited tracking", cardHTML(otherSets.single, { notice: n("", "terminal", "Limited tracking: this agent's sandbox hides its git activity. Showing this worktree's branch and PRs the agent links.") })],
+    ["Many PRs, long titles (scrolls inside 440px)", cardHTML(many, { updated: "Updated 3s ago" })],
+  ];
+  const host = document.getElementById("cardStates");
+  host.innerHTML = cards.map(([cap, c]) =>
+    `<div><div class="cap muted">${cap}</div><div class="popover static" role="group" aria-labelledby="${c.titleId}">${c.html}</div></div>`).join("");
+  initRoving(host);
+})();
+
+/* ---------------- hover / pinned card ----------------
+   One non-modal dialog in both states. Hover previews never take focus; click, Enter or Space pins and moves focus in.
+   Esc closes from anywhere (WCAG 1.4.13). Tabbing past either end returns to the trigger and closes. */
+const layer = document.getElementById("popLayer");
+let pop = null, openTimer = 0, closeTimer = 0, pinned = false, anchorEl = null;
+function setFromAnchor(el) {
+  const row = el.closest("[data-session]");
+  return row ? sessions[+row.dataset.session].set : chatSet;
+}
+function place(el, side) {
+  const r = el.getBoundingClientRect();
+  const sx = window.scrollX, sy = window.scrollY;
+  const vw = document.documentElement.clientWidth;
+  if (side === "right") {
+    pop.style.left = `${Math.min(r.right + sx + 8, sx + vw - pop.offsetWidth - 8)}px`;
+    pop.style.top = `${Math.max(sy + 8, r.top + sy - 12)}px`;
+    pop.style.setProperty("--origin", "0% 0%");
+  } else {
+    pop.style.left = `${Math.max(sx + 8, Math.min(r.left + sx - 6, sx + vw - pop.offsetWidth - 8))}px`;
+    pop.style.top = `${r.top + sy - pop.offsetHeight - 8}px`;
+    pop.style.setProperty("--origin", "0% 100%");
+  }
+}
+function openCard(el, pin) {
+  clearTimeout(closeTimer);
+  if (pop && anchorEl === el) { if (pin && !pinned) pinCard(); return; }
+  closeCard(true);
+  anchorEl = el;
+  const card = cardHTML(setFromAnchor(el));
+  pop = document.createElement("div");
+  pop.className = "popover open-anim";
+  pop.id = "prset";
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-modal", "false");
+  pop.setAttribute("aria-labelledby", card.titleId);
+  pop.innerHTML = card.html;
+  quietTabStops(pop);
+  layer.appendChild(pop);
+  place(el, el.hasAttribute("data-sb") ? "right" : "top");
+  el.setAttribute("aria-expanded", "true");
+  el.setAttribute("aria-controls", "prset");
+  pop.addEventListener("mouseenter", () => clearTimeout(closeTimer));
+  pop.addEventListener("mouseleave", () => { if (!pinned) scheduleClose(); });
+  pop.addEventListener("keydown", onCardTab);
+  if (pin) pinCard();
+}
+function pinCard() {
+  pinned = true;
+  initRoving(pop);
+  (pop.querySelector("[data-row][tabindex='0']") || pop.querySelector("button"))?.focus();
+}
+function scheduleClose() { closeTimer = setTimeout(() => closeCard(true), 100); }
+function closeCard(silent) {
+  clearTimeout(openTimer);
+  if (!pop) return;
+  const el = anchorEl;
+  pop.remove(); pop = null; pinned = false; anchorEl = null;
+  if (el) { el.setAttribute("aria-expanded", "false"); el.removeAttribute("aria-controls"); if (!silent) el.focus({ preventScroll: true }); }
+}
+function onCardTab(e) {
+  if (e.key !== "Tab") return;
+  const stops = [...pop.querySelectorAll("a, button")].filter((x) => x.tabIndex >= 0 && !x.disabled);
+  const i = stops.indexOf(document.activeElement);
+  if ((!e.shiftKey && i === stops.length - 1) || (e.shiftKey && i === 0)) { e.preventDefault(); closeCard(false); }
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !pop) return;
+  e.preventDefault();
+  closeCard(!(pinned || pop.contains(document.activeElement)));
+});
+function wire(el) {
+  const delay = el.hasAttribute("data-sb") ? 400 : 220;
+  el.addEventListener("mouseenter", () => { clearTimeout(closeTimer); if (pinned) return; openTimer = setTimeout(() => openCard(el, false), delay); });
+  el.addEventListener("mouseleave", () => { clearTimeout(openTimer); if (!pinned) scheduleClose(); });
+  el.addEventListener("click", (e) => { e.stopPropagation(); clearTimeout(openTimer); if (pinned && anchorEl === el) { closeCard(false); return; } openCard(el, true); });
+}
+document.querySelectorAll("#window [data-chip], #window [data-sb]").forEach(wire);
+document.addEventListener("mousedown", (e) => { if (pinned && pop && !pop.contains(e.target) && !anchorEl.contains(e.target)) closeCard(true); });
+window.addEventListener("resize", () => closeCard(true));
+
+let toastTimer = 0;
+function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1600); }
+
+document.getElementById("themeBtn").addEventListener("click", (e) => {
+  const light = document.documentElement.classList.toggle("theme-light");
+  e.currentTarget.textContent = light ? "Use dark theme" : "Use light theme";
+});
+</script>
+</body>
+</html>
