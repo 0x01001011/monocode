@@ -16,6 +16,7 @@ use tauri::State;
 use crate::pr_store::{self, Relation};
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
+const MAX_HINTS: usize = 50;
 const REPO_FACTS_TTL: Duration = Duration::from_secs(60);
 
 /// What we learn about a checkout once per minute: its GitHub slug and the
@@ -28,7 +29,8 @@ struct RepoFacts {
 
 static REPO_FACTS_CACHE: Mutex<Option<HashMap<PathBuf, (Instant, RepoFacts)>>> = Mutex::new(None);
 
-/// "owner/name" of the GitHub repo behind `cwd`, as the remote spells it.
+/// Lowercase "owner/name" of the GitHub repo behind `cwd`. GitHub treats slugs
+/// case-insensitively, so the lowercase form is the repo key everywhere.
 pub fn repo_slug_for(cwd: &Path) -> Option<String> {
     repo_facts_for(cwd).slug
 }
@@ -63,7 +65,7 @@ fn repo_facts_uncached(cwd: &Path) -> RepoFacts {
     }
 }
 
-/// Extracts "owner/name" from an https, ssh:// or scp-style GitHub remote URL.
+/// Extracts lowercase "owner/name" from an https, ssh:// or scp-style GitHub remote URL.
 fn parse_github_slug(url: &str) -> Option<String> {
     let url = url.trim();
     let path = if let Some(rest) = url.split_once("://").map(|(_, rest)| rest) {
@@ -89,11 +91,11 @@ fn parse_github_slug(url: &str) -> Option<String> {
     if owner.is_empty() || name.is_empty() || name.contains('/') {
         return None;
     }
-    Some(format!("{owner}/{name}"))
+    Some(format!("{owner}/{name}").to_lowercase())
 }
 
-/// `(repo, number)` from `https://github.com/o/r/pull/12`, ignoring any
-/// trailing path, query or fragment.
+/// `(lowercase repo, number)` from `https://github.com/o/r/pull/12`, ignoring
+/// any trailing path, query or fragment.
 pub fn parse_pr_url(url: &str) -> Option<(String, u32)> {
     let url = url.trim();
     let rest = url
@@ -107,7 +109,7 @@ pub fn parse_pr_url(url: &str) -> Option<(String, u32)> {
         return None;
     }
     let number: u32 = parts.next()?.parse().ok().filter(|n| *n > 0)?;
-    Some((format!("{owner}/{name}"), number))
+    Some((format!("{owner}/{name}").to_lowercase(), number))
 }
 
 /// Records `branch` as one the chat worked on. No-op for no branch, a detached
@@ -174,6 +176,20 @@ fn record_url(conn: &Connection, session_id: &str, url: &str) -> Result<(), Stri
     .map_err(|e| e.to_string())
 }
 
+/// Drops 0 and repeats, keeping at most `MAX_HINTS` numbers in order.
+fn bounded_hints(numbers: &[u32]) -> Vec<u32> {
+    let mut out: Vec<u32> = Vec::new();
+    for number in numbers.iter().copied().filter(|n| *n != 0) {
+        if out.len() == MAX_HINTS {
+            break;
+        }
+        if !out.contains(&number) {
+            out.push(number);
+        }
+    }
+    out
+}
+
 fn record_hints(
     conn: &Connection,
     session_id: &str,
@@ -181,12 +197,12 @@ fn record_hints(
     numbers: &[u32],
 ) -> rusqlite::Result<()> {
     let now = now_millis();
-    for number in numbers {
+    for number in bounded_hints(numbers) {
         pr_store::record_pr(
             conn,
             session_id,
             repo,
-            *number,
+            number,
             Relation::Existing,
             "hint",
             now,
@@ -256,11 +272,15 @@ mod tests {
         );
         assert_eq!(
             parse_pr_url("https://github.com/Octo/Re-po.x/pull/7/files?diff=split#top"),
-            Some(("Octo/Re-po.x".into(), 7))
+            Some(("octo/re-po.x".into(), 7))
         );
         assert_eq!(
             parse_pr_url("  https://github.com/o/r/pull/12/  "),
             Some(("o/r".into(), 12))
+        );
+        assert_eq!(
+            parse_pr_url("https://github.com/MixedCase/Repo/pull/3"),
+            Some(("mixedcase/repo".into(), 3))
         );
         assert_eq!(parse_pr_url("https://github.com/o/r/issues/12"), None);
         assert_eq!(parse_pr_url("https://gitlab.com/o/r/pull/12"), None);
@@ -282,7 +302,7 @@ mod tests {
         ] {
             assert_eq!(
                 parse_github_slug(url).as_deref(),
-                Some("Octo/Repo"),
+                Some("octo/repo"),
                 "{url}"
             );
         }
@@ -357,6 +377,26 @@ mod tests {
             .unwrap();
         assert_eq!(source, "create");
         assert!(record_url(&conn, "s1", "https://github.com/o/r/issues/3").is_err());
+    }
+
+    #[test]
+    fn bounded_hints_drops_zero_and_caps_list() {
+        assert_eq!(bounded_hints(&[0, 5, 0, 5, 7]), vec![5, 7]);
+        let many: Vec<u32> = (0..200).collect();
+        let bounded = bounded_hints(&many);
+        assert_eq!(bounded.len(), MAX_HINTS);
+        assert_eq!(bounded.first(), Some(&1));
+        assert_eq!(bounded.last(), Some(&50));
+    }
+
+    #[test]
+    fn record_hints_skips_zero_and_caps_at_fifty() {
+        let conn = conn();
+        let many: Vec<u32> = (0..200).collect();
+        record_hints(&conn, "s1", "o/r", &many).unwrap();
+        let keys = pr_store::session_pr_keys(&conn, "s1").unwrap();
+        assert_eq!(keys.len(), MAX_HINTS);
+        assert!(keys.iter().all(|(_, n, _, _)| *n != 0));
     }
 
     #[test]
