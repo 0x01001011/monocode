@@ -540,6 +540,23 @@ describe("useTaskBoard", () => {
       ]);
     });
 
+    it("drops a ledger path that climbs out of the plan root", async () => {
+      const { fs } = fakeFs({
+        ...workspace("2026-10-05-plan", "A", 9_000),
+        [`${ROOT}/2026-10-05-plan/progress.md`]: {
+          text: "# SDD ledger — plan: ../../plan.md\nSpec: ../spec.md\nTask 1: implemented (abc1234); review: ok\n",
+          mtimeMs: 9_000,
+        },
+      });
+      await mount(flowInput(fs));
+      expect(latest?.flow.map((p) => [p.id, p.path])).toEqual([
+        ["spec", undefined],
+        ["plan", undefined],
+        ["build", undefined],
+        ["check", undefined],
+      ]);
+    });
+
     it("has no Spec phase when the ledger names no spec", async () => {
       const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
       await mount(flowInput(fs));

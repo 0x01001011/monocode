@@ -2179,7 +2179,11 @@ function SidebarComponent({
               onAction={onTasksAction}
               onOpenNode={onOpenTaskNode}
               onOpenAsTab={onOpenTasksTab}
-              onOpenFile={(path) => onOpenFile(planFilePath(planRootFor(cwd, activeSession), path))}
+              onOpenFile={(path) => {
+                // A ledger path that leaves the plan root is not opened.
+                const file = planFilePath(planRootFor(cwd, activeSession), path);
+                if (file !== undefined) onOpenFile(file, undefined, { exact: true });
+              }}
             />
           </div>
         ) : null}

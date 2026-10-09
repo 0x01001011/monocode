@@ -276,10 +276,11 @@ export function useTaskBoard(input: Input): TaskBoard {
               ...(blocks ? { blocks } : {}),
               subagentsRunning: countSubagentsRunning(sections, planSection),
               now: nowRef.current(),
+              planRoot: planCwd,
             })
           : NO_FLOW,
       // `clock` re-derives the age of the last test run as polls complete.
-      [visible, planSection, sections, blocks, clock],
+      [visible, planSection, sections, blocks, clock, planCwd],
     ),
   );
   return {

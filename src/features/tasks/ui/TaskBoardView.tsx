@@ -86,6 +86,11 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
   });
   const card = board.statusCard;
   const plan = board.plan;
+  // A ledger path that leaves the plan root is not opened.
+  const openPlanFile = (path: string) => {
+    const file = planFilePath(planCwd, path);
+    if (file !== undefined) onOpenPlan?.(file);
+  };
   const notesRef = useRef<HTMLDivElement>(null);
   const [reveal, setReveal] = useState<{ id: string; token: number }>();
   const running = visible && (sessions.some((s) => s.busy) || (card.kind !== "idle" && card.kind !== "done"));
@@ -177,7 +182,7 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
           </div>
           {board.flow.length > 0 ? (
             <div className="mt-1 -ml-1">
-              <FlowStrip phases={board.flow} {...(onOpenPlan ? { onOpenPath: (path: string) => onOpenPlan(planFilePath(planCwd, path)) } : {})} />
+              <FlowStrip phases={board.flow} {...(onOpenPlan ? { onOpenPath: openPlanFile } : {})} />
             </div>
           ) : null}
           {actions.length > 0 ? (
@@ -190,11 +195,11 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
             </div>
           ) : null}
         </div>
-        {plan.planPath ? (
+        {plan.planPath && planFilePath(planCwd, plan.planPath) !== undefined ? (
           <button
             type="button"
             title={plan.planPath}
-            onClick={() => plan.planPath && onOpenPlan?.(planFilePath(planCwd, plan.planPath))}
+            onClick={() => plan.planPath && openPlanFile(plan.planPath)}
             className={`${BUTTON} shrink-0 bg-selection text-content`}
           >
             Open plan

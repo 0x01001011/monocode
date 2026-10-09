@@ -1,5 +1,6 @@
 import type { Block } from "../../sessions/model/session";
 import { formatDuration } from "./duration";
+import { isSafePlanPath } from "./planRoot";
 import type { BoardSection, BoardStatus } from "./taskBoard";
 import { lastTestRun, type TestRun } from "./testRuns";
 
@@ -24,6 +25,11 @@ export type FlowInput = {
   /** Subagents working right now (the transcript's and the plan's own). */
   subagentsRunning: number;
   now: number;
+  /**
+   * Where the plan files live. A spec or plan path that is unsafe to open (`..`, a URL, `~`,
+   * or absolute outside this root) is dropped, so its phase renders as plain text.
+   */
+  planRoot?: string;
 };
 
 /** The fix round from which a task counts as struggling (the status card uses the same). */
@@ -88,16 +94,18 @@ function checkStatus(run: TestRun | undefined, final: BoardStatus | undefined): 
  * evidence on disk or in the transcript, so there is no "unknown" state: with no `Spec:`
  * line in the ledger there is no Spec phase. Pure: `now` is the only clock.
  */
-export function deriveFlow({ plan, blocks, subagentsRunning, now }: FlowInput): FlowPhase[] {
+export function deriveFlow({ plan, blocks, subagentsRunning, now, planRoot }: FlowInput): FlowPhase[] {
   const phases: FlowPhase[] = [];
-  if (plan.specPath) phases.push({ id: "spec", label: "Spec", status: "done", path: plan.specPath });
+  const openable = (path: string | undefined) =>
+    path !== undefined && isSafePlanPath(planRoot, path) ? { path } : {};
+  if (plan.specPath) phases.push({ id: "spec", label: "Spec", status: "done", ...openable(plan.specPath) });
   if (plan.planPath) {
     phases.push({
       id: "plan",
       label: "Plan",
       status: "done",
       detail: plural(plan.total, "task", "tasks"),
-      path: plan.planPath,
+      ...openable(plan.planPath),
     });
   }
   if (plan.total > 0) {

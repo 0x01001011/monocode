@@ -81,6 +81,33 @@ describe("deriveFlow phases", () => {
   });
 });
 
+describe("path safety", () => {
+  const withPaths = (specPath: string, planPath: string, planRoot?: string) =>
+    flow(plan(["running"], { specPath, planPath }), planRoot === undefined ? {} : { planRoot });
+  const pathsOf = (phases: FlowPhase[]) => [phase(phases, "spec")?.path, phase(phases, "plan")?.path];
+
+  it("keeps a relative path and one inside the plan root", () => {
+    expect(pathsOf(withPaths("docs/s.md", "docs/p.md"))).toEqual(["docs/s.md", "docs/p.md"]);
+    expect(pathsOf(withPaths("/wt/docs/s.md", "docs/p.md", "/wt"))).toEqual(["/wt/docs/s.md", "docs/p.md"]);
+  });
+
+  it.each([
+    ["traversal", "../s.md"],
+    ["a URL", "https://x.dev/s.md"],
+    ["a tilde", "~/s.md"],
+    ["an absolute path outside the root", "/etc/s.md"],
+  ])("drops %s so the phase renders as text", (_name, bad) => {
+    const phases = withPaths(bad, bad, "/wt");
+    expect(phases.map((x) => x.id)).toEqual(["spec", "plan", "build", "check"]);
+    expect(pathsOf(phases)).toEqual([undefined, undefined]);
+    expect("path" in (phase(phases, "spec") ?? {})).toBe(false);
+  });
+
+  it("drops an absolute path when the root is unknown", () => {
+    expect(pathsOf(withPaths("/wt/s.md", "docs/p.md"))).toEqual([undefined, "docs/p.md"]);
+  });
+});
+
 describe("Build", () => {
   const build = (statuses: BoardStatus[], over: Partial<FlowInput> = {}, extra: Partial<BoardSection> = {}) =>
     phase(flow(plan(statuses, extra), over), "build");

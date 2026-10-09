@@ -512,6 +512,19 @@ describe("TaskBoardView flow strip", () => {
     expect(onOpenPlan.mock.calls).toEqual([["/wt/mc-1/docs/specs/alpha.md"], [`/wt/mc-1/${PLAN_PATH}`]]);
   });
 
+  it("opens nothing for a path that leaves the plan root, and hides Open plan for one", () => {
+    const bad: FlowPhase[] = [
+      { id: "spec", label: "Spec", status: "done", path: "../outside.md" },
+      { id: "plan", label: "Plan", status: "done", path: "/etc/plan.md" },
+    ];
+    hook.board = board({ flow: bad, plan: { ...(hook.board.plan as BoardSection), planPath: "../../plan.md" } });
+    const onOpenPlan = vi.fn();
+    render({ onOpenPlan, planCwd: "/wt/mc-1" });
+    for (const b of Array.from(strip()!.querySelectorAll("button"))) click(b);
+    expect(onOpenPlan).not.toHaveBeenCalled();
+    expect(buttons("Open plan")).toHaveLength(0);
+  });
+
   it("updates when build finishes", () => {
     hook.board = board({ flow: FLOW });
     render();
