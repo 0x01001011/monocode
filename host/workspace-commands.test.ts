@@ -29,7 +29,8 @@ afterEach(() => {
 });
 
 function setup() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "monocode-wscmd-")));
+  // `.native` expands Windows 8.3 short names (RUNNER~1), as the host's promises realpath does.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "monocode-wscmd-")));
   cleanups.push(dir);
   cpSync(fixture, dir, { recursive: true });
   const project = join(dir, "project");
