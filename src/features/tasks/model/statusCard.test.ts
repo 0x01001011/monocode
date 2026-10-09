@@ -305,12 +305,12 @@ describe("deriveStatusCard", () => {
     expect(deriveStatusCard({ ...base, plan: plan([doneNode(1), { id: "t2", title: "T2", index: 2, status: "pending" }]) }).kind).toBe("idle");
   });
 
-  it("others counts other busy sessions and names the quietest", () => {
+  it("others counts the busy sessions the card does not name, and names the quietest", () => {
     const card = deriveStatusCard({
       sessions: [
         active({ lastActivityAt: NOW - MIN }),
         session({ id: "s2", title: "ssh-hardening", busy: true, lastActivityAt: NOW - 6 * MIN }),
-        session({ id: "s3", title: "docs", busy: true, lastActivityAt: NOW - 2 * MIN }),
+        session({ id: "s3", title: "docs", busy: true, lastActivityAt: NOW - 5 * MIN }),
         session({ id: "s4", title: "idle one" }),
       ],
       activeSessionId: "s1",
@@ -319,7 +319,8 @@ describe("deriveStatusCard", () => {
       quietAfterMs: QUIET,
     });
     expect(card.kind).toBe("quiet");
-    expect(card.others).toEqual({ count: 2, kind: "quiet", text: "2 other runs · ssh-hardening quiet 6m" });
+    expect(card.sessionId).toBe("s2");
+    expect(card.others).toEqual({ count: 2, kind: "quiet", text: "2 other runs · docs quiet 5m" });
   });
 
   it("others: one run, no one quiet, or a waiting session", () => {
@@ -338,7 +339,84 @@ describe("deriveStatusCard", () => {
         session({ id: "s3", title: "ssh-hardening", needsInput: true }),
       ],
     });
-    expect(waiting.others).toEqual({ count: 2, kind: "needs-you", text: "2 other runs · ssh-hardening needs you" });
+    // The card names ssh-hardening, so the line covers only the remaining runs.
+    expect(waiting.sessionId).toBe("s3");
+    expect(waiting.others).toEqual({ count: 2, kind: "quiet", text: "2 other runs · docs quiet 9m" });
+  });
+
+  it("others never includes the session the card names, and compares ids not titles", () => {
+    const card = deriveStatusCard({
+      sessions: [
+        active({ lastActivityAt: NOW - MIN }),
+        session({ id: "s2", title: "ssh-hardening", needsInput: true, askedAt: NOW - 2 * MIN }),
+        session({ id: "s3", title: "ssh-hardening-v2", needsInput: true, askedAt: NOW - MIN }),
+      ],
+      activeSessionId: "s1",
+      plan: runningPlan(),
+      now: NOW,
+      quietAfterMs: QUIET,
+    });
+    expect(card.kind).toBe("needs-you");
+    expect(card.sessionId).toBe("s2");
+    expect(card.sessionTitle).toBe("ssh-hardening");
+    expect(card.others?.text).toBe("2 other runs · ssh-hardening-v2 needs you");
+
+    const only = deriveStatusCard({
+      sessions: [active({ lastActivityAt: NOW - MIN }), session({ id: "s2", title: "ssh-hardening", needsInput: true })],
+      activeSessionId: "s1",
+      now: NOW,
+      quietAfterMs: QUIET,
+    });
+    expect(only.sessionId).toBe("s2");
+    expect(only.others).toEqual({ count: 1, kind: "running", text: "1 other run" });
+
+    const alone = deriveStatusCard({
+      sessions: [session({ id: "s2", title: "ssh-hardening", needsInput: true })],
+      activeSessionId: "s1",
+      now: NOW,
+      quietAfterMs: QUIET,
+    });
+    expect(alone.others).toBeUndefined();
+  });
+
+  it("an active session that is quiet plus another waiting: needs-you names the other, others mentions only the rest", () => {
+    const card = deriveStatusCard({
+      sessions: [
+        active({ lastActivityAt: NOW - 8 * MIN }),
+        session({ id: "s2", title: "ssh-hardening", needsInput: true, question: "Why?" }),
+      ],
+      activeSessionId: "s1",
+      plan: runningPlan(),
+      now: NOW,
+      quietAfterMs: QUIET,
+    });
+    expect(card.kind).toBe("needs-you");
+    expect(card.sessionId).toBe("s2");
+    expect(card.headline).toBe("ssh-hardening is waiting for your answer");
+    expect(card.others).toEqual({ count: 1, kind: "quiet", text: "1 other run · main quiet 8m" });
+    expect(card.others?.text).not.toContain("ssh-hardening");
+  });
+
+  it("a running plan node belongs to the active session even when another one is busy", () => {
+    const card = deriveStatusCard({
+      sessions: [
+        session({ id: "s0", title: "docs", busy: true, lastActivityAt: NOW - MIN }),
+        active({ lastActivityAt: NOW - MIN }),
+      ],
+      activeSessionId: "s1",
+      plan: runningPlan(),
+      now: NOW,
+      quietAfterMs: QUIET,
+    });
+    expect(card.kind).toBe("running");
+    expect(card.sessionId).toBe("s1");
+    expect(card.sessionTitle).toBe("main");
+    expect(card.others).toEqual({ count: 1, kind: "running", text: "1 other run" });
+  });
+
+  it("sessionTitle is absent when the card names no session", () => {
+    const card = deriveStatusCard({ sessions: [], now: NOW, quietAfterMs: QUIET });
+    expect(card.sessionTitle).toBeUndefined();
   });
 
   it("others is omitted when no other session is busy or waiting", () => {

@@ -91,6 +91,7 @@ export function useTaskBoard(input: Input): TaskBoard {
   useEffect(() => {
     if (!polling) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       const id = ++request.current;
       const next = await loadPlan(fs, projectCwd, wanted, nowRef.current());
@@ -102,11 +103,18 @@ export function useTaskBoard(input: Input): TaskBoard {
       });
       setClock(nowRef.current());
     };
-    void load();
-    const timer = setInterval(() => void load(), interval);
+    // The next poll starts only after this one settles, so a slow load is never starved.
+    const poll = async () => {
+      try {
+        await load();
+      } finally {
+        if (!cancelled) timer = setTimeout(() => void poll(), interval);
+      }
+    };
+    void poll();
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
   }, [polling, interval, fs, projectCwd, wanted, sessionId, blockCount]);
 

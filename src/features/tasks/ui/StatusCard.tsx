@@ -40,6 +40,11 @@ const GLYPH: Partial<Record<StatusKind, GlyphKind>> = {
 const BUTTON =
   "min-h-6 rounded-[7px] px-2.5 py-1 text-[11.5px] whitespace-nowrap outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
 
+function actionLabel(action: StatusAction, card: StatusCardData): string {
+  if (action === "answer-in-session" && card.sessionTitle) return `Answer in ${card.sessionTitle}`;
+  return ACTION_LABELS[action];
+}
+
 function actionClass(action: StatusAction): string {
   if (PRIMARY.has(action)) return `${BUTTON} bg-diff-del font-semibold text-black/80`;
   if (SOLID.has(action)) return `${BUTTON} bg-selection text-content`;
@@ -81,14 +86,16 @@ export function StatusCard({ card, onAction }: Props) {
   return (
     <>
       <div
-        role={card.kind === "needs-you" ? "alert" : undefined}
         data-status-kind={card.kind}
         className={`mx-2 mt-1 mb-2 rounded-[10px] p-2.5 ${TONE[card.kind]}`}
       >
         <div className="flex items-start gap-2">
           <CardGlyph kind={card.kind} />
           <div className="min-w-0 flex-1">
-            <div role="status" className="text-[14px] leading-[1.3] font-semibold text-content">
+            <div
+              role={card.kind === "needs-you" ? "alert" : "status"}
+              className="text-[14px] leading-[1.3] font-semibold text-content"
+            >
               {card.headline}
             </div>
             {card.detail ? (
@@ -109,7 +116,7 @@ export function StatusCard({ card, onAction }: Props) {
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {card.actions.map((action) => (
                   <button key={action} type="button" className={actionClass(action)} onClick={() => onAction?.(action, card)}>
-                    {ACTION_LABELS[action]}
+                    {actionLabel(action, card)}
                   </button>
                 ))}
               </div>

@@ -9,11 +9,14 @@ import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
 type Tree = Record<string, { text?: string; mtimeMs?: number }>;
 
 /** In-memory fs keyed by absolute file path; directories are implied by the paths. */
-function fakeFs(tree: Tree) {
+function fakeFs(tree: Tree, delayMs = 0) {
   let lists = 0;
+  let loads = 0;
   const fs: SddFs = {
     async listDir(path) {
       lists++;
+      if (path.endsWith(".superpowers/sdd")) loads++;
+      if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
       const prefix = path.endsWith("/") ? path : `${path}/`;
       const seen = new Map<string, boolean>();
       for (const file of Object.keys(tree)) {
@@ -33,7 +36,8 @@ function fakeFs(tree: Tree) {
       return paths.map((path) => ({ path, mtimeMs: tree[path]?.mtimeMs ?? null }));
     },
   };
-  return { fs, lists: () => lists };
+  /** `loads` counts workspace-list calls: one per poll. */
+  return { fs, lists: () => lists, loads: () => loads };
 }
 
 const ROOT = "/proj/.superpowers/sdd";
@@ -127,20 +131,48 @@ describe("useTaskBoard", () => {
   it("polls every 3s while visible and not at all when idle", async () => {
     const visible = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
     await mount(base(visible.fs));
-    const afterFirst = visible.lists();
-    expect(afterFirst).toBeGreaterThan(0);
+    expect(visible.loads()).toBe(1);
+    await advance(2_999);
+    expect(visible.loads()).toBe(1);
+    await advance(1);
+    expect(visible.loads()).toBe(2);
     await advance(3_000);
-    const afterOne = visible.lists();
-    expect(afterOne).toBeGreaterThan(afterFirst);
-    await advance(3_000);
-    expect(visible.lists()).toBeGreaterThan(afterOne);
+    expect(visible.loads()).toBe(3);
 
     const idle = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
     await act(async () => root.unmount());
     root = createRoot(container);
     await mount(base(idle.fs, { visible: false, sessions: [{ id: "s", title: "s", busy: false, needsInput: false }] }));
     await advance(60_000);
+    expect(idle.loads()).toBe(0);
     expect(idle.lists()).toBe(0);
+  });
+
+  it("stops polling when the panel is hidden and nothing is busy", async () => {
+    const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+    await mount(base(fs));
+    await advance(3_000);
+    expect(loads()).toBe(2);
+    await mount(base(fs, { visible: false }));
+    await advance(60_000);
+    expect(loads()).toBe(2);
+  });
+
+  it("does not start a new load while one is slow, and the slow result still lands", async () => {
+    // Each listDir takes 4s, so one load takes 8s: longer than the 3s interval.
+    const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "Slow", 9_000), 4_000);
+    await mount(base(fs));
+    expect(latest?.plan).toBeUndefined();
+    await advance(9_000);
+    expect(latest?.plan?.nodes[0]?.title).toBe("Slow");
+    // Loads started at 0s and 11s only (8s load + 3s wait), never one per tick.
+    expect(loads()).toBe(1);
+    await advance(2_000);
+    expect(loads()).toBe(2);
+    await advance(10_000);
+    expect(loads()).toBe(2);
+    await advance(1_000);
+    expect(loads()).toBe(3);
   });
 
   it("polls every 15s while hidden but a session is busy", async () => {

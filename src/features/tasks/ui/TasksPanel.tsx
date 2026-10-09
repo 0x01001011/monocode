@@ -61,14 +61,6 @@ function progressLine(plan: BoardSection, now: number): string {
   return parts.join(" · ");
 }
 
-// "2 other runs · ssh-hardening needs you" repeats a card that already names that session.
-function othersRepeatCard(card: StatusCardData): boolean {
-  const others = card.others;
-  if (!others || others.count !== 1 || others.kind !== card.kind) return false;
-  const title = /· (.+?) (?:needs you|quiet \S.*)$/.exec(others.text)?.[1];
-  return title !== undefined && card.headline.includes(title);
-}
-
 function Legend() {
   return (
     <ul aria-label="Symbol legend" className="m-0 mx-3 mb-1 list-none rounded-md bg-selection-subtle p-2 text-[11.5px] text-content/66">
@@ -97,6 +89,7 @@ function NoteSection({ title, notes, open, onToggle, explainer }: {
       <button
         type="button"
         aria-expanded={open}
+        aria-label={`${title}, ${notes.length}`}
         onClick={onToggle}
         className={`mx-1 flex min-h-6.5 w-[calc(100%-8px)] items-center gap-2 rounded-md pr-2 pl-1.5 text-left text-[12.5px] hover:bg-selection-subtle ${FOCUS}`}
       >
@@ -104,7 +97,9 @@ function NoteSection({ title, notes, open, onToggle, explainer }: {
           {open ? <ChevronDown className="size-3" strokeWidth={2} /> : <ChevronRight className="size-3" strokeWidth={2} />}
         </span>
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        <span className="text-[11.5px] text-content/66 tabular-nums">{notes.length}</span>
+        <span aria-hidden="true" className="text-[11.5px] text-content/66 tabular-nums">
+          {notes.length}
+        </span>
       </button>
       {open ? (
         <>
@@ -232,14 +227,11 @@ export function TasksPanel({ board, now, onAction, onOpenNode, onOpenAsTab }: Pr
   const others = rest.filter((s) => s.source !== "agents");
 
   // Hide actions the plan cannot back: no decisions means nothing to review.
-  let card = board.statusCard;
-  if (card.actions.includes("review-decisions") && !plan?.decisions?.length) {
-    card = { ...card, actions: card.actions.filter((a) => a !== "review-decisions") };
-  }
-  if (othersRepeatCard(card)) {
-    const { others: _repeated, ...withoutOthers } = card;
-    card = withoutOthers;
-  }
+  const raw = board.statusCard;
+  const card =
+    raw.actions.includes("review-decisions") && !plan?.decisions?.length
+      ? { ...raw, actions: raw.actions.filter((a) => a !== "review-decisions") }
+      : raw;
 
   const empty = board.sections.length === 0 && card.kind === "idle";
   return (

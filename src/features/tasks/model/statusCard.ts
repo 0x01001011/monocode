@@ -23,6 +23,8 @@ export type StatusSessionInput = {
 export type StatusCard = {
   kind: StatusKind;
   sessionId?: string;
+  /** Title of `sessionId`'s session, for button labels. */
+  sessionTitle?: string;
   headline: string;
   detail?: string;
   reassurance?: string;
@@ -96,8 +98,9 @@ function finishedAt(plan: BoardSection): number | undefined {
   return ends.length > 0 ? Math.max(...ends) : undefined;
 }
 
-function summarizeOthers(input: StatusCardInput): StatusCard["others"] {
-  const others = input.sessions.filter((s) => s.id !== input.activeSessionId && (s.busy || s.needsInput));
+/** Runs apart from the one the card already names (compared by id). */
+function summarizeOthers(input: StatusCardInput, namedId: string | undefined): StatusCard["others"] {
+  const others = input.sessions.filter((s) => s.id !== namedId && (s.busy || s.needsInput));
   if (others.length === 0) return undefined;
   const count = plural(others.length, "other run", "other runs");
   const waiting = pickWaiting(others, undefined);
@@ -135,7 +138,11 @@ function needsYou(waiting: StatusSessionInput, input: StatusCardInput): StatusCa
 }
 
 function running(node: BoardNode | undefined, input: StatusCardInput): StatusCard {
-  const busy = input.sessions.find((s) => s.id === input.activeSessionId && s.busy) ?? input.sessions.find((s) => s.busy);
+  // The plan belongs to the active session, so a running node means it is the one working.
+  const busy =
+    node && input.activeSessionId
+      ? undefined
+      : (input.sessions.find((s) => s.id === input.activeSessionId && s.busy) ?? input.sessions.find((s) => s.busy));
   const lastStage = node?.stages?.[node.stages.length - 1];
   const reviewing = lastStage?.kind === "review" || lastStage?.kind === "final-review";
   const headline = !node
@@ -206,8 +213,10 @@ function core(input: StatusCardInput): StatusCard {
 
 /** One card for the sidebar and the full tab, covering every session in the project. */
 export function deriveStatusCard(input: StatusCardInput): StatusCard {
-  const card = core(input);
-  const others = summarizeOthers(input);
+  const base = core(input);
+  const title = input.sessions.find((s) => s.id === base.sessionId)?.title;
+  const card = title !== undefined ? { ...base, sessionTitle: title } : base;
+  const others = summarizeOthers(input, card.sessionId ?? input.activeSessionId);
   return others ? { ...card, others } : card;
 }
 

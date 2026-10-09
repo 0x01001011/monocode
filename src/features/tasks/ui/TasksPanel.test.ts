@@ -111,18 +111,30 @@ describe("TasksPanel", () => {
     const card: StatusCard = {
       kind: "needs-you",
       sessionId: "s2",
+      sessionTitle: "ssh-hardening",
       headline: "ssh-hardening is waiting for your answer",
       detail: "Task 3 asks: “Keep password login as a fallback?” · 3m ago",
       actions: ["answer-in-session", "remind-later"],
     };
     const onAction = vi.fn();
     render({ board: board({ statusCard: card }), onAction });
-    const alert = container.querySelector("[role=alert]");
-    expect(alert?.textContent).toContain("ssh-hardening is waiting for your answer");
-    click(button("Answer in session"));
+    // Only the headline is live: the detail carries a ticking "3m ago" and the actions are controls.
+    const alerts = container.querySelectorAll("[role=alert]");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].textContent).toBe("ssh-hardening is waiting for your answer");
+    expect(container.querySelector("[role=status]")).toBeNull();
+    expect(text()).toContain("3m ago");
+    expect(container.querySelector("[data-status-kind]")?.getAttribute("role")).toBeNull();
+    click(button("Answer in ssh-hardening"));
     expect(onAction).toHaveBeenCalledWith("answer-in-session", card);
     click(button("Remind me in 10m"));
     expect(onAction).toHaveBeenLastCalledWith("remind-later", card);
+  });
+
+  it("the answer button falls back to a generic label without a session title", () => {
+    const card: StatusCard = { kind: "needs-you", sessionId: "s2", headline: "Waiting", actions: ["answer-in-session"] };
+    render({ board: board({ statusCard: card }) });
+    expect(button("Answer in session")).toBeDefined();
   });
 
   it("quiet card shows when the session last wrote", () => {
@@ -141,24 +153,12 @@ describe("TasksPanel", () => {
     expect(button("Review decisions")).toBeDefined();
   });
 
-  it("hides the others line when it only repeats the session the card names", () => {
-    const card: StatusCard = {
-      kind: "needs-you",
-      sessionId: "s2",
-      headline: "ssh-hardening is waiting for your answer",
-      actions: ["answer-in-session"],
-      others: { count: 1, kind: "needs-you", text: "1 other run · ssh-hardening needs you" },
-    };
-    render({ board: board({ statusCard: card }) });
-    expect(text()).not.toContain("1 other run");
-    render({
-      board: board({ statusCard: { ...card, others: { count: 2, kind: "needs-you", text: "2 other runs · ssh-hardening needs you" } } }),
-    });
-    expect(text()).toContain("2 other runs · ssh-hardening needs you");
-    render({
-      board: board({ statusCard: { ...runningCard, others: { count: 2, kind: "running", text: "2 other runs" } } }),
-    });
-    expect(text()).toContain("2 other runs");
+  it("renders the others line when the card has one and nothing when it does not", () => {
+    const withOthers: StatusCard = { ...runningCard, others: { count: 2, kind: "quiet", text: "2 other runs · docs quiet 6m" } };
+    render({ board: board({ statusCard: withOthers }) });
+    expect(text()).toContain("2 other runs · docs quiet 6m");
+    render({ board: board({ statusCard: runningCard }) });
+    expect(text()).not.toContain("other run");
   });
 
   it("ETA appears only after three tasks are done", () => {
@@ -192,7 +192,7 @@ describe("TasksPanel", () => {
   it("decisions show three then Show all", () => {
     const decisions = Array.from({ length: 5 }, (_, i) => ({ taskIndex: i + 1, text: `Decision number ${i + 1}` }));
     render({ board: board({ plan: plan({ decisions }) }) });
-    const header = button("Decisions made for you5");
+    const header = button("Decisions made for you, 5");
     expect(header?.getAttribute("aria-expanded")).toBe("true");
     expect(text()).toContain("Decision number 3");
     expect(text()).not.toContain("Decision number 4");
@@ -207,7 +207,7 @@ describe("TasksPanel", () => {
 
   it("small issues are collapsed, merge parked ones and show nothing for zero", () => {
     render({ board: board({ plan: plan({ minors: [{ taskIndex: 2, text: "Rename helper" }], parked: [{ taskIndex: 3, text: "Cache later" }] }) }) });
-    const header = button("Small issues saved for the end2");
+    const header = button("Small issues saved for the end, 2");
     expect(header?.getAttribute("aria-expanded")).toBe("false");
     expect(text()).not.toContain("Rename helper");
     click(header);
