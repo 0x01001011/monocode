@@ -421,6 +421,9 @@ mod tests {
         (watcher, fired)
     }
 
+    // ReadDirectoryChangesW never reports the removal of the watched directory itself,
+    // so the "delete the root, then notice it" step cannot be observed on Windows.
+    #[cfg(not(windows))]
     #[test]
     fn recreated_root_is_watched_again() {
         let root = temp_root("recreate");

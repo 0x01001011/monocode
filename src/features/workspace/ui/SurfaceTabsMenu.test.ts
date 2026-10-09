@@ -6,6 +6,10 @@ import type { FilePaneTab } from "../model/layout";
 import { SurfaceTabs } from "./SurfaceTabs";
 
 const actions = vi.hoisted(() => ({
+  listExternalEditors: vi.fn(async () => [
+    { id: "vscode", name: "Visual Studio Code", remote: true },
+  ]),
+  openInEditor: vi.fn(async () => {}),
   copyText: vi.fn(async () => {}),
   openPathWithDefaultApp: vi.fn(async () => {}),
   revealPath: vi.fn(async () => {}),
@@ -17,8 +21,16 @@ vi.mock("../../../platform/tauri/clipboard", () => ({
 
 vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../platform/tauri/fs")>()),
+  listExternalEditors: actions.listExternalEditors,
   openPathWithDefaultApp: actions.openPathWithDefaultApp,
   revealPath: actions.revealPath,
+}));
+
+vi.mock("../../files/model/openInEditor", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../files/model/openInEditor")
+  >()),
+  openInEditor: actions.openInEditor,
 }));
 
 vi.mock("../../files/ui/FileTypeIcon", () => ({
@@ -114,6 +126,32 @@ describe("file tab context menu", () => {
     expect(menu.textContent).toContain("Copy File Name");
     expect(menu.textContent).toContain("Close");
     expect(menu.textContent).toContain("Close Others");
+  });
+
+  it("opens the tab's file in an installed editor and remembers the choice", async () => {
+    openSecondMenu();
+    // The installed editors are looked up when the menu opens.
+    await act(async () => {});
+    const menu = document.querySelector<HTMLElement>(
+      '[role="menu"][aria-label="File tab actions"]',
+    )!;
+    const parent = Array.from(
+      menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ).find((button) => button.textContent === "Open in Editor")!;
+    expect(parent).toBeDefined();
+    await act(async () => parent.click());
+    const editor = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ).find((button) => button.textContent === "Visual Studio Code")!;
+    await act(async () => editor.click());
+    expect(actions.openInEditor).toHaveBeenCalledWith(
+      "vscode",
+      "/repo/src/app.ts",
+      { isFile: true, projectCwd: "/repo" },
+    );
+    expect(localStorage.getItem("monocode.last-external-editor")).toBe(
+      "vscode",
+    );
   });
 
   it("runs path, external-open, reveal, and close actions for the tab", async () => {

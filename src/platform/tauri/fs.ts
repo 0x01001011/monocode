@@ -114,17 +114,12 @@ export function resolveProjectLocation(
 export type ExternalEditor = {
   id: string;
   name: string;
+  /** Can open a project on another machine over SSH. */
+  remote: boolean;
 };
 
 export function listExternalEditors(): Promise<ExternalEditor[]> {
   return invoke<ExternalEditor[]>("list_external_editors");
-}
-
-export function openInExternalEditor(
-  editorId: string,
-  cwd: string,
-): Promise<void> {
-  return invoke<void>("open_in_external_editor", { editorId, cwd });
 }
 
 export type ProjectFile = {

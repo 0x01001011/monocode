@@ -57,6 +57,7 @@ import {
   movePath,
   renamePath,
   revealPath,
+  type ExternalEditor,
   type FsEntry,
 } from "../../../platform/tauri/fs";
 import { displayPath, parentPath, rebasePath } from "../../../shared/lib/paths";
@@ -69,6 +70,12 @@ import {
   suppressTextSelection,
 } from "../../../shared/lib/drag";
 import { ExplorerMenu, type ExplorerMenuItem } from "./ExplorerMenu";
+import {
+  editorIdFromMenu,
+  editorMenuItems,
+  useExternalEditors,
+} from "./editorMenu";
+import { openInEditor, rememberEditor } from "../model/openInEditor";
 import { FileTypeIcon } from "./FileTypeIcon";
 
 const GIT_STATUS_COLOR: Record<string, string> = {
@@ -171,6 +178,7 @@ function explorerItems(
   target: MenuTarget,
   clip: Clip | null,
   canOpenTerminal: boolean,
+  editors: readonly ExternalEditor[],
 ): ExplorerMenuItem[] {
   const pasteParent = target.isDir ? target.path : parentPath(target.path);
   const pasteBlocked =
@@ -242,6 +250,7 @@ function explorerItems(
         ]
       : []),
     { kind: "item", id: "reveal", label: REVEAL_LABEL },
+    ...editorMenuItems(editors, target.path),
   ];
 }
 
@@ -267,6 +276,7 @@ export const FileTree = memo(function FileTree({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [clip, setClip] = useState<Clip | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const editors = useExternalEditors(menu !== null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
   const [epoch, setEpoch] = useState(0);
@@ -648,6 +658,17 @@ export const FileTree = memo(function FileTree({
   };
 
   const runAction = async (id: string, target: MenuTarget) => {
+    const editorId = editorIdFromMenu(id);
+    if (editorId) {
+      await run(async () => {
+        await openInEditor(editorId, target.path, {
+          isFile: !target.isDir,
+          projectCwd: cwd,
+        });
+        rememberEditor(editorId);
+      });
+      return;
+    }
     switch (id) {
       case "new-file":
         startCreate(false, target.path);
@@ -1102,7 +1123,7 @@ export const FileTree = memo(function FileTree({
         <ExplorerMenu
           x={menu.x}
           y={menu.y}
-          items={explorerItems(menu.target, clip, !!onOpenTerminal)}
+          items={explorerItems(menu.target, clip, !!onOpenTerminal, editors)}
           onPick={(id) => {
             const target = menu.target;
             setMenu(null);
