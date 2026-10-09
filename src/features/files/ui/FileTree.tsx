@@ -45,7 +45,7 @@ import {
   saveSelected,
   subscribeDirsChanged,
 } from "../model/fileTree";
-import { treeNavAction, treeTabStop } from "../model/treeKeyboard";
+import { treeTabStop } from "../model/treeKeyboard";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { confirmNative } from "../../../shared/lib/confirm";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
@@ -746,43 +746,123 @@ export const FileTree = memo(function FileTree({
     openMenu({ path: cwd, isDir: true, isRoot: true }, e.clientX, e.clientY);
   };
 
-  /** Up/Down/Left/Right/Home/End on a treeitem; true when the key was used. */
-  const navigateTree = (e: ReactKeyboardEvent<HTMLDivElement>): boolean => {
-    const target = e.target as HTMLElement;
-    const elements = [
-      ...(rootRef.current?.querySelectorAll<HTMLElement>("[role='treeitem']") ??
-        []),
-    ];
-    const focusPath = (path: string) => {
-      onSelect(path);
-      elements.find((el) => el.title === path)?.focus();
+  const visibleRows = () =>
+    Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>(
+        "[data-explorer-root], [role='treeitem']",
+      ) ?? [],
+    );
+
+  const focusRow = (row: HTMLElement | undefined) => {
+    if (!row) return;
+    onSelect(row.title);
+    row.focus({ preventScroll: true });
+    row.scrollIntoView?.({ block: "nearest" });
+  };
+
+  const typeahead = useRef({ text: "", at: 0 });
+
+  // VS Code-style list navigation. Rows are read from the DOM so the order
+  // always matches what's rendered (folders first, excluded files hidden).
+  const onNavigationKey = (
+    e: ReactKeyboardEvent<HTMLDivElement>,
+    path: string,
+    isDir: boolean,
+  ): boolean => {
+    if (e.altKey || e.ctrlKey || (e.metaKey && e.key !== "ArrowDown")) {
+      return false;
+    }
+    const rows = visibleRows();
+    const index = rows.findIndex((row) => row.title === path);
+    const open = path === cwd ? rootOpen : expanded.has(path);
+    const pageSize = () => {
+      const scroller = rootRef.current?.querySelector(".overflow-y-auto");
+      const rowHeight = rows[rows.length - 1]?.offsetHeight || 30;
+      return Math.max(
+        1,
+        Math.floor((scroller?.clientHeight ?? 0) / rowHeight) - 1,
+      );
     };
-    if (target.closest("[data-explorer-root]")) {
-      if (e.key !== "ArrowDown" || !elements[0]) return false;
-      e.preventDefault();
-      focusPath(elements[0].title);
-      return true;
+    const step = (delta: number) =>
+      focusRow(
+        rows[
+          index < 0
+            ? delta > 0
+              ? 0
+              : rows.length - 1
+            : Math.min(rows.length - 1, Math.max(0, index + delta))
+        ],
+      );
+    const activate = (keepFocus: boolean) => {
+      if (isDir) {
+        toggle(path);
+        return;
+      }
+      onOpenFile(path, undefined, { exact: true });
+      if (keepFocus) {
+        const row = rows[index];
+        requestAnimationFrame(() => row?.focus({ preventScroll: true }));
+      }
+    };
+
+    switch (e.key) {
+      case "ArrowDown":
+        // Cmd+Down opens, as in VS Code on macOS.
+        if (e.metaKey) activate(false);
+        else step(1);
+        return true;
+      case "ArrowUp":
+        step(-1);
+        return true;
+      case "PageDown":
+        step(pageSize());
+        return true;
+      case "PageUp":
+        step(-pageSize());
+        return true;
+      case "Home":
+        focusRow(rows[0]);
+        return true;
+      case "End":
+        focusRow(rows[rows.length - 1]);
+        return true;
+      case "ArrowRight":
+        if (!isDir) return true;
+        if (!open) toggle(path);
+        else if (rows[index + 1] && parentPath(rows[index + 1].title) === path)
+          focusRow(rows[index + 1]);
+        return true;
+      case "ArrowLeft":
+        if (isDir && open) toggle(path);
+        else if (path !== cwd)
+          focusRow(rows.find((row) => row.title === parentPath(path)));
+        return true;
+      case "Enter":
+        activate(false);
+        return true;
+      case " ":
+        activate(true);
+        return true;
     }
-    const index = elements.indexOf(
-      target.closest<HTMLElement>("[role='treeitem']") as HTMLElement,
+
+    // Type a name prefix to jump to the next matching row.
+    if (e.metaKey || e.key.length !== 1 || e.key === " ") return false;
+    const now = performance.now();
+    const buffer = typeahead.current;
+    buffer.text = now - buffer.at > 700 ? e.key : buffer.text + e.key;
+    buffer.at = now;
+    // Repeating one letter cycles through its matches instead of narrowing.
+    const lower = buffer.text.toLowerCase();
+    const cycling = [...lower].every((ch) => ch === lower[0]);
+    const needle = cycling ? lower[0] : lower;
+    const start = cycling ? index + 1 : Math.max(index, 0);
+    const ordered = [...rows.slice(start), ...rows.slice(0, start)];
+    const match = ordered.find(
+      (row) =>
+        row.title !== cwd &&
+        basename(row.title).toLowerCase().startsWith(needle),
     );
-    const action = treeNavAction(
-      e.key,
-      elements.map((el) => ({
-        path: el.title,
-        level: Number(el.getAttribute("aria-level")),
-        isDir: el.hasAttribute("aria-expanded"),
-        open: el.getAttribute("aria-expanded") === "true",
-      })),
-      index,
-    );
-    if (!action) return false;
-    e.preventDefault();
-    if (action.type === "focus") focusPath(action.path);
-    else {
-      onSelect(action.path);
-      toggle(action.path);
-    }
+    if (match) focusRow(match);
     return true;
   };
 
@@ -796,11 +876,14 @@ export const FileTree = memo(function FileTree({
     ) {
       return;
     }
-    const mod = e.metaKey || e.ctrlKey;
-    if (!mod && !e.altKey && !e.shiftKey && navigateTree(e)) return;
     const path = selectedPath ?? cwd;
     const isRoot = path === cwd;
     const isDir = isDirAt(cwd, path);
+    if (onNavigationKey(e, path, isDir)) {
+      e.preventDefault();
+      return;
+    }
+    const mod = e.metaKey || e.ctrlKey;
     const key = shortcutLetter(e);
     if (mod && !e.altKey && e.shiftKey && key === "c") {
       e.preventDefault();

@@ -940,7 +940,7 @@ function ChangedFiles({
   );
 }
 
-function usePrStatus(
+export function usePrStatus(
   cwd: string,
   branch: string | null | undefined,
 ): { pr: GitPr | null; reload: () => void } {
@@ -1002,7 +1002,7 @@ function syncStatusLabel(index: GitDiffIndex): string {
   return "No files";
 }
 
-function GitSyncActions({
+export function GitSyncActions({
   index,
   pr,
   busy,
@@ -1502,7 +1502,7 @@ function ChangeRow({
           onDoubleClick={() => {
             if (canOpen) onOpenFile(file.path, kind, true);
           }}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
         >
           {tree ? <span className="size-4 shrink-0" /> : null}
           <FileTypeIcon name={name} isDir={false} size={16} />
