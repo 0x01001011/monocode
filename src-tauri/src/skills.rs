@@ -1243,11 +1243,17 @@ mod tests {
         );
         let first = scan_root(&root.0, "user", "agents");
         assert_eq!(first[0].description, "aaaa");
-        std::fs::write(
-            root.0.join("memo-same/SKILL.md"),
-            "---\nname: memo-same\ndescription: bbbb\n---\n",
-        )
-        .unwrap();
+        let skill = root.0.join("memo-same/SKILL.md");
+        std::fs::write(&skill, "---\nname: memo-same\ndescription: bbbb\n---\n").unwrap();
+        // The length is unchanged, so only the mtime can tell the versions
+        // apart. Two quick writes can share one file-system timestamp tick
+        // (Windows), so make the change visible instead of relying on timing.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&skill)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(2))
+            .unwrap();
         let second = scan_root(&root.0, "user", "agents");
         assert_eq!(second[0].description, "bbbb");
     }
