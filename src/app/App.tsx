@@ -12504,6 +12504,9 @@ function Workspace({
               busySessionIds={busySessionIds}
               approvalSessionIds={approvalSessionIds}
               activeSessionId={activeSessionId}
+              activeSession={sessions.find(
+                (session) => session.id === activeSessionId,
+              )}
               status={historyFailed ? "error" : "idle"}
               pending={historyPending}
               onSelectSession={onSelectHistorySession}

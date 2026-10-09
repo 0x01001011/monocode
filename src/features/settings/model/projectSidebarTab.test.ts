@@ -46,6 +46,12 @@ describe("project Workspace tab", () => {
     expect(loadProjectSidebarTab("/work/new")).toBe("files");
   });
 
+  it("accepts and restores the Tasks tab", () => {
+    saveProjectSidebarTab("/work/one", "tasks");
+    expect(loadProjectSidebarTab("/work/one")).toBe("tasks");
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({ "/work/one": "tasks" });
+  });
+
   it("follows a project rename and clears a deleted project's choice", () => {
     saveProjectSidebarTab("/work/one", "files");
     rebaseProjectSidebarTab("/work/one", "/work/renamed");

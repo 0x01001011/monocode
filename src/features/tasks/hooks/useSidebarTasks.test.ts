@@ -1,0 +1,197 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SessionSummary } from "../../sessions/data/sessionStore";
+import type { Block, Session } from "../../sessions/model/session";
+import type { StatusCard } from "../model/statusCard";
+import { useSidebarTasks } from "./useSidebarTasks";
+import { useTaskBoard, type TaskBoard } from "./useTaskBoard";
+
+vi.mock("./useTaskBoard", () => ({ useTaskBoard: vi.fn() }));
+
+const T0 = 1_700_000_000_000;
+
+function board(card: StatusCard): TaskBoard {
+  return { sections: [], statusCard: card, workspaces: [], selectWorkspace: () => {}, loading: false };
+}
+const IDLE: StatusCard = { kind: "idle", headline: "", actions: [] };
+const RUNNING: StatusCard = { kind: "running", headline: "Working", actions: [] };
+
+function summary(id: string, patch: Partial<SessionSummary> = {}): SessionSummary {
+  return {
+    id,
+    cwd: "/proj",
+    harness: "codex",
+    model: "",
+    runtimeMode: "supervised",
+    title: `Title ${id}`,
+    createdAt: T0 - 10_000,
+    updatedAt: T0 - 5_000,
+    ...patch,
+  };
+}
+
+function tool(patch: Partial<Block>): Block {
+  return { id: "b", role: "tool", text: "", ...patch } as Block;
+}
+
+function active(id: string, over: Record<string, unknown> = {}): Session {
+  return { id, cwd: "/proj", title: id, blocks: [], ...over } as unknown as Session;
+}
+
+type Input = Parameters<typeof useSidebarTasks>[0];
+let container: HTMLDivElement;
+let root: Root;
+let result: ReturnType<typeof useSidebarTasks> | undefined;
+
+function Probe({ input }: { input: Input }) {
+  result = useSidebarTasks(input);
+  return null;
+}
+
+function base(over: Partial<Input> = {}): Input {
+  return {
+    cwd: "/proj",
+    sessions: [summary("a"), summary("b")],
+    busySessionIds: new Set<string>(),
+    approvalSessionIds: new Set<string>(),
+    activeSessionId: "a",
+    visible: false,
+    ...over,
+  };
+}
+
+function render(input: Input) {
+  act(() => root.render(createElement(Probe, { input })));
+}
+
+function lastInput() {
+  const calls = vi.mocked(useTaskBoard).mock.calls;
+  return calls[calls.length - 1][0];
+}
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  vi.setSystemTime(T0);
+  vi.mocked(useTaskBoard).mockReset().mockReturnValue(board(IDLE));
+  container = document.createElement("div");
+  root = createRoot(container);
+  result = undefined;
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("useSidebarTasks", () => {
+  it("passes the project, visibility and active session to the board", () => {
+    const session = active("a");
+    render(base({ visible: true, activeSession: session }));
+    const input = lastInput();
+    expect(input.projectCwd).toBe("/proj");
+    expect(input.visible).toBe(true);
+    expect(input.activeSession).toBe(session);
+    expect(result?.board.statusCard.kind).toBe("idle");
+  });
+
+  it("builds one status input per session from the busy and approval sets", () => {
+    render(base({ busySessionIds: new Set(["a"]), approvalSessionIds: new Set(["b"]) }));
+    expect(lastInput().sessions).toEqual([
+      { id: "a", title: "Title a", busy: true, needsInput: false, lastActivityAt: T0 - 5_000 },
+      { id: "b", title: "Title b", busy: false, needsInput: true, lastActivityAt: T0 - 5_000 },
+    ]);
+  });
+
+  it("skips hidden sessions", () => {
+    render(base({ sessions: [summary("a"), summary("h", { sidebarHidden: true })] }));
+    expect(lastInput().sessions.map((s) => s.id)).toEqual(["a"]);
+  });
+
+  it("takes the active session's newest tool time when it is later than updatedAt", () => {
+    const blocks = [
+      tool({ toolStartedAt: T0 - 90_000, toolEndedAt: T0 - 80_000 }),
+      tool({ toolStartedAt: T0 - 3_000 }),
+    ];
+    render(base({ activeSession: active("a", { blocks }) }));
+    const [a, b] = lastInput().sessions;
+    expect(a.lastActivityAt).toBe(T0 - 3_000);
+    expect(b.lastActivityAt).toBe(T0 - 5_000);
+  });
+
+  it("keeps updatedAt when the tools are older", () => {
+    const blocks = [tool({ toolStartedAt: T0 - 90_000, toolEndedAt: T0 - 80_000 })];
+    render(base({ activeSession: active("a", { blocks }) }));
+    expect(lastInput().sessions[0].lastActivityAt).toBe(T0 - 5_000);
+  });
+
+  it("quotes the first line of the pending question for the active session only", () => {
+    const pendingQuestion = {
+      requestId: 1,
+      questions: [{ id: "q", prompt: "  Which   database?\nPostgres or SQLite", multiSelect: false, allowCustom: false, options: [] }],
+    };
+    render(
+      base({
+        approvalSessionIds: new Set(["a", "b"]),
+        activeSession: active("a", { pendingQuestion }),
+      }),
+    );
+    const [a, b] = lastInput().sessions;
+    expect(a.question).toBe("Which database?");
+    expect(b).not.toHaveProperty("question");
+    expect(a).not.toHaveProperty("askedAt");
+  });
+
+  it("omits the question when none is pending", () => {
+    render(base({ activeSession: active("a") }));
+    expect(lastInput().sessions[0]).not.toHaveProperty("question");
+  });
+
+  it("keeps the same session inputs while nothing relevant changes", () => {
+    const input = base();
+    render(input);
+    const first = lastInput().sessions;
+    render({ ...input });
+    expect(lastInput().sessions).toBe(first);
+  });
+
+  describe("clock", () => {
+    it("ticks every second while the tab is visible and a session is busy", () => {
+      render(base({ visible: true, busySessionIds: new Set(["a"]) }));
+      expect(result?.now).toBe(T0);
+      act(() => void vi.advanceTimersByTime(3_000));
+      expect(result?.now).toBe(T0 + 3_000);
+    });
+
+    it("ticks while the board itself is running even if no session is busy", () => {
+      vi.mocked(useTaskBoard).mockReturnValue(board(RUNNING));
+      render(base({ visible: true }));
+      act(() => void vi.advanceTimersByTime(2_000));
+      expect(result?.now).toBe(T0 + 2_000);
+    });
+
+    it("does not tick while the tab is closed", () => {
+      render(base({ visible: false, busySessionIds: new Set(["a"]) }));
+      const before = result?.now;
+      act(() => void vi.advanceTimersByTime(5_000));
+      expect(result?.now).toBe(before);
+    });
+
+    it("does not tick when nothing is running", () => {
+      render(base({ visible: true }));
+      const before = result?.now;
+      act(() => void vi.advanceTimersByTime(5_000));
+      expect(result?.now).toBe(before);
+    });
+
+    it("stops ticking after the work finishes", () => {
+      render(base({ visible: true, busySessionIds: new Set(["a"]) }));
+      act(() => void vi.advanceTimersByTime(1_000));
+      render(base({ visible: true }));
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+});

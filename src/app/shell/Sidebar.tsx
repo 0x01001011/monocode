@@ -11,6 +11,7 @@ import {
   Archive,
   Chatting,
   Check,
+  CheckCircle,
   ChevronDown,
   ChevronRight,
   CircleAlert,
@@ -53,6 +54,11 @@ import {
   saveSidebarTabOrder,
   type SidebarTabId,
 } from "../../features/settings/model/appearance";
+import { useSidebarTasks } from "../../features/tasks/hooks/useSidebarTasks";
+import { tabBadge, type StatusAction, type StatusCard } from "../../features/tasks/model/statusCard";
+import type { BoardNode, BoardSection } from "../../features/tasks/model/taskBoard";
+import { TasksPanel } from "../../features/tasks/ui/TasksPanel";
+import { TasksTabBadge, tasksTabLabel } from "../../features/tasks/ui/TasksTabBadge";
 import { formatInteger } from "../../shared/lib/numbers";
 import {
   type GitFileDiffKind,
@@ -62,7 +68,7 @@ import { IS_MAC, MOD } from "../../platform/tauri/platform";
 import { copyText } from "../../platform/tauri/clipboard";
 import { resolveModel } from "../../features/sessions/model/models";
 import type { OpenFileFn } from "../../features/search/model/search";
-import { sessionDisplayTitle } from "../../features/sessions/model/session";
+import { sessionDisplayTitle, type Session } from "../../features/sessions/model/session";
 import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
 import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
@@ -210,6 +216,7 @@ const TAB_LABELS: Record<SidebarTab, string> = {
   inbox: "Inbox",
   files: "Explorer",
   changes: "Changes",
+  tasks: "Tasks",
 };
 
 const COMPACT_TAB_ICONS: Record<SidebarTab, typeof PanelLeft> = {
@@ -217,6 +224,7 @@ const COMPACT_TAB_ICONS: Record<SidebarTab, typeof PanelLeft> = {
   inbox: Inbox,
   files: FileScript,
   changes: GitBranch,
+  tasks: CheckCircle,
 };
 
 function projectPathBusy(
@@ -246,6 +254,11 @@ type Props = {
   busySessionIds: Set<string>;
   approvalSessionIds: Set<string>;
   activeSessionId?: string;
+  /** The focused session, for the Tasks tab's board and status card. */
+  activeSession?: Session;
+  onTasksAction?: (action: StatusAction, card: StatusCard) => void;
+  onOpenTasksTab?: () => void;
+  onOpenTaskNode?: (node: BoardNode, section: BoardSection) => void;
   /** Open tabs, including blank ones not yet in history. */
   openSessions?: readonly SessionSummary[];
   status: "idle" | "error";
@@ -355,6 +368,10 @@ function SidebarComponent({
   busySessionIds,
   approvalSessionIds,
   activeSessionId,
+  activeSession,
+  onTasksAction,
+  onOpenTasksTab,
+  onOpenTaskNode,
   openSessions = [],
   status,
   pending,
@@ -436,6 +453,17 @@ function SidebarComponent({
 }: Props) {
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
+  // Read even while the tab is closed so its badge stays current.
+  const tasks = useSidebarTasks({
+    cwd,
+    sessions,
+    busySessionIds,
+    approvalSessionIds,
+    activeSessionId,
+    activeSession,
+    visible: tab === "tasks",
+  });
+  const tasksBadge = tabBadge(tasks.board.statusCard);
   const remote = useRemoteProjectSessions(cwd, remoteProject);
   const hostProject = remoteProject ? remoteProjectFor(cwd) : undefined;
   const remoteChange = async (
@@ -1613,6 +1641,7 @@ function SidebarComponent({
   const workspaceTabItems = visibleTabs.map((itemId) => {
     const active = tab === itemId;
     const isChangesTab = itemId === "changes";
+    const isTasksTab = itemId === "tasks";
     return (
       <div
         key={itemId}
@@ -1627,13 +1656,19 @@ function SidebarComponent({
           type="button"
           role="tab"
           aria-selected={active}
-          aria-label={isChangesTab ? changesLabel : undefined}
+          aria-label={
+            isChangesTab
+              ? changesLabel
+              : isTasksTab
+                ? tasksTabLabel(tasksBadge)
+                : undefined
+          }
           data-tauri-drag-region="false"
           onClick={() => {
             if (sortable.consumeClick()) return;
             onTabPick(itemId);
           }}
-          className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-2 text-[12px] leading-none ${
+          className={`flex h-6 min-w-0 flex-1 items-center justify-center gap-1 self-center rounded-md px-2 text-[12px] leading-none ${
             active ? "bg-selection text-content" : "text-content/50"
           }`}
         >
@@ -1644,6 +1679,7 @@ function SidebarComponent({
               {TAB_LABELS[itemId]}
             </span>
           )}
+          {isTasksTab && tasksBadge ? <TasksTabBadge kind={tasksBadge} /> : null}
         </button>
       </div>
     );
@@ -2116,6 +2152,17 @@ function SidebarComponent({
               />
           </div>
         ) : null}
+        {tab === "tasks" ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <TasksPanel
+              board={tasks.board}
+              now={tasks.now}
+              onAction={onTasksAction}
+              onOpenNode={onOpenTaskNode}
+              onOpenAsTab={onOpenTasksTab}
+            />
+          </div>
+        ) : null}
         {showSidebarFooter ? (
           <>
             <LiveAgentsPreview
@@ -2233,6 +2280,7 @@ function SidebarComponent({
           tabShown={panelOpen}
           changesLabel={changesLabel}
           hasChanges={hasChanges}
+          tasksBadge={tasksBadge}
           inboxUnseen={inboxUnseen}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2476,6 +2524,7 @@ function CompactProjectRail({
   tabShown,
   changesLabel,
   hasChanges,
+  tasksBadge,
   inboxUnseen,
   onSelectProject,
   onOpenProject,
@@ -2505,6 +2554,7 @@ function CompactProjectRail({
   tabShown: boolean;
   changesLabel: string;
   hasChanges: boolean;
+  tasksBadge?: ReturnType<typeof tabBadge>;
   inboxUnseen: boolean;
   onSelectProject?: (path: string) => void;
   onOpenProject?: () => void;
@@ -2612,10 +2662,19 @@ function CompactProjectRail({
             <CompactRailAction
               key={itemId}
               tab
-              label={itemId === "changes" ? changesLabel : TAB_LABELS[itemId]}
+              label={
+                itemId === "changes"
+                  ? changesLabel
+                  : itemId === "tasks"
+                    ? tasksTabLabel(tasksBadge)
+                    : TAB_LABELS[itemId]
+              }
               icon={COMPACT_TAB_ICONS[itemId]}
               active={workspaceActive && tabShown && activeTab === itemId}
-              dot={itemId === "changes" && hasChanges}
+              dot={
+                (itemId === "changes" && hasChanges) ||
+                (itemId === "tasks" && tasksBadge !== undefined)
+              }
               onClick={() => openWorkspaceTab(itemId)}
             />
           ))}
