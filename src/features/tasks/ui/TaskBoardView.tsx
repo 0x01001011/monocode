@@ -140,7 +140,10 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
         ) : null}
         <div className="min-w-0 flex-1">
           <h2 className="m-0 text-[14px] leading-[1.3] font-semibold text-content">
-            <span role={card.kind === "needs-you" ? "alert" : undefined}>{card.headline || plan.title}</span>
+            {/* Remounted per kind, so an alert that replaces a status is announced. */}
+            <span key={card.kind} role={card.kind === "needs-you" ? "alert" : undefined}>
+              {card.headline || plan.title}
+            </span>
             {card.reassurance ? (
               <>
                 {" · "}

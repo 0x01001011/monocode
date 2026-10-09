@@ -366,6 +366,17 @@ describe("TaskBoardView", () => {
     expect(onAction).toHaveBeenCalledWith("stop-after-task", runningCard);
   });
 
+  it("remounts the headline when the card turns into an alert, so it is announced", () => {
+    hook.board = board();
+    render();
+    const before = container.querySelector("h2 span");
+    hook.board = board({ statusCard: { kind: "needs-you", sessionId: "s1", headline: "Task 3 is blocked", actions: [] } });
+    render();
+    const after = container.querySelector('h2 [role="alert"]');
+    expect(after?.textContent).toBe("Task 3 is blocked");
+    expect(after).not.toBe(before);
+  });
+
   it("says so when there is no plan to show", () => {
     hook.board = board({ plan: undefined, sections: [], statusCard: { kind: "idle", headline: "", actions: [] } });
     render();
