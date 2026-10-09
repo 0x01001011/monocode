@@ -98,26 +98,66 @@ const CARDS: Record<string, StatusCard> = {
   },
 };
 
+// A plan whose every task is done and whose last review passed: the finished state.
+const finishedPlan: BoardSection = {
+  ...plan,
+  done: 6,
+  nodes: [1, 2, 3, 4, 5, 6].map((n) => task(n, n === 2 ? { summary: "Review found 3 issues. Fixed in 1 round, then passed.", fixRounds: 1 } : {})),
+  finalReview: { id: "final-review", title: "Last review of the whole branch", status: "done" },
+};
+
+const SPEC: FlowPhase = { id: "spec", label: "Spec", status: "done", path: "docs/superpowers/specs/alpha-design.md" };
+const PLAN: FlowPhase = { id: "plan", label: "Plan", status: "done", detail: "6 tasks", path: "docs/superpowers/plans/alpha.md" };
+
 const FLOW: FlowPhase[] = [
-  { id: "spec", label: "Spec", status: "done", path: "docs/superpowers/specs/alpha-design.md" },
-  { id: "plan", label: "Plan", status: "done", detail: "6 tasks", path: "docs/superpowers/plans/alpha.md" },
+  SPEC,
+  PLAN,
   { id: "build", label: "Build", status: "running", detail: "3 of 6, 2 subagents working" },
   { id: "check", label: "Check", status: "pending" },
 ];
 
 // The struggling state: Build is on a high fix round and the last test run failed.
-const FAILED_CHECK_FLOW: FlowPhase[] = FLOW.map((phase) =>
-  phase.id === "build"
-    ? { ...phase, status: "attention", detail: "3 of 6" }
-    : phase.id === "check"
-      ? { ...phase, status: "failed", detail: "tests failed 2m ago" }
-      : phase,
-);
+const FAILED_CHECK_FLOW: FlowPhase[] = [
+  SPEC,
+  PLAN,
+  { id: "build", label: "Build", status: "attention", detail: "3 of 6" },
+  { id: "check", label: "Check", status: "failed", detail: "tests failed 2m ago" },
+];
 
-function board(card: StatusCard, flow: FlowPhase[] = FLOW): TaskBoard {
+// A task is blocked: Build shows the blocked glyph and nothing has been checked yet.
+const BLOCKED_FLOW: FlowPhase[] = [
+  SPEC,
+  PLAN,
+  { id: "build", label: "Build", status: "blocked", detail: "3 of 6" },
+  { id: "check", label: "Check", status: "pending" },
+];
+
+// Everything is done: the review passed and the tests passed.
+const FINISHED_FLOW: FlowPhase[] = [
+  SPEC,
+  PLAN,
+  { id: "build", label: "Build", status: "done", detail: "6 of 6" },
+  { id: "check", label: "Check", status: "done", detail: "tests passed 4m ago, final review done" },
+];
+
+type View = { card: StatusCard; flow: FlowPhase[]; plan: BoardSection };
+
+/** Every state the spec may ask for. An unknown name throws: a typo must not measure the wrong panel. */
+const SCENES: Record<string, View> = {
+  "needs-you": { card: CARDS["needs-you"], flow: FLOW, plan },
+  struggling: { card: CARDS.struggling, flow: FLOW, plan },
+  quiet: { card: CARDS.quiet, flow: FLOW, plan },
+  running: { card: CARDS.running, flow: FLOW, plan },
+  done: { card: CARDS.done, flow: FLOW, plan },
+  "failed check": { card: CARDS.struggling, flow: FAILED_CHECK_FLOW, plan },
+  "blocked build": { card: CARDS["needs-you"], flow: BLOCKED_FLOW, plan },
+  finished: { card: CARDS.done, flow: FINISHED_FLOW, plan: finishedPlan },
+};
+
+function board({ card, flow, plan: section }: View): TaskBoard {
   return {
-    sections: [plan],
-    plan,
+    sections: [section],
+    plan: section,
     flow,
     statusCard: card,
     workspaces: [],
@@ -137,16 +177,10 @@ declare global {
 }
 
 window.showTasks = (state) => {
-  const failedCheck = state === "failed check";
-  const card = failedCheck ? CARDS.struggling : CARDS[state];
+  const scene = SCENES[state];
+  if (!scene) throw new Error(`Unknown tasks panel state "${state}"; known: ${Object.keys(SCENES).join(", ")}`);
   root.render(
-    <TasksPanel
-      board={board(card, failedCheck ? FAILED_CHECK_FLOW : FLOW)}
-      now={NOW}
-      onAction={() => {}}
-      onOpenAsTab={() => {}}
-      onOpenFile={() => {}}
-    />,
+    <TasksPanel board={board(scene)} now={NOW} onAction={() => {}} onOpenAsTab={() => {}} onOpenFile={() => {}} />,
   );
 };
 
