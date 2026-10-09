@@ -29,7 +29,9 @@ afterEach(() => {
 });
 
 function setup() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "monocode-wscmd-")));
+  // Native: the code under test resolves paths natively, which expands the
+  // 8.3 short names (RUNNER~1) that the JS implementation leaves alone.
+  const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "monocode-wscmd-")));
   cleanups.push(dir);
   cpSync(fixture, dir, { recursive: true });
   const project = join(dir, "project");

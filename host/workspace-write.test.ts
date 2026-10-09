@@ -38,7 +38,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 const workspace = () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "monocode-write-")));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), "monocode-write-")));
   roots.push(root);
   return root;
 };
@@ -67,17 +67,22 @@ it("replaces the file atomically, keeping its mode and leaving no temp files", a
   expect(readFileSync(file, "utf8")).toBe("new\n");
   // A new inode means the content was swapped in by rename, not truncated in place.
   expect(statSync(file).ino).not.toBe(inode);
-  expect(statSync(file).mode & 0o777).toBe(0o755);
+  // Windows has no POSIX mode bits to preserve.
+  if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o755);
   expect(readdirSync(root)).toEqual(["run.sh"]);
 });
 
-it("writes through a symlink to its target without replacing the link", async () => {
-  const { writeHostFile } = await import("./workspace");
-  const root = workspace();
-  mkdirSync(join(root, "real"));
-  writeFileSync(join(root, "real", "config.json"), "{}\n");
-  symlinkSync(join(root, "real", "config.json"), join(root, "link.json"));
-  await writeHostFile(root, "link.json", "{}\n", '{"a":1}\n');
-  expect(lstatSync(join(root, "link.json")).isSymbolicLink()).toBe(true);
-  expect(readFileSync(join(root, "real", "config.json"), "utf8")).toBe('{"a":1}\n');
-});
+// File symlinks need elevated rights on Windows.
+it.skipIf(process.platform === "win32")(
+  "writes through a symlink to its target without replacing the link",
+  async () => {
+    const { writeHostFile } = await import("./workspace");
+    const root = workspace();
+    mkdirSync(join(root, "real"));
+    writeFileSync(join(root, "real", "config.json"), "{}\n");
+    symlinkSync(join(root, "real", "config.json"), join(root, "link.json"));
+    await writeHostFile(root, "link.json", "{}\n", '{"a":1}\n');
+    expect(lstatSync(join(root, "link.json")).isSymbolicLink()).toBe(true);
+    expect(readFileSync(join(root, "real", "config.json"), "utf8")).toBe('{"a":1}\n');
+  },
+);

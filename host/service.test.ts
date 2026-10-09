@@ -162,7 +162,7 @@ describe("host start failures", () => {
 
   it("points other platforms at host.log, which their service writes", () => {
     expect(hostStartFailure("darwin", "/Users/u/.monocode-host")).toContain(
-      "/Users/u/.monocode-host/host.log",
+      join("/Users/u/.monocode-host", "host.log"),
     );
   });
 });
