@@ -7,7 +7,7 @@ import { freezeTransitions, measure, THEMES, type Counts } from "./contrast";
 // derivation produce what is measured. Every theme x palette x status-card scene is
 // measured with every row opened.
 
-const SCENES = ["natural", "running", "needs-you", "quiet"] as const;
+const SCENES = ["natural", "running", "needs-you", "quiet", "trouble"] as const;
 const WIDTHS = [600, 900, 1400];
 const TOGGLE = 'button[aria-label^="Show details for"]';
 const TABLE = 'table[aria-label="Plan tasks"]';
@@ -77,6 +77,26 @@ test.describe("task board content", () => {
     await expect(page.getByRole("button", { name: "Open plan" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Plan" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 3 }).first()).toContainText("Decisions made for you");
+  });
+
+  test("the overview counts every task in the plan file, plan-only ones included, and its steps", async ({ page }) => {
+    await show(page, "dark", "default", "natural");
+    // Nine tasks in the plan file (the ledger knows eight): the ninth has not started. 31 steps, 26 ticked (tasks 1 to 7 are done, task 8 has two ticked).
+    await expect(page.locator("[data-counts]")).toHaveText(/^7 of 9 tasks · \d+ left · 26 of 31 steps$/);
+    await expect(page.locator(`${TABLE} tbody tr[data-node]`)).toHaveCount(10);
+    await expect(page.locator("[data-strip] > span")).toHaveCount(10);
+    await expect(page.locator("[data-strip]")).toHaveAttribute("aria-label", /\d+ done/);
+  });
+
+  test("a task in trouble is listed in the header and its button opens the row and focuses it", async ({ page }) => {
+    await show(page, "dark", "default", "trouble");
+    const pill = page.locator("[data-problems] button");
+    await expect(pill).toHaveText(/Task 8 · fix 3 of 5/);
+    await expect(pill).toHaveAttribute("type", "button");
+    await pill.click();
+    const toggle = page.locator('button[aria-label="Show details for Task 8"]');
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toBeFocused();
   });
 
   test("the needs-you scene derives an alert headline from a busy session with a question", async ({ page }) => {

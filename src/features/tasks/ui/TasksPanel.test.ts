@@ -8,6 +8,19 @@ import type { StatusCard } from "../model/statusCard";
 import type { BoardNode, BoardSection } from "../model/taskBoard";
 import { TasksPanel } from "./TasksPanel";
 
+// Records what the panel asks the tree to reveal, then renders the real tree.
+const seen = vi.hoisted(() => ({ reveals: [] as unknown[] }));
+vi.mock("./TaskTree", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./TaskTree")>();
+  return {
+    ...actual,
+    TaskTree: (props: Parameters<typeof actual.TaskTree>[0]) => {
+      seen.reveals.push((props as { reveal?: unknown }).reveal);
+      return actual.TaskTree(props);
+    },
+  };
+});
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -190,14 +203,27 @@ describe("TasksPanel", () => {
   });
 
   it("ETA appears only after three tasks are done", () => {
+    const time = () => container.querySelector("[data-time]")?.textContent;
     render({ board: board({ plan: plan({ done: 2 }) }) });
-    expect(text()).toContain("2 of 5 done");
-    expect(text()).not.toContain("left");
+    expect(time()).toBe("50m so far");
     render({ board: board({ plan: plan({ done: 3 }) }) });
     // Three tasks took 10m each and two remain.
-    expect(text()).toContain("3 of 5 done · 50m so far · about 20m left");
+    expect(time()).toBe("50m so far · about 20m left");
     render({ board: board({ plan: plan({ done: 5 }) }) });
-    expect(text()).not.toContain("left");
+    expect(time()).toBe("took 30m");
+  });
+
+  it("replaces the progress line with the overview: counts, strip and no old wording", () => {
+    render({ board: board({ plan: plan() }) });
+    expect(container.querySelector("[data-counts]")?.textContent).toBe("3 of 5 tasks · 3 left");
+    expect(container.querySelector("[data-strip]")?.getAttribute("aria-label")).toBe("3 done, 1 running, 2 not started");
+    expect(text()).not.toContain("done ·");
+    expect(text()).not.toMatch(/\d of \d done/);
+  });
+
+  it("shows the step totals when the plan file was read", () => {
+    render({ board: board({ plan: plan({ steps: { done: 7, total: 19 } }) }) });
+    expect(container.querySelector("[data-counts]")?.textContent).toBe("3 of 5 tasks · 3 left · 7 of 19 steps");
   });
 
   it("renders the plan tree and the last-review line while it is pending", () => {
@@ -371,14 +397,14 @@ const FLOW: FlowPhase[] = [
 describe("TasksPanel flow strip", () => {
   const strip = () => container.querySelector("ol[aria-label='Superpowers flow']");
 
-  it("sits under the progress line and above the legend and the tree", () => {
+  it("sits under the overview and above the legend and the tree", () => {
     render({ board: board({ plan: plan(), flow: FLOW }) });
     const list = strip();
     expect(list).not.toBeNull();
     click(button("What the symbols mean"));
     const legend = container.querySelector("ul[aria-label='Symbol legend']");
     const tree = container.querySelector("[role=tree]");
-    const progress = Array.from(container.querySelectorAll("div")).find((d) => d.textContent?.startsWith("3 of 5") && d.children.length === 0);
+    const progress = container.querySelector("[data-counts]");
     expect(progress).toBeDefined();
     const before = (a: Element | null | undefined, b: Element | null) =>
       Boolean(a && b && a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -418,5 +444,48 @@ describe("TasksPanel flow strip", () => {
     expect(build?.querySelector("[role=img]")?.getAttribute("aria-label")).toBe("done");
     expect(build?.textContent).toContain("5 of 5");
     expect(strip()?.querySelector("[aria-current=step]")?.textContent).toContain("Check");
+  });
+});
+
+describe("TasksPanel problems", () => {
+  const stuck = () =>
+    plan({
+      nodes: [
+        task(1),
+        task(2, { status: "blocked", endedAt: undefined, summary: "Waiting for the API key." }),
+        task(3, { status: "attention", fixRounds: 4, endedAt: undefined, summary: "The reviewer has sent it back 4 times." }),
+        task(4, { status: "pending", startedAt: undefined, endedAt: undefined }),
+      ],
+      done: 1,
+      total: 4,
+    });
+  const pills = () => Array.from(container.querySelectorAll("[data-problems] button"));
+
+  it("lists the tasks in trouble under the strip", () => {
+    render({ board: board({ plan: stuck() }) });
+    expect(pills().map((b) => (b.lastElementChild ?? b).textContent)).toEqual(["Task 2 · blocked", "Task 3 · fix 4 of 5"]);
+    const strip = container.querySelector("[data-strip]")!;
+    expect(strip.compareDocumentPosition(container.querySelector("[data-problems]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("opens that task and asks the tree to reveal it, again on every press", () => {
+    seen.reveals.length = 0;
+    render({ board: board({ plan: stuck() }) });
+    expect(seen.reveals.every((r) => r === undefined)).toBe(true);
+    const tree = () => Array.from(container.querySelectorAll("[role=treeitem]"));
+    const blocked = () => tree().find((t) => t.textContent?.includes("Step 2 title"));
+    expect(blocked()?.getAttribute("aria-expanded")).toBe("false");
+    click(pills()[0]);
+    expect(blocked()?.getAttribute("aria-expanded")).toBe("true");
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-2", token: 1 });
+    click(pills()[1]);
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-3", token: 2 });
+    click(pills()[1]);
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-3", token: 3 });
+  });
+
+  it("has no problems row for a healthy plan", () => {
+    render({ board: board({ plan: plan() }) });
+    expect(container.querySelector("[data-problems]")).toBeNull();
   });
 });

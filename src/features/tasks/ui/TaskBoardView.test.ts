@@ -226,8 +226,10 @@ describe("TaskBoardView", () => {
     const headline = container.querySelector("h2");
     expect(headline?.textContent).toContain("A reviewer is checking Task 3");
     expect(headline?.textContent).toContain("Nothing needs you");
-    expect(text()).toContain("Alpha plan · 2 of 4 done");
-    expect(text()).toContain("so far");
+    expect(container.querySelector("header")?.textContent).toContain("Alpha plan");
+    expect(container.querySelector("[data-counts]")?.textContent).toBe("2 of 4 tasks · 3 left");
+    expect(container.querySelector("[data-time]")?.textContent).toContain("so far");
+    expect(text()).not.toMatch(/\d of \d done/);
   });
 
   it("header drops the reassurance when something needs you", () => {
@@ -468,6 +470,51 @@ describe("TaskBoardView", () => {
       expect(document.activeElement?.getAttribute("aria-label")).toBe("Show details for Task 3");
     });
 
+    describe("problems in the overview", () => {
+      const trouble = () => {
+        const bad = nodes.map((n) =>
+          n.index === 3 ? { ...n, status: "attention" as const, fixRounds: 4 } : n.index === 4 ? { ...n, status: "blocked" as const } : n,
+        );
+        return plan({ nodes: bad });
+      };
+      const pill = (text: string) =>
+        Array.from(container.querySelectorAll("[data-problems] button")).find((b) => (b.lastElementChild ?? b).textContent === text);
+
+      it("shows them in the header, above the table", () => {
+        hook.board = board({ plan: trouble() });
+        render();
+        expect(container.querySelector("header [data-problems]")).not.toBeNull();
+        expect(pill("Task 3 · fix 4 of 5")).toBeDefined();
+        expect(pill("Task 4 · blocked")).toBeDefined();
+      });
+
+      it("a problem button opens that row's detail, scrolls to it and focuses its toggle", () => {
+        hook.board = board({ plan: trouble() });
+        render();
+        expect(container.querySelector("tr[data-detail=task-3]")).toBeNull();
+        click(pill("Task 3 · fix 4 of 5"));
+        expect(container.querySelector("tr[data-detail=task-3]")).not.toBeNull();
+        expect(scrolled.map((x) => x.id)).toEqual(["task-3"]);
+        expect(document.activeElement?.getAttribute("aria-label")).toBe("Show details for Task 3");
+      });
+
+      it("pressing the same problem again reveals it again", () => {
+        hook.board = board({ plan: trouble() });
+        render();
+        click(pill("Task 3 · fix 4 of 5"));
+        click(pill("Task 3 · fix 4 of 5"));
+        expect(scrolled.map((x) => x.id)).toEqual(["task-3", "task-3"]);
+      });
+
+      it("a task without detail is still scrolled to", () => {
+        const bare = plan({ nodes: [task(1, { status: "failed", endedAt: undefined })], total: 1, done: 0 });
+        hook.board = board({ plan: bare, sections: [bare] });
+        render();
+        click(pill("Task 1 · failed"));
+        expect(scrolled.map((x) => x.id)).toEqual(["task-1"]);
+      });
+    });
+
     it("two boards on screen (a split) never share a heading id", () => {
       hook.board = board();
       act(() =>
@@ -513,14 +560,14 @@ describe("TaskBoardView flow strip", () => {
   ];
   const strip = () => container.querySelector("ol[aria-label='Superpowers flow']");
 
-  it("sits in the header under the plan title and progress line", () => {
+  it("sits in the header under the plan title and the overview", () => {
     hook.board = board({ flow: FLOW });
     render();
     const list = strip();
     expect(list).not.toBeNull();
     expect(container.querySelector("header")?.contains(list)).toBe(true);
-    const progress = Array.from(container.querySelectorAll("header span")).find((s) => s.textContent?.startsWith("Alpha plan · "));
-    expect(progress).toBeDefined();
+    const progress = container.querySelector("header [data-counts]");
+    expect(progress).not.toBeNull();
     expect(progress!.compareDocumentPosition(list!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(container.querySelector("table")!.compareDocumentPosition(list!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });

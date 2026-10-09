@@ -106,6 +106,9 @@ export function measure(page: Page, scope?: string): Promise<Measured> {
       const text = (el.textContent ?? "").trim();
       if (text) check("glyph mark", `${label} ${text}`, ratio(over(mark, base), base), 4.5);
       for (const child of Array.from(el.children)) {
+        // An unfilled track (a segment not started yet) is the absence of a status, not a mark:
+        // the counts line and the tree say the same in words, so it carries no 3:1 requirement.
+        if (child.hasAttribute("data-track")) continue;
         const ccs = getComputedStyle(child);
         if (child instanceof SVGElement) {
           check("glyph svg", label, ratio(over(rgba(ccs.color), base), base), 3);

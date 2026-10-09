@@ -149,7 +149,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
       { label: "Check", glyph: "not started", detail: "tests passed 5m ago", current: false, button: false },
     ]);
     expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
-    expect(container.textContent).toContain("4 of 8 done");
+    expect(container.textContent).toContain("4 of 8 tasks · 5 left");
     // The unrelated reviewer shows under the other agents; the plan's implementer does not.
     expect(container.textContent).toContain("Other agents here");
     expect(container.textContent).toContain("Correctness review");
@@ -281,8 +281,8 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
       // The tab shows exactly the strip the sidebar panel does, from the same inputs.
       expect(strip(view)).toEqual(panel);
       expect(view.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
-      expect(panelProgress).toContain("4 of 8 done");
-      expect(view.textContent).toContain("4 of 8 done");
+      expect(panelProgress).toContain("4 of 8 tasks · 5 left");
+      expect(view.textContent).toContain("4 of 8 tasks · 5 left");
       // The view resolves a ledger path against the plan root before it opens.
       click(stripButton("Spec", view));
       click(stripButton("Plan", view));

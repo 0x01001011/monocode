@@ -3,11 +3,11 @@ import { Check } from "../../../shared/ui/icons";
 import type { Session } from "../../sessions/model/session";
 import { useTaskBoard } from "../hooks/useTaskBoard";
 import { planFilePath } from "../model/planRoot";
-import { progressLine } from "../model/progress";
 import type { SddFs } from "../model/sddWorkspace";
 import type { StatusAction, StatusCard, StatusKind, StatusSessionInput } from "../model/statusCard";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
 import { FlowStrip } from "./FlowStrip";
+import { PlanOverview } from "./PlanOverview";
 import { actionLabel } from "./StatusCard";
 import { TaskBoardNotes } from "./TaskBoardNotes";
 import { TaskRow } from "./TaskBoardRows";
@@ -164,7 +164,7 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
               </>
             ) : null}
           </h2>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted tabular-nums">
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11.5px] text-muted">
             {board.workspaces.length > 1 ? (
               <select
                 aria-label="Plan"
@@ -178,14 +178,20 @@ export function TaskBoardView({ projectCwd, planCwd = projectCwd, session, sessi
                   </option>
                 ))}
               </select>
-            ) : null}
-            <span>
-              {board.workspaces.length > 1 ? "" : `${plan.title} · `}
-              {progressLine(plan, now)}
-            </span>
+            ) : (
+              <span>{plan.title}</span>
+            )}
+          </div>
+          <div className="mt-2">
+            <PlanOverview
+              section={plan}
+              now={now}
+              compact
+              onReveal={(id) => setReveal((prev) => ({ id, token: (prev?.token ?? 0) + 1 }))}
+            />
           </div>
           {board.flow.length > 0 ? (
-            <div className="mt-1 -ml-1">
+            <div className="mt-2 -ml-1">
               <FlowStrip phases={board.flow} {...(onOpenPlan ? { onOpenPath: openPlanFile } : {})} />
             </div>
           ) : null}

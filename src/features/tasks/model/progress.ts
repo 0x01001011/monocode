@@ -12,13 +12,18 @@ function finishedAt(plan: BoardSection): number | undefined {
   return ends.length ? Math.max(...ends) : undefined;
 }
 
-/** "5 of 8 done · 1h 01m so far · about 35m left"; the ETA needs three finished tasks. */
-export function progressLine(plan: BoardSection, now: number): string {
-  const parts = [`${plan.done} of ${plan.total} done`];
+/**
+ * "1h 01m so far · about 35m left" while it runs, "took 1h 52m" when it is done. The counts
+ * ("5 of 8 tasks") are the overview's job. The ETA needs three finished tasks. Undefined when the
+ * start time is unknown, so no line is shown rather than an invented one.
+ */
+export function timeLine(plan: BoardSection, now: number): string | undefined {
+  const parts: string[] = [];
   const finished = plan.total > 0 && plan.done >= plan.total;
   const end = finished ? finishedAt(plan) : now;
   if (plan.startedAt !== undefined && end !== undefined) {
-    parts.push(`${formatDuration(end - plan.startedAt, !finished)}${finished ? "" : " so far"}`);
+    const span = formatDuration(end - plan.startedAt, !finished);
+    parts.push(finished ? `took ${span}` : `${span} so far`);
   }
   if (plan.done >= ETA_FROM_DONE && !finished) {
     const spans = plan.nodes
@@ -29,5 +34,5 @@ export function progressLine(plan: BoardSection, now: number): string {
       parts.push(`about ${formatDuration(mean * (plan.total - plan.done), false)} left`);
     }
   }
-  return parts.join(" · ");
+  return parts.length ? parts.join(" · ") : undefined;
 }

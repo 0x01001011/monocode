@@ -20,6 +20,42 @@ const SKILLS_DIR = `${SDD_ROOT}/skills-index`;
 const CONTROLLER_DIR = `${SDD_ROOT}/controller-formats`;
 const LOADED_AT = Date.now();
 
+// The ledger's `plan:` line names this file; it resolves against the plan root (`PLAN_CWD`).
+const PLAN_FILE = `${PLAN_CWD}/docs/superpowers/plans/2026-10-07-skills-index-remote-ranking.md`;
+
+/** A plan file with 9 tasks and 31 steps: eight the ledger knows and a ninth it has not reached. */
+function planFileText(): string {
+  const stepsPerTask = [4, 3, 5, 3, 4, 3, 2, 4, 3];
+  const titles = [
+    "Revision counter",
+    "Skills watcher",
+    "Usage store",
+    "Record usage on send",
+    "Host scanner",
+    "Remote picker",
+    "End-to-end check",
+    "Ship the branch",
+    "Write the changelog entry",
+  ];
+  const stepText = ["Write the failing test", "Make it pass", "Run the module's tests", "Run the type check", "Commit the change"];
+  // The running task (8) has its first two steps ticked; every task before it is done.
+  const ticked = (task: number, step: number) => task < 8 || (task === 8 && step < 2);
+  const lines = ["# Skills index remote ranking", ""];
+  stepsPerTask.forEach((count, i) => {
+    const task = i + 1;
+    lines.push(`### Task ${task}: ${titles[i]}`, "");
+    for (let step = 0; step < count; step++) lines.push(`- [${ticked(task, step) ? "x" : " "}] **Step ${step + 1}:** ${stepText[step % stepText.length]}`);
+    lines.push("");
+  });
+  return lines.join("\n");
+}
+
+/** Extra ledger lines per scene, so the real parser derives a task in trouble. */
+const LEDGER_EXTRA: Record<string, string> = {
+  trouble: "\nTask 8: fix round 3/5 dispatched; FIX_BASE=0487660\n",
+};
+let ledger = skillsLedger;
+
 const skillsFiles: Record<string, string> = { "progress.md": skillsLedger };
 for (const [path, text] of Object.entries(briefFiles)) skillsFiles[path.split("/").pop()!] = text;
 
@@ -52,7 +88,15 @@ const fs: SddFs = {
     const at = path.lastIndexOf("/");
     const dir = path.slice(0, at);
     const name = path.slice(at + 1);
-    const text = dir === SKILLS_DIR ? skillsFiles[name] : dir === CONTROLLER_DIR && name === "progress.md" ? controllerLedger : undefined;
+    if (path === PLAN_FILE) return planFileText();
+    const text =
+      dir === SKILLS_DIR
+        ? name === "progress.md"
+          ? ledger
+          : skillsFiles[name]
+        : dir === CONTROLLER_DIR && name === "progress.md"
+          ? controllerLedger
+          : undefined;
     if (text === undefined) throw new Error(`ENOENT ${path}`);
     return text;
   },
@@ -81,6 +125,8 @@ const SCENES: Record<string, StatusSessionInput[]> = {
     owner({ busy: true, needsInput: true, question: "Keep password login as a fallback?", askedAt: LOADED_AT - 3 * MIN, lastActivityAt: LOADED_AT - 3 * MIN }),
   ],
   quiet: [owner({ busy: true, lastActivityAt: LOADED_AT - 12 * MIN })],
+  // Task 8 is on fix round 3 of 5: the overview lists it under "Needs a look".
+  trouble: [owner({ busy: true, lastActivityAt: LOADED_AT })],
 };
 
 const root = createRoot(document.getElementById("root")!);
@@ -95,6 +141,7 @@ declare global {
 window.showBoard = (scene = "natural") => {
   const sessions = SCENES[scene];
   if (!sessions) throw new Error(`Unknown task board scene "${scene}"; known: ${Object.keys(SCENES).join(", ")}`);
+  ledger = skillsLedger + (LEDGER_EXTRA[scene] ?? "");
   root.render(<TaskBoardView key={scene} projectCwd={PLAN_CWD} sessions={sessions} fs={fs} quietAfterMs={5 * MIN} onOpenPlan={() => {}} onOpenNode={() => {}} onChangeDecision={() => {}} />);
 };
 

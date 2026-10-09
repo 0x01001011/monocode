@@ -27,8 +27,10 @@ const plan: BoardSection = {
   id: "sdd:alpha",
   title: "Alpha plan",
   done: 3,
-  total: 6,
+  total: 7,
   startedAt: T0,
+  // Read from the plan file: 31 steps, 14 ticked.
+  steps: { done: 14, total: 31 },
   nodes: [
     task(1),
     task(2, { summary: "Review found 3 issues. Fixed in 1 round, then passed.", fixRounds: 1 }),
@@ -102,6 +104,8 @@ const CARDS: Record<string, StatusCard> = {
 const finishedPlan: BoardSection = {
   ...plan,
   done: 6,
+  total: 6,
+  steps: { done: 31, total: 31 },
   nodes: [1, 2, 3, 4, 5, 6].map((n) => task(n, n === 2 ? { summary: "Review found 3 issues. Fixed in 1 round, then passed.", fixRounds: 1 } : {})),
   finalReview: { id: "final-review", title: "Last review of the whole branch", status: "done" },
 };
@@ -140,6 +144,26 @@ const FINISHED_FLOW: FlowPhase[] = [
   { id: "check", label: "Check", status: "done", detail: "tests passed 4m ago, final review done" },
 ];
 
+// Five tasks in trouble: the overview shows three and folds the rest into "+2 more".
+const manyProblems: BoardSection = {
+  ...plan,
+  done: 2,
+  steps: { done: 6, total: 24 },
+  nodes: [
+    task(1),
+    task(2),
+    task(3, { status: "failed", endedAt: undefined }),
+    task(4, { status: "blocked", endedAt: undefined }),
+    task(5, { status: "attention", fixRounds: 4, endedAt: undefined, summary: "The reviewer has sent it back 4 times." }),
+    task(6, { status: "blocked", endedAt: undefined }),
+    task(7, { status: "attention", fixRounds: 3, endedAt: undefined }),
+  ],
+};
+
+// A plan whose file was not read: no step counts anywhere.
+const noSteps: BoardSection = { ...plan };
+delete noSteps.steps;
+
 type View = { card: StatusCard; flow: FlowPhase[]; plan: BoardSection };
 
 /** Every state the spec may ask for. An unknown name throws: a typo must not measure the wrong panel. */
@@ -152,6 +176,8 @@ const SCENES: Record<string, View> = {
   "failed check": { card: CARDS.struggling, flow: FAILED_CHECK_FLOW, plan },
   "blocked build": { card: CARDS["needs-you"], flow: BLOCKED_FLOW, plan },
   finished: { card: CARDS.done, flow: FINISHED_FLOW, plan: finishedPlan },
+  "many problems": { card: CARDS.struggling, flow: FAILED_CHECK_FLOW, plan: manyProblems },
+  "no steps": { card: CARDS.running, flow: FLOW, plan: noSteps },
 };
 
 function board({ card, flow, plan: section }: View): TaskBoard {

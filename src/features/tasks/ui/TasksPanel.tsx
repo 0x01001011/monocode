@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import type { TaskBoard } from "../hooks/useTaskBoard";
-import { progressLine } from "../model/progress";
 import type { StatusAction, StatusCard as StatusCardData } from "../model/statusCard";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
 import { FlowStrip } from "./FlowStrip";
+import { PlanOverview } from "./PlanOverview";
 import { StatusCard } from "./StatusCard";
 import { TaskGlyph, type GlyphKind } from "./TaskGlyph";
 import { TaskTree } from "./TaskTree";
@@ -105,6 +105,8 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab, onOpenFile }: Pi
   const [legend, setLegend] = useState(false);
   const [decisionsOpen, setDecisionsOpen] = useState<boolean>();
   const [minorsOpen, setMinorsOpen] = useState(false);
+  // A problem button asks the tree to open that task and focus its row; a new token is a new ask.
+  const [reveal, setReveal] = useState<{ id: string; token: number }>();
   // The running task opens by itself (and the next one when it starts); a user toggle wins.
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const finished = plan.total > 0 && plan.done >= plan.total;
@@ -115,6 +117,11 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab, onOpenFile }: Pi
   const expandedIds = new Set([...toggled].filter(([, open]) => open).map(([id]) => id));
   if (runningId !== undefined && isExpanded(runningId)) expandedIds.add(runningId);
   const onToggle = (id: string) => setToggled((prev) => new Map(prev).set(id, !isExpanded(id)));
+  // Opens the task the user asked about, so the reason is on screen when focus lands on its row.
+  const onReveal = (id: string) => {
+    setToggled((prev) => new Map(prev).set(id, true));
+    setReveal((prev) => ({ id, token: (prev?.token ?? 0) + 1 }));
+  };
   const smallIssues = [
     ...(plan.minors ?? []),
     ...(plan.parked ?? []).map((n) => ({ ...n, parked: true })),
@@ -147,7 +154,9 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab, onOpenFile }: Pi
           Open as tab
         </button>
       </div>
-      <div className="px-3 pb-1.5 text-[11.5px] text-muted tabular-nums">{progressLine(plan, now)}</div>
+      <div className="px-3 pt-1.5 pb-2.5">
+        <PlanOverview section={plan} now={now} onReveal={onReveal} />
+      </div>
       {board.flow.length > 0 ? (
         <div className="px-2 pb-1.5">
           <FlowStrip phases={board.flow} {...(onOpenFile ? { onOpenPath: onOpenFile } : {})} />
@@ -161,6 +170,7 @@ function PlanBlock({ board, plan, now, onOpenNode, onOpenAsTab, onOpenFile }: Pi
         onOpen={(node) => onOpenNode?.(node, plan)}
         expandedIds={expandedIds}
         onToggle={onToggle}
+        {...(reveal ? { reveal } : {})}
       />
       {final?.status === "pending" ? (
         <div className="pt-1.5 pl-8 text-[11.5px] text-muted">Then one last review of the whole branch.</div>
