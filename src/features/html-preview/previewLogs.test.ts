@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearPreviewLogs,
   getPreviewLogs,
+  hasPreviewLoaded,
+  markPreviewLoaded,
   previewLogKey,
   recordPreviewLog,
   subscribePreviewLogs,
@@ -70,4 +72,11 @@ it("keys a preview by what it shows", () => {
   expect(previewLogKey({ kind: "file", path: "/repo/site/index.html" })).toBe(
     "file:/repo/site/index.html",
   );
+});
+
+it("remembers that a preview has loaded, even after its console is cleared", () => {
+  expect(hasPreviewLoaded("artifact:never")).toBe(false);
+  markPreviewLoaded("artifact:seen");
+  clearPreviewLogs("artifact:seen");
+  expect(hasPreviewLoaded("artifact:seen")).toBe(true);
 });

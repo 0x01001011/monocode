@@ -39,6 +39,11 @@ import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import type { Worktree, Worktrees } from "../../source-control/model/worktrees";
 import { pathKey, projectName } from "../../../shared/lib/paths";
 import { htmlTitle, htmlWarnings } from "../../html-preview/htmlPreview";
+import {
+  getPreviewLogs,
+  hasPreviewLoaded,
+  previewLogKey,
+} from "../../html-preview/previewLogs";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage, type SessionReadOptions } from "./sessionConversation";
@@ -206,6 +211,7 @@ const FIELDS = new Map<string, readonly string[]>([
   ["notes.write", ["id", "title", "body", "tags"]],
   ["artifacts.list", ["kind", "limit", "offset"]],
   ["artifacts.read", ["id"]],
+  ["artifacts.logs", ["id", "limit"]],
   ["artifacts.write", ["id", "kind", "title", "body", "summary"]],
   ["soul.read", []],
   ["soul.update", ["text", "expectedHash"]],
@@ -875,6 +881,32 @@ async function handleArtifacts(
     const artifact = await host.artifact(requiredString(input.id, "id", 256));
     if (!artifact) throw new Error("Artifact was not found");
     return artifact;
+  }
+  if (action === "artifacts.logs") {
+    const id = requiredString(input.id, "id", 256);
+    const artifact = await host.artifact(id);
+    if (!artifact) throw new Error("Artifact was not found");
+    if (artifact.kind !== "html")
+      throw new Error("Only html artifacts have a page console");
+    const limit = input.limit ?? 50;
+    if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > 200)
+      throw new Error("limit must be an integer from 1 to 200");
+    const key = previewLogKey({ kind: "artifact", id });
+    const all = getPreviewLogs(key);
+    const loaded = hasPreviewLoaded(key);
+    return {
+      id,
+      loaded,
+      total: all.length,
+      entries: all
+        .slice(-(limit as number))
+        .map(({ level, text, at }) => ({ level, text, at })),
+      ...(loaded
+        ? {}
+        : {
+            note: "The page's console is recorded while it is shown in MonoCode. Ask the person to open the page, then read the logs again.",
+          }),
+    };
   }
   if (!host.saveArtifact || !host.postArtifact)
     throw new Error("Artifacts are unavailable");

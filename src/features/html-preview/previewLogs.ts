@@ -17,6 +17,13 @@ const NO_LOGS: PreviewLog[] = [];
 // the app runs, and only for pages that were actually shown.
 const logs = new Map<string, PreviewLog[]>();
 const listeners = new Map<string, Set<() => void>>();
+// Previews that have loaded at least once; unlike the console, this survives a clear.
+const loaded = new Set<string>();
+
+export const markPreviewLoaded = (key: string): void => {
+  loaded.add(key);
+};
+export const hasPreviewLoaded = (key: string): boolean => loaded.has(key);
 
 const notify = (key: string) => listeners.get(key)?.forEach((listener) => listener());
 

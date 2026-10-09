@@ -6,6 +6,7 @@ import { parentPath } from "../../../shared/lib/paths";
 import { newFrameName, parseFrameMessage } from "../frameChannel";
 import {
   clearPreviewLogs,
+  markPreviewLoaded,
   previewLogKey,
   recordPreviewLog,
 } from "../previewLogs";
@@ -117,6 +118,7 @@ export function HtmlFrame({
       }
       if (message?.type === "ready") {
         // A new document loaded in the frame; its console starts empty.
+        markPreviewLoaded(logKey);
         clearPreviewLogs(logKey);
         return;
       }
