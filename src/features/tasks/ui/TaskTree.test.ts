@@ -1,0 +1,220 @@
+// @vitest-environment happy-dom
+import { act, createElement, type ComponentProps } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BoardNode } from "../model/taskBoard";
+import { TaskGlyph, glyphForStatus, type GlyphKind } from "./TaskGlyph";
+import { TaskTree } from "./TaskTree";
+
+let container: HTMLDivElement;
+let root: Root;
+
+function node(id: string, patch: Partial<BoardNode> = {}): BoardNode {
+  return { id, title: `Task ${id}`, status: "done", ...patch };
+}
+
+function render(props: Partial<ComponentProps<typeof TaskTree>> = {}) {
+  act(() =>
+    root.render(
+      createElement(TaskTree, {
+        nodes: [node("a"), node("b"), node("c")],
+        label: "Plan tasks",
+        now: 100_000,
+        ...props,
+      }),
+    ),
+  );
+}
+
+function items(): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>("[role=treeitem]"));
+}
+
+function focus(el: HTMLElement) {
+  act(() => el.focus());
+}
+
+function press(el: Element, key: string) {
+  act(() => {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+  });
+}
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const stored = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => stored.get(key) ?? null,
+    setItem: (key: string, value: string) => stored.set(key, value),
+    removeItem: (key: string) => stored.delete(key),
+    clear: () => stored.clear(),
+  });
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
+
+describe("TaskTree", () => {
+  it("renders one tab stop", () => {
+    render();
+    const tree = container.querySelector("ul[role=tree]");
+    expect(tree?.getAttribute("aria-label")).toBe("Plan tasks");
+    expect(items().map((el) => el.tabIndex)).toEqual([0, -1, -1]);
+    expect(container.querySelectorAll("[tabindex='0']")).toHaveLength(1);
+  });
+
+  it("arrow keys move the roving focus", () => {
+    render();
+    const [a, b, c] = items();
+    focus(a);
+    press(a, "ArrowDown");
+    expect(document.activeElement).toBe(b);
+    expect(items().map((el) => el.tabIndex)).toEqual([-1, 0, -1]);
+    press(b, "End");
+    expect(document.activeElement).toBe(c);
+    press(c, "ArrowDown");
+    expect(document.activeElement).toBe(c);
+    press(c, "ArrowUp");
+    expect(document.activeElement).toBe(b);
+    press(b, "Home");
+    expect(document.activeElement).toBe(a);
+    press(a, "ArrowUp");
+    expect(document.activeElement).toBe(a);
+  });
+
+  it("right arrow expands a node with a summary and left collapses it", () => {
+    render({ nodes: [node("a", { summary: "Review found 3 issues." }), node("b")] });
+    const [a, b] = items();
+    expect(a.getAttribute("aria-expanded")).toBe("false");
+    expect(b.hasAttribute("aria-expanded")).toBe(false);
+    expect(container.textContent).not.toContain("Review found 3 issues.");
+    focus(a);
+    press(a, "ArrowRight");
+    expect(a.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Review found 3 issues.");
+    press(a, "ArrowLeft");
+    expect(a.getAttribute("aria-expanded")).toBe("false");
+    expect(container.textContent).not.toContain("Review found 3 issues.");
+  });
+
+  it("walks into children and left returns to the parent", () => {
+    render({ nodes: [node("a", { children: [node("a1"), node("a2")] }), node("b")] });
+    const a = items()[0];
+    focus(a);
+    press(a, "ArrowRight");
+    expect(items().map((el) => el.textContent?.includes("Task a1"))).toContain(true);
+    press(a, "ArrowRight");
+    const a1 = items()[1];
+    expect(document.activeElement).toBe(a1);
+    expect(a1.closest("ul")?.getAttribute("role")).toBe("group");
+    press(a1, "ArrowDown");
+    expect(document.activeElement).toBe(items()[2]);
+    press(items()[2], "ArrowLeft");
+    expect(document.activeElement).toBe(a);
+  });
+
+  it("enter calls onOpen with the node", () => {
+    const onOpen = vi.fn();
+    const nodes = [node("a"), node("b")];
+    render({ nodes, onOpen });
+    const b = items()[1];
+    focus(b);
+    press(b, "Enter");
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpen).toHaveBeenCalledWith(nodes[1]);
+  });
+
+  it("glyphs carry aria-labels", () => {
+    const labels: Record<GlyphKind, string> = {
+      done: "done",
+      pending: "not started",
+      running: "running",
+      ask: "needs you",
+      struggling: "struggling",
+      quiet: "quiet",
+      failed: "failed",
+      blocked: "blocked",
+      cancelled: "cancelled",
+      issues: "review found issues",
+    };
+    for (const [kind, label] of Object.entries(labels)) {
+      act(() => root.render(createElement(TaskGlyph, { kind: kind as GlyphKind })));
+      expect(container.querySelector(`[aria-label='${label}']`), kind).not.toBeNull();
+    }
+    expect(glyphForStatus("pending")).toBe("pending");
+    expect(glyphForStatus("running")).toBe("running");
+    expect(glyphForStatus("done")).toBe("done");
+    expect(glyphForStatus("attention")).toBe("issues");
+    expect(glyphForStatus("failed")).toBe("failed");
+    expect(glyphForStatus("blocked")).toBe("blocked");
+    expect(glyphForStatus("cancelled")).toBe("cancelled");
+    render({ nodes: [node("a", { status: "pending" })] });
+    expect(items()[0].querySelector("[aria-label='not started']")).not.toBeNull();
+  });
+
+  it("no chevron on a plain finished task", () => {
+    render({ nodes: [node("a", { startedAt: 0, endedAt: 120_000 })] });
+    expect(items()[0].hasAttribute("aria-expanded")).toBe(false);
+    expect(container.querySelector("[data-chevron]")).toBeNull();
+  });
+
+  it("running node shows a live duration and a pending node shows none", () => {
+    render({
+      now: 134_000,
+      nodes: [
+        node("a", { status: "running", startedAt: 0 }),
+        node("b", { status: "pending" }),
+        node("c", { status: "done", startedAt: 0, endedAt: 19 * 60_000 }),
+      ],
+    });
+    const [a, b, c] = items();
+    expect(a.textContent).toContain("2m 14s");
+    expect(b.querySelector("[data-duration]")?.textContent ?? "").toBe("");
+    expect(c.textContent).toContain("19m");
+    expect(container.textContent).not.toContain("NaN");
+  });
+
+  it("shows a dash for a running node with no start time", () => {
+    render({ nodes: [node("a", { status: "running" })] });
+    expect(items()[0].querySelector("[data-duration]")?.textContent).toBe("—");
+    expect(container.textContent).not.toContain("NaN");
+  });
+
+  it("fix-round tag shows for fixRounds 3", () => {
+    render({
+      nodes: [
+        node("a", { status: "attention", fixRounds: 3 }),
+        node("b", { status: "attention", fixRounds: 2 }),
+      ],
+    });
+    const [a, b] = items();
+    expect(a.textContent).toContain("fix 3 of 5");
+    expect(b.textContent).not.toContain("fix 2 of 5");
+  });
+
+  it("puts the full title on the title attribute", () => {
+    render({ nodes: [node("a", { title: "A very long task title" })] });
+    expect(container.querySelector("[title='A very long task title']")).not.toBeNull();
+  });
+
+  it("respects controlled expansion", () => {
+    const onToggle = vi.fn();
+    render({
+      nodes: [node("a", { summary: "Details here" })],
+      expandedIds: new Set(["a"]),
+      onToggle,
+    });
+    const a = items()[0];
+    expect(a.getAttribute("aria-expanded")).toBe("true");
+    expect(container.textContent).toContain("Details here");
+    focus(a);
+    press(a, "ArrowLeft");
+    expect(onToggle).toHaveBeenCalledWith("a");
+  });
+});
