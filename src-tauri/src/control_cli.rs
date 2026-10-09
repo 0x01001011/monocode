@@ -222,7 +222,9 @@ Actions:
                    "body":"<!doctype html>..."}
                   Save one self-contained HTML page (inline CSS and JS; https
                   CDNs work) shown live in a sandbox. Omit title to use the
-                  page's <title>. For multi-file sites, write .html files in
+                  page's <title>. The result lists "warnings" when the page
+                  references files it cannot load (relative paths, plain http);
+                  fix them and write again. For multi-file sites, write .html files in
                   the project instead: MonoCode previews them automatically.
   soul.read      {}  Mono's own conversation only. Current SOUL.md text and hash.
   soul.update    {"text":"<complete Markdown>","expectedHash":"<hash from soul.read>"}

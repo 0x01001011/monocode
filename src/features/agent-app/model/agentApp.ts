@@ -38,7 +38,7 @@ import type {
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import type { Worktree, Worktrees } from "../../source-control/model/worktrees";
 import { pathKey, projectName } from "../../../shared/lib/paths";
-import { htmlTitle } from "../../html-preview/htmlPreview";
+import { htmlTitle, htmlWarnings } from "../../html-preview/htmlPreview";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage, type SessionReadOptions } from "./sessionConversation";
@@ -940,7 +940,14 @@ async function handleArtifacts(
     ...(summary ? { summary } : {}),
   };
   await host.postArtifact(source.id, card);
-  return { ...card, saved: true, attached: true };
+  // Problems the agent can fix itself, such as relative files an artifact can't load.
+  const warnings = artifact.kind === "html" ? htmlWarnings(artifact.body) : [];
+  return {
+    ...card,
+    saved: true,
+    attached: true,
+    ...(warnings.length ? { warnings } : {}),
+  };
 }
 
 export async function handleAgentApp(
