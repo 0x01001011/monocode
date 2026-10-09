@@ -90,12 +90,14 @@ Task titles and steps come from `task-N-brief.md` (`### Task N: <title>`; each
 so steps show as done when the task is complete and as unknown (`null`, an
 empty box) otherwise. The panel never invents step progress.
 
-Status rules: a task with `complete` is done. A task whose last line is a fix
-round, or that has a brief or report but no `complete`, is running. That is
-true only for the first such task, because SDD runs tasks one at a time; any
-later ones count as pending. A task with neither is pending. If the report's
-`Status:` line is `BLOCKED` the task is blocked; `DONE_WITH_CONCERNS` sets
-`attention`.
+Status rules: a task with `complete` is done. The first non-complete task is
+running when the ledger has any `Task N` line or that task has a report (briefs
+alone are not evidence: the controller may extract every brief up front), and
+all later tasks are pending, because SDD runs tasks one at a time. With no
+ledger line and no report, every task is pending. A task in fix round 3 or
+higher is `attention`. If the report's `Status:` line is `BLOCKED` the task is
+blocked. `DONE_WITH_CONCERNS` does not change the status (a concerned report is
+the normal state while its review runs).
 
 Times come from artifact mtimes, since the ledger records none:
 - a task ends at the mtime of the review package that preceded its `complete` line;
