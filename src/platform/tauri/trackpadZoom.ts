@@ -21,6 +21,9 @@ export function claimTrackpadMagnify(onMagnify: MagnifyHandler): () => void {
     unlisten = listen<number>("trackpad_magnify", (event) => {
       claims[claims.length - 1]?.(event.payload);
     });
+    // Without the event bridge (tests, browser previews) listen() rejects;
+    // nothing depends on the pinch hook there, so the rejection is expected.
+    unlisten.catch(() => undefined);
     void invoke("set_trackpad_zoom_enabled", { enabled: true }).catch(
       console.error,
     );
@@ -31,7 +34,7 @@ export function claimTrackpadMagnify(onMagnify: MagnifyHandler): () => void {
     released = true;
     claims.splice(claims.lastIndexOf(onMagnify), 1);
     if (claims.length) return;
-    void unlisten?.then((stop) => stop());
+    void unlisten?.then((stop) => stop()).catch(() => undefined);
     unlisten = null;
     void invoke("set_trackpad_zoom_enabled", { enabled: false }).catch(
       console.error,
