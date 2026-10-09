@@ -55,6 +55,7 @@ function board(over: Partial<TaskBoard> = {}): TaskBoard {
   return {
     sections: p ? [p] : [],
     statusCard: runningCard,
+    flow: [],
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,

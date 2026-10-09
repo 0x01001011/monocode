@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { orchestrator } from "../../orchestration/model/orchestration";
 import { sameProjectPath } from "../../projects/model/recents";
 import type { Block, Session } from "../../sessions/model/session";
+import { deriveFlow, type FlowPhase } from "../model/flow";
 import { buildSddSection } from "../model/sddBoard";
 import {
   findSddWorkspaces,
@@ -25,6 +26,8 @@ export type TaskBoard = {
   sections: BoardSection[];
   plan?: BoardSection;
   statusCard: StatusCard;
+  /** Spec, plan, build, check: empty without a plan or while the panel is hidden. */
+  flow: FlowPhase[];
   workspaces: SddWorkspaceRef[];
   selectedWorkspace?: string;
   selectWorkspace(slug: string): void;
@@ -65,6 +68,7 @@ const DEFAULT_POLL = { visible: 3000, hiddenBusy: 15000 };
 export const DEFAULT_QUIET_AFTER_MS = 5 * 60_000;
 /** What a closed panel exposes: only the status card and tab badge are read then. */
 const NO_SECTIONS: BoardSection[] = [];
+const NO_FLOW: FlowPhase[] = [];
 
 /** Keeps the previous reference while the serialized content is unchanged. */
 function useStable<T>(value: T): T {
@@ -77,6 +81,20 @@ function completedTools(blocks: readonly Block[] | undefined): number {
   let count = 0;
   for (const block of blocks ?? []) if (block.role === "tool" && block.toolEndedAt !== undefined) count++;
   return count;
+}
+
+/**
+ * Subagents working right now: the transcript's own running agents, plus the plan's
+ * running implementer and reviewer stages (the plan section leaves those agents out of
+ * the agents section, so nothing is counted twice).
+ */
+function countSubagentsRunning(sections: readonly BoardSection[], plan: BoardSection): number {
+  const agents = sections.find((s) => s.source === "agents")?.nodes.filter((n) => n.status === "running").length ?? 0;
+  const stages = [...plan.nodes, ...(plan.finalReview ? [plan.finalReview] : [])].reduce(
+    (sum, node) => sum + (node.stages?.filter((stage) => stage.status === "running").length ?? 0),
+    0,
+  );
+  return agents + stages;
 }
 
 /** One load: workspace list, then the selected (else newest) workspace. Never rejects. */
@@ -248,10 +266,26 @@ export function useTaskBoard(input: Input): TaskBoard {
 
   const workspaces = useStable(data?.workspaces ?? []);
   const planSection = sections.find((s) => s.source === "sdd");
+  const flow = useStable(
+    useMemo(
+      () =>
+        visible && planSection
+          ? deriveFlow({
+              plan: planSection,
+              ...(blocks ? { blocks } : {}),
+              subagentsRunning: countSubagentsRunning(sections, planSection),
+              now: nowRef.current(),
+            })
+          : NO_FLOW,
+      // `clock` re-derives the age of the last test run as polls complete.
+      [visible, planSection, sections, blocks, clock],
+    ),
+  );
   return {
     sections,
     ...(planSection ? { plan: planSection } : {}),
     statusCard,
+    flow,
     workspaces,
     ...(data?.selected ? { selectedWorkspace: data.selected } : {}),
     selectWorkspace,

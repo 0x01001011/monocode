@@ -92,6 +92,14 @@ describe("buildSddSection", () => {
     );
   });
 
+  it("carries the ledger's spec path, and omits it without a Spec line", () => {
+    expect(buildSddSection(fixtureSnapshot(), NOW).specPath).toBe(
+      "docs/superpowers/specs/2026-10-07-skills-index-remote-ranking-design.md",
+    );
+    const bare = buildSddSection(fixtureSnapshot({ ledgerText: "Task 1: implemented (a1b2c3d); review pending" }), NOW);
+    expect("specPath" in bare).toBe(false);
+  });
+
   it("titles and steps come from the brief, with the step label stripped", () => {
     const section = buildSddSection(fixtureSnapshot(), NOW);
     expect(node(section, 2).title).toBe("Watcher, event, frontend invalidation");

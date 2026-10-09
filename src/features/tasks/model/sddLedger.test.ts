@@ -266,3 +266,41 @@ describe("reportStatus", () => {
     expect(reportStatus("Status: NEEDS_CONTEXT")).toBe("NEEDS_CONTEXT");
   });
 });
+
+describe("parseLedger spec path", () => {
+  const specOf = (...lines: string[]) => parseLedger(lines.join("\n")).specPath;
+
+  it("reads the Spec line of the real ledgers", () => {
+    expect(parseLedger(read("progress.md")).specPath).toBe(
+      "docs/superpowers/specs/2026-10-07-skills-index-remote-ranking-design.md",
+    );
+    const formats = readFileSync(join(process.cwd(), "test-fixtures/sdd/controller-formats/progress.md"), "utf8");
+    expect(parseLedger(formats).specPath).toBe("docs/superpowers/specs/2026-10-09-tasks-panel-design.md");
+  });
+
+  it("drops a trailing parenthetical and trailing punctuation", () => {
+    expect(specOf("Spec: docs/specs/a.md (+ prototypes/x/index.html, PRODUCT.md)")).toBe("docs/specs/a.md");
+    expect(specOf("Spec: docs/specs/a.md.")).toBe("docs/specs/a.md");
+    expect(specOf("Spec: `docs/specs/a.md`,")).toBe("docs/specs/a.md");
+  });
+
+  it("takes the first path-like token", () => {
+    expect(specOf("Spec: see design.md and more")).toBe("design.md");
+    expect(specOf("Spec: the docs/specs/a design")).toBe("docs/specs/a");
+  });
+
+  it("ignores a line with no path-like token", () => {
+    expect(specOf("Spec: TBD")).toBeUndefined();
+    expect(specOf("Spec:")).toBeUndefined();
+    expect(specOf("Spec: (see docs/specs/a.md)")).toBeUndefined();
+  });
+
+  it("is absent without a Spec line, and a Task line never counts", () => {
+    expect(specOf("# SDD ledger — plan: docs/plans/p.md")).toBeUndefined();
+    expect(specOf("Task 1: Spec: docs/specs/a.md")).toBeUndefined();
+  });
+
+  it("the first usable Spec line wins", () => {
+    expect(specOf("Spec: nothing here", "Spec: docs/specs/a.md", "Spec: docs/specs/b.md")).toBe("docs/specs/a.md");
+  });
+});

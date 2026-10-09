@@ -496,4 +496,107 @@ describe("useTaskBoard", () => {
       expect(latest?.statusCard.kind).toBe("quiet");
     });
   });
+  describe("flow", () => {
+    const NOW = 1_700_000_000_000;
+    const MIN = 60_000;
+    const FLOW_LEDGER = (task1: string) =>
+      `# SDD ledger — plan: docs/plan.md\nSpec: docs/spec.md (+ prototypes/x.html)\nTask 1: ${task1}\n`;
+    const flowWorkspace = (task1 = "implemented (abc1234); review: spec ✅"): Tree => ({
+      ...workspace("2026-10-05-plan", "A", 9_000),
+      [`${ROOT}/2026-10-05-plan/progress.md`]: { text: FLOW_LEDGER(task1), mtimeMs: 9_000 },
+    });
+    const runningAgent = (id: string, status = "in_progress"): Block => ({
+      id,
+      role: "tool",
+      text: id,
+      tool: { kind: "agent", title: "Agent", status },
+      agentRun: { name: id, steps: [] },
+    });
+    const testRun = (command: string, status = "completed"): Block => ({
+      id: `run-${command}-${status}`,
+      role: "tool",
+      text: "",
+      tool: { kind: "execute", title: command, status },
+      toolStartedAt: NOW - 5 * MIN,
+      ...(status === "completed" || status === "failed" ? { toolEndedAt: NOW - 4 * MIN } : {}),
+    });
+    const flowInput = (fs: SddFs, blocks: Block[] = [], over: Partial<Input> = {}) =>
+      base(fs, { now: () => NOW, activeSession: session("s", blocks), ...over });
+
+    it("is empty without a plan", async () => {
+      const { fs } = fakeFs({});
+      await mount(flowInput(fs));
+      expect(latest?.flow).toEqual([]);
+    });
+
+    it("derives spec, plan, build and check from the ledger", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs));
+      expect(latest?.flow.map((p) => [p.id, p.status, p.detail, p.path])).toEqual([
+        ["spec", "done", undefined, "docs/spec.md"],
+        ["plan", "done", "1 task", "docs/plan.md"],
+        ["build", "running", "0 of 1", undefined],
+        ["check", "pending", undefined, undefined],
+      ]);
+    });
+
+    it("has no Spec phase when the ledger names no spec", async () => {
+      const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+      await mount(flowInput(fs));
+      expect(latest?.flow.map((p) => p.id)).toEqual(["plan", "build", "check"]);
+    });
+
+    it("reads the last test run from the active session", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs, [testRun("npm test", "failed")]));
+      expect(latest?.flow.find((p) => p.id === "check")).toMatchObject({
+        status: "failed",
+        detail: "tests failed 4m ago",
+      });
+    });
+
+    it("counts the transcript's running subagents", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      const blocks = [runningAgent("explorer"), runningAgent("searcher"), runningAgent("finished", "completed")];
+      await mount(flowInput(fs, blocks));
+      expect(latest?.flow.find((p) => p.id === "build")?.detail).toBe("0 of 1, 2 subagents working");
+    });
+
+    it("counts the plan's own running stages, and an agent that is also a stage only once", async () => {
+      const { fs } = fakeFs(flowWorkspace("implemented (abc1234); review pending"));
+      const stageAgent = runningAgent("reviewer");
+      stageAgent.text = "Review .superpowers/sdd/2026-10-05-plan/task-1-brief.md";
+      await mount(flowInput(fs, [stageAgent, runningAgent("explorer")]));
+      expect(latest?.plan?.nodes[0]?.stages?.filter((st) => st.status === "running")).toHaveLength(1);
+      expect(latest?.flow.find((p) => p.id === "build")?.detail).toBe("0 of 1, 2 subagents working");
+    });
+
+    it("is empty while hidden, and fills in when shown", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
+      await mount(flowInput(fs, [], { visible: false, sessions: busy }));
+      expect(latest?.flow).toEqual([]);
+      await mount(flowInput(fs, [], { visible: true, sessions: busy }));
+      expect(latest?.flow.length).toBe(4);
+    });
+
+    it("keeps the same flow array while a poll finds nothing new", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs));
+      const first = latest?.flow;
+      expect(first?.length).toBe(4);
+      await advance(3_000);
+      await advance(3_000);
+      expect(latest?.flow).toBe(first);
+    });
+
+    it("updates when a test run lands", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs));
+      const before = latest?.flow;
+      await mount(flowInput(fs, [testRun("cargo test")]));
+      expect(latest?.flow).not.toBe(before);
+      expect(latest?.flow.find((p) => p.id === "check")?.detail).toBe("tests passed 4m ago");
+    });
+  });
 });

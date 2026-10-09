@@ -379,6 +379,7 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
     minors: ledger.minors,
     parked: ledger.parked,
     ...(ledger.planPath ? { planPath: ledger.planPath } : {}),
+    ...(ledger.specPath ? { specPath: ledger.specPath } : {}),
     finalReview: buildFinalReview(ledger),
   };
 }

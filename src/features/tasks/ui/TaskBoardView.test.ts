@@ -101,6 +101,7 @@ function board(over: Partial<TaskBoard> = {}): TaskBoard {
     sections: [p],
     plan: p,
     statusCard: runningCard,
+    flow: [],
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,

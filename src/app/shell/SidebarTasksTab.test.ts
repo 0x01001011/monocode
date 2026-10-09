@@ -55,6 +55,7 @@ function board(statusCard: StatusCard): TaskBoard {
   return {
     sections: [],
     statusCard,
+    flow: [],
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,

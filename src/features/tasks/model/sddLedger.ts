@@ -23,6 +23,8 @@ export type LedgerNote = { taskIndex?: number; text: string };
 
 export type ParsedLedger = {
   planPath?: string;
+  /** The first path-like token of the first `Spec:` line (the design the plan implements). */
+  specPath?: string;
   tasks: LedgerTask[];
   rulings: LedgerNote[];
   minors: LedgerNote[];
@@ -36,6 +38,7 @@ export type ReportStatus =
   "DONE" | "DONE_WITH_CONCERNS" | "NEEDS_CONTEXT" | "BLOCKED";
 
 const HEADER = /^#\s*SDD ledger\s*[—–-]+\s*plan:\s*(.+?)\s*$/;
+const SPEC_LINE = /^Spec:\s*(.*)$/;
 const TASK_LINE = /^Task\s+(\d+):\s*(.*)$/;
 const RULING = /\bRuling\b[^:]*:\s*(.*)$/;
 const LEADING_RULING = /^Ruling\b/;
@@ -56,6 +59,20 @@ const COMPLETE = /^complete\b\s*(.*)$/;
 const COMMITS = /commits\s+([^\s,;)]+)/;
 const FINAL_REVIEW = /^FINAL REVIEW\b\s*(.*)$/;
 const FINAL_WAVE = /^Final fix wave:\s*(complete|dispatched)\b/i;
+
+/**
+ * The path in a `Spec:` value. A trailing parenthetical (`(+ prototypes/…)`) and
+ * punctuation or quotes around a token are dropped; the first token that ends in `.md`
+ * or holds a `/` wins. Undefined when nothing path-like is there.
+ */
+function specPathOf(value: string): string | undefined {
+  const head = value.replace(/\s*\(.*$/, "");
+  for (const raw of head.split(/\s+/)) {
+    const token = raw.replace(/^[`'"*_<[]+/, "").replace(/[`'"*_>\]),.;:]+$/, "");
+    if (token && (/\.md$/i.test(token) || token.includes("/"))) return token;
+  }
+  return undefined;
+}
 
 function note(taskIndex: number | undefined, text: string): LedgerNote {
   const trimmed = text.replace(/\s*\|\s*$/, "").trim();
@@ -152,6 +169,13 @@ export function parseLedger(text: string): ParsedLedger {
     const header = HEADER.exec(line);
     if (header) {
       ledger.planPath = header[1];
+      continue;
+    }
+
+    const spec = SPEC_LINE.exec(line);
+    if (spec) {
+      // Only the first usable `Spec:` line counts.
+      ledger.specPath ??= specPathOf(spec[1]);
       continue;
     }
 
