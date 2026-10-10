@@ -392,10 +392,10 @@ describe("TaskGraph", () => {
     for (const el of t1.querySelectorAll<HTMLElement>("*")) {
       expect(el.getAttribute("class") ?? "").not.toMatch(/group-focus(-within|-visible)?:/);
     }
-    expect(title.className).toContain("min-w-16");
+    expect(title.className).toContain("basis-16");
   });
 
-  it("refs shrink before the title, and a narrow tab drops the second", () => {
+  it("refs never truncate, and a tab under 400 px drops the second", () => {
     const rows = [
       row({
         id: "a",
@@ -408,20 +408,39 @@ describe("TaskGraph", () => {
     render({ graph: { rows, width: 1, counts: { all: 1, left: 1, problems: 1 } } });
     expect(container.querySelector("[role=tree]")?.className).toContain("@container");
     const [first, second] = Array.from(item("a").querySelectorAll<HTMLElement>("[data-ref]"));
-    expect(first!.className).toContain("min-w-0");
-    expect(first!.className).toContain("truncate");
-    expect(first!.className).not.toContain("@max-[300px]:hidden");
-    expect(second!.className).toContain("@max-[300px]:hidden");
-    expect(item("a").querySelector("[title='a']")?.className).toContain("min-w-16");
+    for (const ref of [first!, second!]) {
+      expect(ref.className).toContain("shrink-0");
+      expect(ref.className).not.toContain("truncate");
+      expect(ref.className).not.toMatch(/max-w-|min-w-0/);
+    }
+    expect(first!.className).not.toMatch(/@max-\[\d+px\]:hidden/);
+    expect(second!.className).toContain("@max-[400px]:hidden");
+    // The hidden second ref is still read out with the row.
+    expect(item("a").getAttribute("aria-label")).toContain("fix 3 of 5, no commit");
   });
 
-  it("keeps an idle title at 104 px from a 300 px tree, with tighter gaps under 360 px", () => {
-    const rows = [row({ id: "a", shas: ["abc1234"], refs: [{ text: "1 deferred", tone: "warn" }, { text: "review clean", tone: "ok" }] })];
+  it("under 300 px a row with a ref shows that ref alone, and a row without keeps NOW and meta", () => {
+    const rows = [
+      row({ id: "a", now: true, meta: "3/4 · 32m", refs: [{ text: "fix 3 of 5", tone: "warn" }] }),
+      row({ id: "b", now: true, meta: "2/5 · 44m" }),
+    ];
+    render({ graph: { rows, width: 1, counts: { all: 2, left: 2, problems: 1 } } });
+    expect(item("a").querySelector("[data-now-pill]")?.className).toContain("@max-[300px]:hidden");
+    expect(item("a").querySelector("[data-meta]")?.className).toContain("@max-[300px]:hidden");
+    expect(item("a").querySelector("[data-ref]")?.className).not.toContain("@max-[300px]:hidden");
+    expect(item("a").getAttribute("aria-label")).toContain("now, fix 3 of 5, 3/4 · 32m");
+    expect(item("b").querySelector("[data-now-pill]")?.className).not.toContain("@max-[300px]:hidden");
+    expect(item("b").querySelector("[data-meta]")?.className).not.toMatch(/(^| )@max-\[300px\]:hidden/);
+  });
+
+  it("the title asks for 104 px (64 under a 300 px tree) as room the meta yields first, with tighter gaps under 360 px", () => {
+    const rows = [row({ id: "a", shas: ["abc1234"], meta: "2m", refs: [{ text: "1 deferred", tone: "warn" }, { text: "review clean", tone: "ok" }] })];
     render({ graph: { rows, width: 1, counts: { all: 1, left: 1, problems: 1 } } });
     const title = item("a").querySelector<HTMLElement>("[title='a']")!;
-    // The floor is idle-only: hover and focus inside the actions still drop it to 0.
-    expect(title.className).toContain("@min-[300px]:min-w-26");
-    expect(title.className).toContain("group-hover/row:min-w-0");
+    // A basis, not a floor: once the meta is gone the title truncates, so the pills never leave the row.
+    for (const cls of ["min-w-0", "grow", "basis-16", "@min-[300px]:basis-26"]) expect(title.className).toContain(cls);
+    expect(title.className).not.toMatch(/min-w-(16|26)/);
+    expect(item("a").querySelector("[data-meta]")?.className).toContain("shrink-100");
     expect(title.parentElement!.className).toContain("@max-[360px]:gap-1");
   });
 

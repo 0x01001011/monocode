@@ -59,7 +59,6 @@ const STAGE_ID = /:stage:(\d+)$/;
 // Tailwind only builds class names it finds spelled out whole, so every variant below stays a
 // complete literal; never assemble a variant prefix with a template string.
 const GIVES_WAY = "group-hover/row:hidden group-has-[[data-actions]:focus-within]/row:hidden";
-const TITLE_YIELDS = "group-hover/row:min-w-0 group-has-[[data-actions]:focus-within]/row:min-w-0";
 const ACTIONS =
   "pointer-events-none flex max-w-0 shrink-0 items-center gap-px overflow-hidden opacity-0 " +
   "group-hover/row:pointer-events-auto group-hover/row:max-w-none group-hover/row:opacity-100 " +
@@ -67,16 +66,24 @@ const ACTIONS =
   "group-has-[[data-actions]:focus-within]/row:max-w-none " +
   "group-has-[[data-actions]:focus-within]/row:opacity-100";
 
-// Under a 360 px tree the row's gaps tighten, so a 104 px title still leaves the refs room.
-// Under 300 px the meta keeps only its step count ("2/5", not "2/5 · 30m"), so the NOW pill,
-// refs and meta fit beside a 64 px title with four lanes drawn.
+// Narrow rows, idle (hover and focus inside the actions replace the pills and meta with the
+// actions). Refs and the NOW pill never truncate: a ref is the row's key state (fix round,
+// failed, no commit), so what does not fit is hidden whole, and every hidden part stays in the
+// row's accessible name. Measured in the browser fixture:
+// - Under 400 px only the first ref shows (the model orders them): at 400, two lanes, the widest
+//   pair ("2 deferred" + "fixed in 1 round") leaves a 106 px title.
+// - Under 360 px the row's gaps tighten.
+// - Under 300 px a row with a ref shows that ref alone: its NOW pill and meta hide. Glyph,
+//   number, 64 px of title, NOW and "fix 3 of 5" need 207 px; a 240 px tree with two lanes has
+//   190. The current task stays marked by its node and the `n` key. A row without refs keeps NOW
+//   and the meta's step count ("2/5", not "2/5 · 30m").
 const NARROW_GAP = "gap-2 @max-[360px]:gap-1";
-// The title's floor while the row is idle: refs and meta truncate before the title goes under it.
-// The title's flex basis is 0, so without a floor the refs keep their full width and the title
-// gets only what is left (64 px beside two refs at 340 px).
-const TITLE_FLOOR = "min-w-16 @min-[300px]:min-w-26";
-// The meta yields last: refs shrink first, and only then does it truncate (never clipped silently).
-const META = "min-w-0 shrink-[0.001] truncate";
+// The title asks for 104 px (64 px under a 300 px tree) as its flex basis, not as a floor: the
+// meta gives up its width first (its shrink weight is 100 times the title's), then the title
+// truncates, so the shown pills always fit (four lanes at 240 px leave "fixed in 1 round" a
+// 30 px title rather than pushing the ref out of the row).
+const TITLE_ROOM = "min-w-0 grow basis-16 @min-[300px]:basis-26";
+const META = "min-w-0 shrink-100 truncate";
 const metaHead = (meta: string) => meta.split(" · ")[0];
 const metaTail = (meta: string) => {
   const rest = meta.split(" · ").slice(1);
@@ -343,17 +350,16 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
               ) : null}
               <span
                 title={row.title}
-                // At least 104 px of title beside the refs (64 px under a 300 px tree); it may give that
-                // up only while the actions show. Ship's title is one word: it keeps only its own
-                // width, so the verdict beside it fits.
-                className={`${row.kind === "ship" ? "min-w-max" : TITLE_FLOOR} flex-1 ${actions.length > 0 ? TITLE_YIELDS : ""} ${
+                // Room for 104 px of title (64 px under a 300 px tree) before the meta, see TITLE_ROOM.
+                // Ship's title is one word: it keeps only its own width, so the verdict beside it fits.
+                className={`${row.kind === "ship" ? "min-w-max flex-1" : TITLE_ROOM} ${
                   isStep ? "line-clamp-2 leading-4 break-words" : "truncate"
                 } ${titleTone}`}
               >
                 {row.title}
               </span>
               {row.now ? (
-                <span data-now-pill className={`${PILL} shrink-0 font-semibold ${REF_TONE.now} ${givesWay}`}>
+                <span data-now-pill className={`${PILL} shrink-0 font-semibold ${REF_TONE.now} ${row.refs.length > 0 ? "@max-[300px]:hidden" : ""} ${givesWay}`}>
                   NOW
                 </span>
               ) : null}
@@ -362,8 +368,8 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
                   key={`${ref.tone}:${ref.text}:${i}`}
                   data-ref
                   title={ref.text}
-                  // Refs shrink before the title does, and a narrow tab keeps only the first.
-                  className={`${PILL} max-w-[45%] min-w-0 truncate ${REF_TONE[ref.tone]} ${i > 0 ? "@max-[300px]:hidden" : ""} ${givesWay}`}
+                  // Never truncates: the title yields instead, and a narrow tab drops the second (see NARROW_GAP).
+                  className={`${PILL} shrink-0 ${REF_TONE[ref.tone]} ${i > 0 ? "@max-[400px]:hidden" : ""} ${givesWay}`}
                 >
                   {ref.text}
                 </span>
@@ -376,7 +382,7 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
                 <span
                   data-meta
                   title={row.meta}
-                  className={`${META} text-[11.5px] whitespace-nowrap tabular-nums ${running ? "text-content" : "text-muted"} ${givesWay}`}
+                  className={`${META} text-[11.5px] whitespace-nowrap tabular-nums ${running ? "text-content" : "text-muted"} ${row.refs.length > 0 ? "@max-[300px]:hidden" : ""} ${givesWay}`}
                 >
                   {metaHead(row.meta)}
                   {metaTail(row.meta) !== undefined ? <span className="@max-[300px]:hidden"> · {metaTail(row.meta)}</span> : null}
