@@ -4644,7 +4644,7 @@ html.theme-light .pr-card .pr-list-container {
 .pr-base-select:hover {
   background: color-mix(in srgb, var(--color-content) 10%, transparent);
 }
-.pr-base-select:focus-within {
+.pr-base-select:has(> select:focus-visible) {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
@@ -4667,7 +4667,7 @@ html.theme-light .pr-card .pr-list-container {
   color: var(--color-content);
 }
 @media (forced-colors: active) {
-  .pr-base-select:focus-within {
+  .pr-base-select:has(> select:focus-visible) {
     outline-color: Highlight;
   }
 }

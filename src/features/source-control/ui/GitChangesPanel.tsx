@@ -918,7 +918,9 @@ function ChangedFiles({
             }}
           />
         ) : null}
-        {prSessionId && hasChatPrs ? (
+        {/* Mounted while any PR is listed, hidden ones too, so hiding the
+            last row keeps its Undo. */}
+        {prSessionId && (prView?.entries.length ?? 0) > 0 ? (
           <PrSection
             sessionId={prSessionId}
             pr={pr}

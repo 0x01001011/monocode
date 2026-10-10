@@ -769,6 +769,65 @@ describe("GitChangesPanel chat pull requests", () => {
     expect(generatePrContent).toHaveBeenCalledWith("/repo", undefined, "main");
   });
 
+  it("keeps the old View PR button when every chat PR is hidden", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        branch: "mc/tasks-panel-keyboard",
+        remote: "origin",
+        upstream: "origin/mc/tasks-panel-keyboard",
+      }),
+    );
+    vi.mocked(gitPrStatus).mockResolvedValue({
+      number: 482,
+      title: "PR 482",
+      url: `https://github.com/${REPO}/pull/482`,
+      state: "open",
+    });
+    setView([
+      prEntry(482, "mc/tasks-panel-keyboard", {
+        onLiveBranch: true,
+        dismissed: true,
+      }),
+    ]);
+    await renderPanel("/repo", "s1");
+    expect(container.querySelector(".pr-section")).toBeNull();
+    expect(buttonText("View PR #482")).toBeDefined();
+  });
+
+  it("keeps a user override when the suggestion resolves late", async () => {
+    readyToCreate();
+    setView([prEntry(482, "mc/tasks-panel-keyboard")]);
+    let answer: (value: boolean) => void = () => {};
+    vi.mocked(gitIsAncestor).mockImplementation(
+      () => new Promise<boolean>((resolve) => (answer = resolve)),
+    );
+    await renderPanel("/repo", "s1");
+    const select = container.querySelector<HTMLSelectElement>(
+      "[data-pr-base-field] select",
+    )!;
+    expect(container.querySelector(".pr-base-value")?.textContent).toBe("main");
+    await act(async () => {
+      select.value = "mc/tasks-panel-keyboard";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      select.value = "main";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      answer(true);
+      await Promise.resolve();
+    });
+    expect(container.querySelector(".pr-base-value")?.textContent).toBe("main");
+    expect(container.querySelector("[data-pr-base-field] .pr-tag")).toBeNull();
+    await act(async () => {
+      buttonText("Create PR")!.click();
+      await Promise.resolve();
+    });
+    await act(async () => {});
+    expect(gitPrCreate).toHaveBeenCalledWith("/repo", "Next", "Body", "main", "mc/next");
+  });
+
   it("targets the default branch when no chat PR is an ancestor", async () => {
     readyToCreate();
     setView([prEntry(482, "mc/tasks-panel-keyboard")]);

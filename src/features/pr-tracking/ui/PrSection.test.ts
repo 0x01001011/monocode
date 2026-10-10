@@ -112,7 +112,9 @@ function render(over: Partial<PrSectionProps> = {}) {
   const root = createRoot(container);
   act(() => root.render(createElement(PrSection, props)));
   mounted.push({ root, container });
-  return { container, props };
+  const rerender = () =>
+    act(() => root.render(createElement(PrSection, { ...props })));
+  return { container, props, rerender };
 }
 
 const rows = (root: ParentNode = document) => [
@@ -298,5 +300,47 @@ describe("PrSection", () => {
   it("shows no notice while the tracker is fine", () => {
     const { container } = render();
     expect(container.querySelector(".pr-notice")).toBeNull();
+  });
+
+  it("keeps Hidden #N with Undo after hiding the last visible row", () => {
+    h.view = panelView({
+      entries: [entry(482, { onLiveBranch: true })],
+      stacks: [],
+    });
+    const { container, rerender } = render();
+    const row = rows(container)[0];
+    act(() => row.focus());
+    key(row, { key: "Backspace" });
+    expect(h.dismissPr).toHaveBeenCalledWith("s1", REPO, 482, true);
+
+    h.view = panelView({
+      entries: [entry(482, { onLiveBranch: true, dismissed: true })],
+      stacks: [],
+    });
+    rerender();
+    expect(rows(container)).toHaveLength(0);
+    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+      "Hidden #482",
+    );
+    const undo = buttonByText("Undo");
+    expect(undo).toBeDefined();
+    expect(document.activeElement).toBe(undo);
+    act(() => undo!.click());
+    expect(h.dismissPr).toHaveBeenLastCalledWith("s1", REPO, 482, false);
+  });
+
+  it("marks a stale freshness label like the card does", () => {
+    h.view = panelView({ refreshedAt: NOW - 11 * 60_000 });
+    const { container } = render();
+    expect(
+      container.querySelector<HTMLElement>(".pr-card-updated")?.dataset.stale,
+    ).toBe("true");
+  });
+
+  it("leaves a fresh label unmarked", () => {
+    const { container } = render();
+    expect(
+      container.querySelector<HTMLElement>(".pr-card-updated")?.dataset.stale,
+    ).toBeUndefined();
   });
 });

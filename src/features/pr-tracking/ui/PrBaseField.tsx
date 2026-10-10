@@ -28,8 +28,10 @@ async function headContains(
 
 /**
  * The suggested base for a PR from the checkout's branch, recomputed when
- * the branch, its HEAD commit or the chat's open PR branches change. Null
- * until the first answer, and while `view` is null (nothing to suggest).
+ * the branch, its HEAD commit or the chat's open PR branches change. While a
+ * recompute is pending for the same checkout and branch, the last answer
+ * stands (no flicker to the default branch). Null until the first answer
+ * for the branch, and while `view` is null (nothing to suggest).
  */
 export function useBaseSuggestion({
   view,
@@ -48,6 +50,7 @@ export function useBaseSuggestion({
 }): BaseSuggestion | null {
   const [result, setResult] = useState<{
     key: string;
+    scope: string;
     suggestion: BaseSuggestion;
   } | null>(null);
   const candidates = view && headBranch ? baseCandidates(view, headBranch) : [];
@@ -67,6 +70,7 @@ export function useBaseSuggestion({
           signature,
         ].join("\n")
       : null;
+  const scope = `${cwd}\n${headBranch ?? ""}`;
 
   useEffect(() => {
     if (!key || !view || !headBranch || !defaultBase) return;
@@ -74,7 +78,7 @@ export function useBaseSuggestion({
     void suggestBase(view, headBranch, defaultBase, (ref) =>
       headContains(cwd, ref, remote),
     ).then((suggestion) => {
-      if (!cancelled) setResult({ key, suggestion });
+      if (!cancelled) setResult({ key, scope, suggestion });
     });
     return () => {
       cancelled = true;
@@ -82,7 +86,10 @@ export function useBaseSuggestion({
     // `key` carries every input that changes the answer.
   }, [key]);
 
-  return result && result.key === key ? result.suggestion : null;
+  if (!key || !result) return null;
+  return result.key === key || result.scope === scope
+    ? result.suggestion
+    : null;
 }
 
 /**

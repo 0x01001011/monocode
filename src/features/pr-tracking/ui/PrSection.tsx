@@ -13,7 +13,12 @@ import { ChevronDown, ExternalLink, Inbox } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 import { dismissPr, refreshPrSet, usePrSet } from "../data/prTracking";
-import { freshnessLabel, sections, trackerNotice } from "../model/prSetModel";
+import {
+  STALE_AFTER_MS,
+  freshnessLabel,
+  sections,
+  trackerNotice,
+} from "../model/prSetModel";
 import type { PrEntry, PrSetView } from "../model/types";
 import { PR_LIST_CONTAINER, PR_MENU_ITEM, PrRow, prMenuKeyDown } from "./PrRow";
 import { prWorkItem, usePrClock } from "./PrSetPopover";
@@ -99,6 +104,7 @@ export function PrSection({
   const rows = view ? panelRows(view) : [];
   const roving = useRovingRows(rows.length);
   const listRef = useRef<HTMLUListElement>(null);
+  const undoRef = useRef<HTMLButtonElement>(null);
   const [status, setStatus] = useState<{ text: string; undo?: PrEntry } | null>(
     null,
   );
@@ -107,12 +113,16 @@ export function PrSection({
   );
   useEffect(() => () => clearTimeout(statusTimer.current), []);
 
-  // A hidden row leaves the list; focus that dropped to the body moves to
-  // the row now at its index.
-  const pendingFocus = useRef<number | null>(null);
+  // A hidden row leaves the list once the view reflects it; focus that
+  // dropped to the body then moves to the row now at its index, or to Undo
+  // once no row is left.
+  const pendingFocus = useRef<{ key: string; index: number } | null>(null);
   useLayoutEffect(() => {
-    const at = pendingFocus.current;
-    if (at == null) return;
+    const want = pendingFocus.current;
+    if (!want) return;
+    // Not applied yet: wait for the refetch.
+    if (rows.some((e) => key(e) === want.key)) return;
+    const at = want.index;
     const active = document.activeElement;
     if (active && active !== document.body && active.isConnected) {
       pendingFocus.current = null;
@@ -122,14 +132,15 @@ export function PrSection({
       ...(listRef.current?.querySelectorAll<HTMLElement>("[data-pr-row]") ??
         []),
     ];
-    const next = list[Math.min(at, list.length - 1)];
+    const next = list[Math.min(at, list.length - 1)] ?? undoRef.current;
     if (next) {
       pendingFocus.current = null;
       next.focus({ preventScroll: true });
     }
   });
 
-  if (!view || rows.length === 0) return null;
+  // Hiding the last row keeps the section for its "Hidden #N" Undo.
+  if (!view || (rows.length === 0 && !status?.undo)) return null;
 
   const announce = (next: { text: string; undo?: PrEntry }, ms: number) => {
     clearTimeout(statusTimer.current);
@@ -153,7 +164,11 @@ export function PrSection({
     );
   };
   const dismiss = (entry: PrEntry, dismissed: boolean) => {
-    if (dismissed) pendingFocus.current = Math.max(0, rows.indexOf(entry));
+    if (dismissed)
+      pendingFocus.current = {
+        key: key(entry),
+        index: Math.max(0, rows.indexOf(entry)),
+      };
     void dismissPr(
       sessionId,
       entry.snapshot.repo,
@@ -179,24 +194,32 @@ export function PrSection({
     else void openUrl(target.url).catch(() => undefined);
   };
   const notice = trackerNotice(view.status, now);
+  const stale =
+    view.refreshedAt != null && now - view.refreshedAt > STALE_AFTER_MS;
 
   return (
     <section
       className={`pr-section ${PR_LIST_CONTAINER}`}
-      aria-labelledby={titleId}
+      aria-labelledby={rows.length > 0 ? titleId : undefined}
+      aria-label={rows.length > 0 ? undefined : "Pull requests"}
     >
-      <div className="pr-section-head">
-        <h4 id={titleId} data-pr-section-title="">
-          Pull requests
-        </h4>
-        <span className="pr-section-count" data-pr-section-count="">
-          {rows.length}
-        </span>
-        <span className="pr-card-updated">
-          {freshnessLabel(view.refreshedAt, now)}
-        </span>
-      </div>
-      {notice ? (
+      {rows.length > 0 ? (
+        <div className="pr-section-head">
+          <h4 id={titleId} data-pr-section-title="">
+            Pull requests
+          </h4>
+          <span className="pr-section-count" data-pr-section-count="">
+            {rows.length}
+          </span>
+          <span
+            className="pr-card-updated"
+            data-stale={stale ? "true" : undefined}
+          >
+            {freshnessLabel(view.refreshedAt, now)}
+          </span>
+        </div>
+      ) : null}
+      {notice && rows.length > 0 ? (
         <div className="pr-notice" data-tone={notice.tone}>
           <span className="min-w-0">{notice.text}</span>
           {notice.action === "retry" ? (
@@ -210,33 +233,36 @@ export function PrSection({
           ) : null}
         </div>
       ) : null}
-      <ul
-        ref={listRef}
-        className="pr-list"
-        aria-labelledby={titleId}
-        onKeyDown={roving.onKeyDown}
-        onFocus={roving.onFocus}
-      >
-        {rows.map((entry, i) => (
-          <PrRow
-            key={key(entry)}
-            entry={entry}
-            selected={entry.onLiveBranch}
-            tabIndex={i === roving.activeIndex ? 0 : -1}
-            now={now}
-            onOpenInbox={openInbox}
-            onOpenGithub={openGithub}
-            onCopyLink={copyLink}
-            onDismiss={dismiss}
-          />
-        ))}
-      </ul>
+      {rows.length > 0 ? (
+        <ul
+          ref={listRef}
+          className="pr-list"
+          aria-labelledby={titleId}
+          onKeyDown={roving.onKeyDown}
+          onFocus={roving.onFocus}
+        >
+          {rows.map((entry, i) => (
+            <PrRow
+              key={key(entry)}
+              entry={entry}
+              selected={entry.onLiveBranch}
+              tabIndex={i === roving.activeIndex ? 0 : -1}
+              now={now}
+              onOpenInbox={openInbox}
+              onOpenGithub={openGithub}
+              onCopyLink={copyLink}
+              onDismiss={dismiss}
+            />
+          ))}
+        </ul>
+      ) : null}
       <div className="pr-section-status">
         <span role="status" className={status ? "truncate" : "sr-only"}>
           {status?.text ?? ""}
         </span>
         {status?.undo ? (
           <button
+            ref={undoRef}
             type="button"
             className="pr-undo"
             onClick={() => dismiss(status.undo!, false)}
@@ -245,7 +271,7 @@ export function PrSection({
           </button>
         ) : null}
       </div>
-      {target ? (
+      {target && rows.length > 0 ? (
         <ViewSplitButton
           target={target}
           others={others}
