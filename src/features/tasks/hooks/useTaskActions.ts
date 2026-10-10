@@ -1,4 +1,4 @@
-import { createContext, useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { StatusAction, StatusCard } from "../model/statusCard";
 import { changeDecisionText, effectForAction, effectForNode, type TaskActionEffect } from "../model/taskActions";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
@@ -28,14 +28,11 @@ export type TaskActionHost = {
 
 export type TaskActions = {
   onAction(action: StatusAction, card: StatusCard): void;
-  /** `sessionId` is the board's own session when it is not the focused one (an editor tab). */
+  /** `sessionId` is the board's own session when it is not the focused one. */
   onOpenNode(node: BoardNode, section: BoardSection, sessionId?: string): void;
   onOpenPlan(path: string): void;
   onChangeDecision(note: BoardNote, sessionId?: string): void;
 };
-
-/** Lets a board in an editor tab reach the handlers without threading props through the pane tree. */
-export const TaskActionsContext = createContext<TaskActions | undefined>(undefined);
 
 /** Runs a host call; a throw or a rejection is logged, never propagated to the click handler. */
 function attempt(what: string, call: () => unknown): void {

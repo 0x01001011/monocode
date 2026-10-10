@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { focusStop, freezeTransitions, type FocusStop } from "./contrast";
 
-// Keyboard focus regression guard for the Tasks panel and the full-tab Tasks board. It tabs
+// Keyboard focus regression guard for the Tasks panel. It tabs
 // through each page (and arrows through the tree) and, for every element that takes focus,
 // asserts the ring is really drawn: a visible outline style, at least 2px wide, at least 3:1
 // against what it sits on, and not cut off by an `overflow` ancestor. A Tailwind `outline-none`
@@ -86,30 +86,6 @@ test.describe("tasks panel keyboard focus ring", () => {
         expectKinds(stops, ["button", "select", "treeitem", "flow-strip"]);
         if (scene === "many problems") expectKinds(stops, ["overview-pill"]);
         expect(stops.filter((s) => s.kind === "treeitem").length, "tree rows reached with the arrow keys").toBeGreaterThanOrEqual(7);
-        expect(bad.map((s) => `${s.label}: ${s.problem}`)).toEqual([]);
-      });
-    }
-  }
-});
-
-test.describe("task board keyboard focus ring", () => {
-  const SCENES = ["natural", "trouble", "needs-you", "quiet"] as const;
-  for (const theme of THEMES_UNDER_TEST) {
-    for (const scene of SCENES) {
-      test(`${theme} ${scene}`, async ({ page }, testInfo) => {
-        await page.goto("/tests/browser/task-board.html");
-        await freezeTransitions(page);
-        await page.evaluate(([t, s]) => {
-          window.setTheme(t as "dark");
-          window.showBoard(s);
-        }, [theme, scene]);
-        await page.locator('table[aria-label="Plan tasks"] tbody tr[data-node]').first().waitFor();
-        await page.locator('ol[aria-label="Superpowers flow"]').waitFor();
-        const stops = await tabThrough(page);
-        const bad = summarize(`board ${testInfo.project.name} ${theme} ${scene}`, stops);
-        expect(stops.length, "distinct focus stops").toBeGreaterThanOrEqual(scene === "trouble" ? 14 : 10);
-        expectKinds(stops, ["button", "flow-strip"]);
-        if (scene === "trouble") expectKinds(stops, ["overview-pill"]);
         expect(bad.map((s) => `${s.label}: ${s.problem}`)).toEqual([]);
       });
     }

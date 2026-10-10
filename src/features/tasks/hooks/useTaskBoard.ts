@@ -62,11 +62,6 @@ type Input = {
   now?: () => number;
   fs?: SddFs;
   pollMs?: { visible: number; hiddenBusy: number };
-  /**
-   * The status card is read while hidden (the sidebar's tab badge and alerts), so busy
-   * sessions keep the slow hidden poll going. Default true; a board tab passes false.
-   */
-  needsStatusWhenHidden?: boolean;
   /** False when the plan files are out of reach (a remote project): no fs reads at all. */
   readPlan?: boolean;
 };
@@ -142,7 +137,7 @@ export function useTaskBoard(input: Input): TaskBoard {
   const toolsDone = visible ? completedTools(blocks) : 0;
   const anyBusy = sessions.some((s) => s.busy);
   const readPlan = input.readPlan ?? true;
-  const polling = readPlan && (visible || (anyBusy && (input.needsStatusWhenHidden ?? true)));
+  const polling = readPlan && (visible || anyBusy);
   const interval = visible ? pollVisible : pollHidden;
   const intervalRef = useRef(interval);
   intervalRef.current = interval;

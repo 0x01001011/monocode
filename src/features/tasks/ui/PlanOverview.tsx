@@ -9,7 +9,7 @@ type Props = {
   now: number;
   /** A problem button was activated: bring that task's row into view. */
   onReveal: (id: string) => void;
-  /** Caps the strip's width for wide hosts such as the full tab. */
+  /** Caps the strip's width for wide hosts such as a wide sidebar. */
   compact?: boolean;
 };
 

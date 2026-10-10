@@ -266,7 +266,6 @@ type Props = {
   /** Every loaded session, so the Tasks card judges activity from their blocks. */
   loadedSessions?: readonly Session[];
   onTasksAction?: (action: StatusAction, card: StatusCard) => void;
-  onOpenTasksTab?: () => void;
   onOpenTaskNode?: (node: BoardNode, section: BoardSection) => void;
   /** "Change this" on a decision the agent made for the plan. */
   onChangeTaskDecision?: (note: BoardNote) => void;

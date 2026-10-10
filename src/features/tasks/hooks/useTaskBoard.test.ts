@@ -199,16 +199,6 @@ describe("useTaskBoard", () => {
     expect(latest?.loaded).toBe(false);
   });
 
-  it("a board that does not need its status while hidden never polls hidden, even with busy sessions", async () => {
-    const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
-    const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
-    await mount(base(fs, { visible: false, sessions: busy, needsStatusWhenHidden: false }));
-    await advance(60_000);
-    expect(loads()).toBe(0);
-    await mount(base(fs, { visible: true, sessions: busy, needsStatusWhenHidden: false }));
-    expect(loads()).toBe(1);
-  });
-
   it("stops polling when the panel is hidden and nothing is busy", async () => {
     const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
     await mount(base(fs));

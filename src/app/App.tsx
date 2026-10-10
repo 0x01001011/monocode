@@ -202,9 +202,7 @@ import {
   openCommitTab,
   newAgentTab,
   openEditorTab,
-  editorTabKey,
   openSessionChangesTab,
-  openTaskBoardTab,
   pinEditorFile,
   openWorkspaceFile,
   previewWorkspaceFile,
@@ -430,11 +428,9 @@ import {
 } from "../features/sessions/model/quoteDraft";
 import { requestComposerPrefill } from "../features/sessions/model/composerPrefill";
 import {
-  TaskActionsContext,
   useTaskActions,
 } from "../features/tasks/hooks/useTaskActions";
 import { buildTaskActionHost } from "../features/tasks/hooks/taskActionHost";
-import { planRootFor } from "../features/tasks/model/planRoot";
 import type { BoardNote } from "../features/tasks/model/taskBoard";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
@@ -4101,25 +4097,6 @@ function Workspace({
     },
     [activeTabId],
   );
-
-  /** The Tasks tab's "Open as tab": the active session's board in the workspace. */
-  const onOpenTasksTab = useCallback(() => {
-    const session = sessionsRef.current.find(
-      (entry) => entry.id === activeSessionIdRef.current,
-    );
-    if (!session) return;
-    const projectCwd = sidebarCwdRef.current;
-    // The tab's cwd is where the plan is read: the session's working copy.
-    const planCwd = planRootFor(projectCwd, session);
-    setTabs((prev) =>
-      prev.map((tab) =>
-        tab.id === activeTabId
-          ? openTaskBoardTab(tab, planCwd, session.id, projectCwd, true)
-          : tab,
-      ),
-    );
-    setComposerFocused(false);
-  }, [activeTabId]);
 
   // A Mono view covers the workspace, so its session changes open beside the
   // chat instead of in a project tab hidden behind it.
@@ -12585,7 +12562,6 @@ function Workspace({
   return (
     <OrchestrationActions.Provider value={orchestrationActions}>
       <OrchestrationWorkers.Provider value={orchestrationWorkers}>
-        <TaskActionsContext.Provider value={taskActions}>
         <div
           className={`workspace-background flex h-full flex-col text-content ${
             HAS_NATIVE_GLASS
@@ -12612,7 +12588,6 @@ function Workspace({
               open={sessionSidebarOpen}
               tab={sidebarTab}
               onTabChange={setSidebarTab}
-              onOpenTasksTab={onOpenTasksTab}
               onTasksAction={taskActions.onAction}
               onOpenTaskNode={taskActions.onOpenNode}
               onChangeTaskDecision={onChangeTaskDecision}
@@ -13253,7 +13228,6 @@ function Workspace({
           ) : null}
         </div>
         <TranscriptPoolOutlet pool={transcriptPool} />
-        </TaskActionsContext.Provider>
       </OrchestrationWorkers.Provider>
     </OrchestrationActions.Provider>
   );
@@ -13374,9 +13348,7 @@ function toTitleTab(
         ? `plan:${file.plan.blockId}`
         : file.releaseNotes
           ? `release-notes:${file.releaseNotes.version}`
-          : file.taskBoard
-            ? editorTabKey(file)
-            : file.path;
+          : file.path;
     if (seenKeys.has(key)) return;
     seenKeys.add(key);
     files.push(
@@ -13385,9 +13357,7 @@ function toTitleTab(
           ? releaseNotesTitle(file.releaseNotes.version)
           : file.terminal
             ? terminalTabLabel(file)
-            : file.taskBoard
-              ? "Tasks"
-              : basename(file.path)),
+            : basename(file.path)),
     );
   };
   const focusedPane =

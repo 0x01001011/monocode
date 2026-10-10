@@ -2,7 +2,6 @@ import {
   closeLeaf,
   firstLeafId,
   isSessionChangesTab,
-  isTaskBoardTab,
   leafIds,
   removePane,
   type EditorPane,
@@ -116,8 +115,7 @@ function removeSessionDocuments(
         (file) =>
           file.plan?.sessionId === sessionId ||
           (isSessionChangesTab(file) &&
-            file.sessionChanges.sessionId === sessionId) ||
-          (isTaskBoardTab(file) && file.taskBoard.sessionId === sessionId),
+            file.sessionChanges.sessionId === sessionId),
       ),
     )
   )
@@ -131,8 +129,7 @@ function removeSessionDocuments(
       (file) =>
         file.plan?.sessionId !== sessionId &&
         (!isSessionChangesTab(file) ||
-          file.sessionChanges.sessionId !== sessionId) &&
-        (!isTaskBoardTab(file) || file.taskBoard.sessionId !== sessionId),
+          file.sessionChanges.sessionId !== sessionId),
     );
     if (files.length > 0) {
       editorPanes.push({

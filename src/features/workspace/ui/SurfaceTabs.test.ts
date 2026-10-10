@@ -5,7 +5,6 @@ import {
   newFileTab,
   newReleaseNotesWorkspaceTab,
   newSessionChangesTab,
-  newTaskBoardTab,
   newTerminalFile,
 } from "../model/layout";
 import { releaseNotesTitle } from "../../../app/model/releaseNotes";
@@ -50,15 +49,6 @@ describe("surfaceTabPresentation", () => {
       label: "Session Changes",
       iconName: "CHANGES",
       tooltip: "Changes captured for this session only",
-    });
-  });
-
-  it("labels a task board tab Tasks", () => {
-    expect(surfaceTabPresentation(newTaskBoardTab("/repo", "session-a"))).toEqual({
-      name: "Tasks",
-      label: "Tasks",
-      iconName: "plan.md",
-      tooltip: "Task progress for this session",
     });
   });
 

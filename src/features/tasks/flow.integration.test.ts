@@ -20,19 +20,7 @@ import {
 } from "./flow.integration.fixtures";
 import { useTaskBoard, type TaskBoard } from "./hooks/useTaskBoard";
 import type { SddFs } from "./model/sddWorkspace";
-import { TaskBoardView } from "./ui/TaskBoardView";
 import { TasksPanel } from "./ui/TasksPanel";
-
-// The Tauri filesystem is the one boundary TaskBoardView cannot be injected past (it has no
-// `fs` prop), so scenario (h) swaps what stands behind it. Every other scenario passes `fs`.
-const tauri = vi.hoisted(() => ({ fs: undefined as undefined | import("./model/sddWorkspace").SddFs }));
-vi.mock("./model/tauriSddFs", () => ({
-  tauriSddFs: {
-    listDir: (path: string) => tauri.fs!.listDir(path),
-    readText: (path: string) => tauri.fs!.readText(path),
-    statMtimes: (paths: string[]) => tauri.fs!.statMtimes(paths),
-  },
-}));
 
 // --- Inputs ---------------------------------------------------------------------------------
 
@@ -261,60 +249,6 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
     expect(labels(phases)).toEqual(["Spec", "Plan", "Build", "Check", "Ship"]);
     expect(phases.filter((p) => p.button).map((p) => p.label)).toEqual(["Spec"]);
     expect(container.textContent).not.toContain("Open plan");
-  });
-
-  it("(h) the same board through TaskBoardView", async () => {
-    // TaskBoardView has no `fs` prop, so the Tauri boundary is swapped; Date is the only
-    // faked timer, set to the scenario clock because the view reads Date.now() itself.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(NOW);
-    tauri.fs = fixtureFs(MID_RUN);
-    const session = sessionWith(transcript(npmTestPassed()));
-    await render(MID_RUN, transcript(npmTestPassed()));
-    const panel = strip();
-    const panelProgress = container.textContent;
-    expect(panel).not.toHaveLength(0);
-
-    const view = document.createElement("div");
-    document.body.appendChild(view);
-    const viewRoot = createRoot(view);
-    try {
-      await act(async () =>
-        viewRoot.render(createElement(TaskBoardView, { projectCwd: CWD, session, sessions: [], onOpenPlan: onOpenFile })),
-      );
-      // The tab shows exactly the strip the sidebar panel does, from the same inputs.
-      expect(strip(view)).toEqual(panel);
-      expect(view.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
-      expect(panelProgress).toContain("4 of 8 tasks · 5 left");
-      expect(view.textContent).toContain("4 of 8 tasks · 5 left");
-      // The view resolves a ledger path against the plan root before it opens.
-      click(stripButton("Spec", view));
-      click(stripButton("Plan", view));
-      click([...view.querySelectorAll("button")].find((b) => b.textContent === "Open plan"));
-      expect(onOpenFile.mock.calls).toEqual([[`${CWD}/${SPEC_PATH}`], [`${CWD}/${PLAN_PATH}`], [`${CWD}/${PLAN_PATH}`]]);
-    } finally {
-      await act(async () => viewRoot.unmount());
-      view.remove();
-      tauri.fs = undefined;
-    }
-  });
-
-  it("(h) TaskBoardView leaves an unsafe spec as text", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(NOW);
-    const options = { ...MID_RUN, transform: compose(MID_RUN.transform!, withSpecLine("Spec: ../../etc/passwd.md")) };
-    tauri.fs = fixtureFs(options);
-    try {
-      await act(async () =>
-        root.render(createElement(TaskBoardView, { projectCwd: CWD, session: sessionWith(transcript()), sessions: [], onOpenPlan: onOpenFile })),
-      );
-      expect(labels(strip())).toEqual(["Spec", "Plan", "Build", "Check", "Ship"]);
-      expect(stripButton("Spec")).toBeUndefined();
-      click(stripButton("Plan"));
-      expect(onOpenFile.mock.calls).toEqual([[`${CWD}/${PLAN_PATH}`]]);
-    } finally {
-      tauri.fs = undefined;
-    }
   });
 
   it("(i) a 5000-block transcript with 70 KB shell commands derives the board in well under a second", async () => {
