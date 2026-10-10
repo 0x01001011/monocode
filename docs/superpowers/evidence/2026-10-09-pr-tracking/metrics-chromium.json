@@ -1,16 +1,1214 @@
 {
-  "harnessReadyMsMedian": 102,
+  "branchCharactersByRowWidth": {
+    "300": 11,
+    "320": 11,
+    "360": 11,
+    "400": 11,
+    "420": 11,
+    "600": 22,
+    "900": 34
+  },
+  "cardRowHeightsPx": [
+    45.8,
+    43.8,
+    45.8,
+    45.8,
+    45.8,
+    43.8,
+    45.8
+  ],
+  "rail12ModeByInboxWidth": {
+    "320": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "360": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "400": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "440": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "480": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "520": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "560": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "600": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "640": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "680": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "720": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "760": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "800": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "840": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "880": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "920": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "960": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1000": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1040": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1080": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1120": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1160": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1200": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1240": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1280": {
+      "mode": "scroll",
+      "compactNodes": 11
+    },
+    "1320": {
+      "mode": "compact",
+      "compactNodes": 11
+    },
+    "1360": {
+      "mode": "compact",
+      "compactNodes": 11
+    },
+    "1400": {
+      "mode": "compact",
+      "compactNodes": 11
+    },
+    "1440": {
+      "mode": "compact",
+      "compactNodes": 11
+    },
+    "1480": {
+      "mode": "compact",
+      "compactNodes": 10
+    },
+    "1520": {
+      "mode": "compact",
+      "compactNodes": 10
+    },
+    "1560": {
+      "mode": "compact",
+      "compactNodes": 10
+    },
+    "1600": {
+      "mode": "compact",
+      "compactNodes": 9
+    },
+    "1640": {
+      "mode": "compact",
+      "compactNodes": 9
+    },
+    "1680": {
+      "mode": "compact",
+      "compactNodes": 9
+    },
+    "1720": {
+      "mode": "compact",
+      "compactNodes": 9
+    },
+    "1760": {
+      "mode": "compact",
+      "compactNodes": 8
+    },
+    "1800": {
+      "mode": "compact",
+      "compactNodes": 8
+    },
+    "1840": {
+      "mode": "compact",
+      "compactNodes": 8
+    },
+    "1880": {
+      "mode": "compact",
+      "compactNodes": 7
+    },
+    "1920": {
+      "mode": "compact",
+      "compactNodes": 7
+    },
+    "1960": {
+      "mode": "compact",
+      "compactNodes": 7
+    },
+    "2000": {
+      "mode": "compact",
+      "compactNodes": 7
+    },
+    "2040": {
+      "mode": "compact",
+      "compactNodes": 6
+    },
+    "2080": {
+      "mode": "compact",
+      "compactNodes": 6
+    },
+    "2120": {
+      "mode": "compact",
+      "compactNodes": 6
+    },
+    "2160": {
+      "mode": "compact",
+      "compactNodes": 6
+    },
+    "2200": {
+      "mode": "compact",
+      "compactNodes": 5
+    },
+    "2240": {
+      "mode": "compact",
+      "compactNodes": 5
+    },
+    "2280": {
+      "mode": "compact",
+      "compactNodes": 5
+    },
+    "2320": {
+      "mode": "compact",
+      "compactNodes": 4
+    },
+    "2360": {
+      "mode": "compact",
+      "compactNodes": 4
+    },
+    "2400": {
+      "mode": "compact",
+      "compactNodes": 4
+    },
+    "2440": {
+      "mode": "compact",
+      "compactNodes": 4
+    },
+    "2480": {
+      "mode": "compact",
+      "compactNodes": 3
+    },
+    "2520": {
+      "mode": "compact",
+      "compactNodes": 3
+    },
+    "2560": {
+      "mode": "compact",
+      "compactNodes": 3
+    },
+    "2600": {
+      "mode": "compact",
+      "compactNodes": 2
+    },
+    "2640": {
+      "mode": "compact",
+      "compactNodes": 2
+    },
+    "2680": {
+      "mode": "compact",
+      "compactNodes": 2
+    },
+    "2720": {
+      "mode": "compact",
+      "compactNodes": 2
+    },
+    "2760": {
+      "mode": "compact",
+      "compactNodes": 1
+    },
+    "2800": {
+      "mode": "compact",
+      "compactNodes": 1
+    },
+    "2840": {
+      "mode": "compact",
+      "compactNodes": 1
+    },
+    "2880": {
+      "mode": "full",
+      "compactNodes": 0
+    },
+    "2920": {
+      "mode": "full",
+      "compactNodes": 0
+    },
+    "2960": {
+      "mode": "full",
+      "compactNodes": 0
+    },
+    "3000": {
+      "mode": "full",
+      "compactNodes": 0
+    },
+    "3040": {
+      "mode": "full",
+      "compactNodes": 0
+    },
+    "3080": {
+      "mode": "full",
+      "compactNodes": 0
+    },
+    "3120": {
+      "mode": "full",
+      "compactNodes": 0
+    },
+    "3160": {
+      "mode": "full",
+      "compactNodes": 0
+    },
+    "3200": {
+      "mode": "full",
+      "compactNodes": 0
+    }
+  },
+  "railModesAt640": [
+    {
+      "id": "rail-3",
+      "mode": "compact",
+      "fits": true
+    },
+    {
+      "id": "rail-6",
+      "mode": "scroll",
+      "fits": false
+    },
+    {
+      "id": "rail-12",
+      "mode": "scroll",
+      "fits": false
+    }
+  ],
+  "contrast-dark": {
+    "minText": 4.82,
+    "minIcon": 4.82,
+    "byFixture": {
+      "stack": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.18,
+          "text": 31,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 38,
+          "icons": 16
+        },
+        "rowMenu": {
+          "minText": 9.49,
+          "minIcon": 9.49,
+          "text": 4,
+          "icons": 4
+        }
+      },
+      "ok": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.18,
+          "text": 31,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 38,
+          "icons": 16
+        }
+      },
+      "ghMissing": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.18,
+          "text": 32,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 39,
+          "icons": 17
+        }
+      },
+      "signedOut": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.18,
+          "text": 33,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 40,
+          "icons": 17
+        }
+      },
+      "offline": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.18,
+          "text": 33,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 40,
+          "icons": 17
+        }
+      },
+      "idle": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.18,
+          "text": 31,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 38,
+          "icons": 16
+        }
+      },
+      "rateLimited": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.18,
+          "text": 32,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 39,
+          "icons": 16
+        }
+      },
+      "many": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.29,
+          "text": 150,
+          "icons": 67
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 159,
+          "icons": 67
+        }
+      },
+      "i18n": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 7.25,
+          "text": 21,
+          "icons": 11
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 25,
+          "icons": 11
+        }
+      },
+      "stale": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 5.2,
+          "text": 2,
+          "icons": 2
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 4.99,
+          "text": 31,
+          "icons": 23
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 38,
+          "icons": 23
+        }
+      },
+      "limited": {
+        "chip": {
+          "minText": 5.2,
+          "minIcon": 7.75,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 5.29,
+          "text": 12,
+          "icons": 6
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 18,
+          "icons": 6
+        }
+      },
+      "hidden": {
+        "chip": {
+          "minText": 12.49,
+          "minIcon": 12.49,
+          "text": 1,
+          "icons": 1
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.91,
+          "text": 32,
+          "icons": 13
+        }
+      },
+      "empty": {
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        }
+      },
+      "neighbor": {
+        "chip": {
+          "minText": 12.49,
+          "minIcon": 7.75,
+          "text": 1,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 6.58,
+          "minIcon": 6.58,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.99,
+          "minIcon": 7.25,
+          "text": 16,
+          "icons": 8
+        },
+        "inbox": {
+          "minText": 5.11,
+          "minIcon": 5.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.82,
+          "minIcon": 4.82,
+          "text": 22,
+          "icons": 8
+        }
+      }
+    }
+  },
+  "contrast-light": {
+    "minText": 4.7,
+    "minIcon": 3.28,
+    "byFixture": {
+      "stack": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 31,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 38,
+          "icons": 16
+        },
+        "rowMenu": {
+          "minText": 10.57,
+          "minIcon": 10.57,
+          "text": 4,
+          "icons": 4
+        }
+      },
+      "ok": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 31,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 38,
+          "icons": 16
+        }
+      },
+      "ghMissing": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 32,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 39,
+          "icons": 17
+        }
+      },
+      "signedOut": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 40,
+          "icons": 17
+        }
+      },
+      "offline": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 40,
+          "icons": 17
+        }
+      },
+      "idle": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 31,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 38,
+          "icons": 16
+        }
+      },
+      "rateLimited": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 32,
+          "icons": 16
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 39,
+          "icons": 16
+        }
+      },
+      "many": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 150,
+          "icons": 67
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 159,
+          "icons": 67
+        }
+      },
+      "i18n": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 4.21,
+          "text": 21,
+          "icons": 11
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 4.21,
+          "text": 25,
+          "icons": 11
+        }
+      },
+      "stale": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 2
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 31,
+          "icons": 23
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 38,
+          "icons": 23
+        }
+      },
+      "limited": {
+        "chip": {
+          "minText": 4.7,
+          "minIcon": 4.46,
+          "text": 2,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 12,
+          "icons": 6
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 18,
+          "icons": 6
+        }
+      },
+      "hidden": {
+        "chip": {
+          "minText": 11.05,
+          "minIcon": 11.05,
+          "text": 1,
+          "icons": 1
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 3.28,
+          "text": 32,
+          "icons": 13
+        }
+      },
+      "empty": {
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        }
+      },
+      "neighbor": {
+        "chip": {
+          "minText": 11.05,
+          "minIcon": 4.46,
+          "text": 1,
+          "icons": 1
+        },
+        "glyph": {
+          "minText": 4.79,
+          "minIcon": 4.79,
+          "text": 1,
+          "icons": 1
+        },
+        "panel": {
+          "minText": 4.77,
+          "minIcon": 4.6,
+          "text": 16,
+          "icons": 8
+        },
+        "inbox": {
+          "minText": 5.03,
+          "minIcon": 3.28,
+          "text": 33,
+          "icons": 21
+        },
+        "card": {
+          "minText": 4.77,
+          "minIcon": 4.6,
+          "text": 22,
+          "icons": 8
+        }
+      }
+    }
+  },
+  "smallestTarget": {
+    "w": 33,
+    "h": 24,
+    "label": "6 pull requests, PR 482 open, blocked"
+  },
+  "targetsMeasuredByFixture": {
+    "stack": 62,
+    "ok": 58,
+    "ghMissing": 58,
+    "signedOut": 60,
+    "offline": 60,
+    "idle": 58,
+    "rateLimited": 58,
+    "many": 190,
+    "i18n": 46,
+    "stale": 58,
+    "limited": 38,
+    "hidden": 40,
+    "empty": 25,
+    "neighbor": 42
+  },
+  "harnessReadyMsMedian": 104,
   "harnessReadyMs": [
-    93,
-    97,
-    102,
+    91,
+    96,
     104,
-    200
+    106,
+    197
   ],
   "domNodesPage": 556,
   "cardOpenToPaint": {
-    "medianMs": 33.6,
-    "p95Ms": 34.9,
+    "medianMs": 33.4,
+    "p95Ms": 34,
     "note": "includes two rAF waits (~33ms floor at 60Hz)"
   },
   "domNodesStackCard": 190,
@@ -18,7 +1216,7 @@
   "scroll40PrCard": {
     "frames": 60,
     "p50Ms": 16.7,
-    "p95Ms": 16.8,
+    "p95Ms": 16.7,
     "maxMs": 16.8
   }
 }

@@ -1,4 +1,5 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { FIXTURE_NAMES } from "./pr-tracking.fixtures";
 
@@ -17,6 +18,21 @@ const THEMES = ["dark", "light"] as const;
 const WIDTHS = [900, 600, 420, 400, 360, 320, 300];
 
 test.use({ viewport: { width: 1280, height: 1000 } });
+
+/**
+ * Merges measured numbers into `test-results/pr-tracking-metrics-<engine>.json`
+ * and, with PR_EVIDENCE=1, into the committed evidence copy, so every number
+ * in the report can be checked against a file.
+ */
+function recordMetrics(browserName: string, entries: Record<string, unknown>) {
+  const files = [`test-results/pr-tracking-metrics-${browserName}.json`];
+  if (evidence) files.push(`${EVIDENCE}/metrics-${browserName}.json`);
+  for (const file of files) {
+    mkdirSync(dirname(file), { recursive: true });
+    const prior = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+    writeFileSync(file, `${JSON.stringify({ ...prior, ...entries }, null, 2)}\n`);
+  }
+}
 
 type Params = Record<string, string | number | undefined>;
 
@@ -51,6 +67,20 @@ const frames = (page: Page) =>
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
   );
+
+/**
+ * Lets React commit what a fired timer scheduled. React schedules through
+ * MessageChannel, which `page.clock` does not fake (rAF it does).
+ */
+const settle = (page: Page) =>
+  page.evaluate(async () => {
+    for (let i = 0; i < 3; i++)
+      await new Promise<void>((resolve) => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => resolve();
+        channel.port2.postMessage(0);
+      });
+  });
 
 const animationsDone = (page: Page) =>
   page.waitForFunction(() =>
@@ -108,7 +138,9 @@ type Contrast = {
   failures: string[];
   minText: number;
   minIcon: number;
-  checked: number;
+  /** Text node owners and icons actually measured (after the skip rules). */
+  textCount: number;
+  iconCount: number;
 };
 
 /**
@@ -217,7 +249,8 @@ function contrastAudit(scope: string): Contrast {
   const failures: string[] = [];
   let minText = Infinity;
   let minIcon = Infinity;
-  let checked = 0;
+  let textCount = 0;
+  let iconCount = 0;
   for (const el of document.querySelectorAll(scope)) {
     const own = [...el.childNodes].some(
       (n) => n.nodeType === 3 && n.textContent!.trim(),
@@ -236,7 +269,8 @@ function contrastAudit(scope: string): Contrast {
     let fg = parse(cs.color);
     fg = [fg[0], fg[1], fg[2], fg[3] * opacityOf(el)];
     const r = ratio(over(fg, bg), bg);
-    checked += 1;
+    if (isSvg) iconCount += 1;
+    else textCount += 1;
     const need = isSvg ? 3 : 4.5;
     if (isSvg) minIcon = Math.min(minIcon, r);
     else minText = Math.min(minText, r);
@@ -254,7 +288,13 @@ function contrastAudit(scope: string): Contrast {
       failures.push(`${r.toFixed(2)} < ${need} | .${cls} | ${text}`);
     }
   }
-  return { failures: [...new Set(failures)], minText, minIcon, checked };
+  return {
+    failures: [...new Set(failures)],
+    minText,
+    minIcon,
+    textCount,
+    iconCount,
+  };
 }
 
 type Target = { w: number; h: number; label: string };
@@ -264,9 +304,14 @@ type Target = { w: number; h: number; label: string };
  * absolutely positioned `::before`/`::after` hit area (ported from
  * /tmp/mc-audit/checks.js). Returns every measured size too.
  */
-function targetAudit(scope: string): { small: Target[]; min: Target | null } {
+function targetAudit(scope: string): {
+  small: Target[];
+  min: Target | null;
+  count: number;
+} {
   const small: Target[] = [];
   let min: Target | null = null;
+  let count = 0;
   const px = (v: string) => (v === "auto" ? 0 : parseFloat(v) || 0);
   for (const el of document.querySelectorAll<HTMLElement>(scope)) {
     // App chrome outside this feature (project picker, context meter).
@@ -287,11 +332,31 @@ function targetAudit(scope: string): { small: Target[]; min: Target | null } {
       .trim()
       .slice(0, 40);
     const t = { w: Math.round(w * 10) / 10, h: Math.round(h * 10) / 10, label };
+    count += 1;
     if (!min || Math.min(t.w, t.h) < Math.min(min.w, min.h)) min = t;
     if (w < 23.99 || h < 23.99) small.push(t);
   }
-  return { small, min };
+  return { small, min, count };
 }
+
+/**
+ * Regions audited one by one, so a drifted selector that matches nothing
+ * fails instead of passing vacuously. `root` is the region's own element.
+ */
+const REGIONS = {
+  chip: { root: "#composer .pr-chip", scope: "#composer .pr-chip *" },
+  glyph: { root: "#sb-row .sb-glyph", scope: "#sb-row .sb-glyph *" },
+  panel: { root: "#panel .pr-section", scope: "#panel .pr-section *" },
+  inbox: { root: "#inbox .pr-inbox-stack", scope: "#inbox *" },
+  card: { root: '[role="dialog"].pr-card', scope: '[role="dialog"].pr-card *' },
+} as const;
+type Region = keyof typeof REGIONS;
+
+/** Regions a fixture renders nothing in; every other region shows text and icons. */
+const ABSENT: Partial<Record<string, Region[]>> = {
+  empty: ["chip", "glyph", "panel", "card"],
+  hidden: ["glyph", "panel"],
+};
 
 const PR_SCOPE =
   "#composer *, #sidebar *, #panel *, #inbox *, [role=dialog] *, [role=menu] *";
@@ -388,7 +453,7 @@ test.describe("layout", () => {
     });
   }
 
-  test("900px shows at least 8 branch characters; the chip stays inside the row", async ({
+  test("at least 8 branch characters show at every width; the chip stays inside the row", async ({
     page,
   }) => {
     const visibleChars = () =>
@@ -421,11 +486,12 @@ test.describe("layout", () => {
       seen[w] = await visibleChars();
       if ([300, 420, 600, 900].includes(w)) expect(await chipInside(), `${w}px`).toBe(true);
     }
-    expect(seen[900]).toBeGreaterThanOrEqual(8);
+    for (const w of WIDTHS) expect(seen[w], `${w}px`).toBeGreaterThanOrEqual(8);
     test.info().annotations.push({
       type: "branch characters visible",
       description: JSON.stringify(seen),
     });
+    recordMetrics(test.info().project.name, { branchCharactersByRowWidth: seen });
   });
 
   test("400px drops the strip and +N; 320px drops the Worktree label", async ({
@@ -497,6 +563,7 @@ test.describe("layout", () => {
       type: "card row heights (brief says 40px)",
       description: heights.join(", "),
     });
+    recordMetrics(test.info().project.name, { cardRowHeightsPx: heights });
     for (const h of heights) {
       expect(h).toBeGreaterThanOrEqual(38);
       expect(h).toBeLessThanOrEqual(48);
@@ -560,6 +627,11 @@ test.describe("layout", () => {
       expect(order[modes[i].mode]).toBeGreaterThanOrEqual(order[modes[i - 1].mode]);
     const seenModes = new Set(modes.map((m) => m.mode));
     expect([...seenModes]).toEqual(["full", "compact", "scroll"]);
+    recordMetrics(test.info().project.name, {
+      rail12ModeByInboxWidth: Object.fromEntries(
+        modes.map((m) => [m.width, { mode: m.mode, compactNodes: m.compact }]),
+      ),
+    });
     test.info().annotations.push({
       type: "rail-12 mode by inbox width",
       description: modes
@@ -580,6 +652,7 @@ test.describe("layout", () => {
     expect(modes[0].mode).not.toBe("scroll");
     for (const m of modes) if (m.mode !== "scroll") expect(m.fits).toBe(true);
     test.info().annotations.push({ type: "rail modes at 640px", description: JSON.stringify(modes) });
+    recordMetrics(test.info().project.name, { railModesAt640: modes });
   });
 
   test("200% zoom equivalent: the card fits a 640x500 CSS px window", async ({ page }) => {
@@ -642,32 +715,70 @@ test.describe("contrast", () => {
       const failures: string[] = [];
       let minText = Infinity;
       let minIcon = Infinity;
+      const perFixture: Record<string, Record<string, unknown>> = {};
       for (const fixture of FIXTURE_NAMES) {
         await load(page, { fixture, theme });
-        const states: string[] = ["rest"];
-        if (fixture !== "empty") {
-          await pin(page);
-          states.push("pinned");
+        if (fixture !== "empty") await pin(page);
+        const absent = ABSENT[fixture] ?? [];
+        const regions: Record<string, unknown> = {};
+        for (const [name, region] of Object.entries(REGIONS) as [Region, (typeof REGIONS)[Region]][]) {
+          const where = `${fixture}/${name}`;
+          if (absent.includes(name)) {
+            expect(await page.locator(region.root).count(), `${where} renders nothing`).toBe(0);
+            continue;
+          }
+          expect(await page.locator(region.root).count(), `${where} renders`).toBeGreaterThan(0);
+          const result = await page.evaluate(contrastAudit, region.scope);
+          expect(result.textCount, `${where} text measured`).toBeGreaterThan(0);
+          expect(result.iconCount, `${where} icons measured`).toBeGreaterThan(0);
+          expect(Number.isFinite(result.minText), `${where} text minimum`).toBe(true);
+          expect(Number.isFinite(result.minIcon), `${where} icon minimum`).toBe(true);
+          minText = Math.min(minText, result.minText);
+          minIcon = Math.min(minIcon, result.minIcon);
+          for (const f of result.failures) failures.push(`${where}: ${f}`);
+          regions[name] = {
+            minText: Number(result.minText.toFixed(2)),
+            minIcon: Number(result.minIcon.toFixed(2)),
+            text: result.textCount,
+            icons: result.iconCount,
+          };
         }
-        const result = await page.evaluate(contrastAudit, PR_SCOPE);
-        minText = Math.min(minText, result.minText);
-        minIcon = Math.min(minIcon, result.minIcon);
-        for (const f of result.failures) failures.push(`${fixture}: ${f}`);
+        // Whatever else the PR surfaces render (composer chrome included).
+        const rest = await page.evaluate(contrastAudit, PR_SCOPE);
+        expect(rest.textCount, `${fixture} text measured`).toBeGreaterThan(0);
+        for (const f of rest.failures) failures.push(`${fixture}: ${f}`);
         if (fixture === "stack") {
-          // A row's menu and the panel's split menu.
+          // A row's menu.
           await page.keyboard.press("Tab");
           await page.keyboard.press("Enter");
           await expect(page.locator("[data-pr-row-menu]")).toBeVisible();
           await animationsDone(page);
           const menu = await page.evaluate(contrastAudit, "[role=menu] *");
+          expect(menu.textCount, "row menu text measured").toBeGreaterThan(0);
+          expect(menu.iconCount, "row menu icons measured").toBeGreaterThan(0);
           for (const f of menu.failures) failures.push(`${fixture} row menu: ${f}`);
           minText = Math.min(minText, menu.minText);
           minIcon = Math.min(minIcon, menu.minIcon);
+          regions.rowMenu = {
+            minText: Number(menu.minText.toFixed(2)),
+            minIcon: Number(menu.minIcon.toFixed(2)),
+            text: menu.textCount,
+            icons: menu.iconCount,
+          };
         }
+        perFixture[fixture] = regions;
       }
+      expect(Number.isFinite(minText) && Number.isFinite(minIcon)).toBe(true);
       test.info().annotations.push({
         type: `contrast minimum ${theme}`,
         description: `text ${minText.toFixed(2)}, icons ${minIcon.toFixed(2)}`,
+      });
+      recordMetrics(test.info().project.name, {
+        [`contrast-${theme}`]: {
+          minText: Number(minText.toFixed(2)),
+          minIcon: Number(minIcon.toFixed(2)),
+          byFixture: perFixture,
+        },
       });
       expect([...new Set(failures)]).toEqual([]);
     });
@@ -678,6 +789,7 @@ test.describe("targets", () => {
   test("every interactive element is at least 24x24", async ({ page }) => {
     const small: string[] = [];
     let min: Target | null = null;
+    const counts: Record<string, number> = {};
     for (const fixture of FIXTURE_NAMES) {
       await load(page, { fixture });
       if (fixture !== "empty") await pin(page);
@@ -687,6 +799,9 @@ test.describe("targets", () => {
         await expect(page.locator("[data-pr-row-menu]")).toBeVisible();
       }
       const result = await page.evaluate(targetAudit, PR_INTERACTIVE);
+      expect(result.count, `${fixture} targets measured`).toBeGreaterThan(0);
+      expect(result.min, `${fixture} smallest target`).not.toBeNull();
+      counts[fixture] = result.count;
       for (const t of result.small) small.push(`${fixture}: ${t.w}x${t.h} ${t.label}`);
       if (result.min && (!min || Math.min(result.min.w, result.min.h) < Math.min(min.w, min.h)))
         min = result.min;
@@ -695,7 +810,47 @@ test.describe("targets", () => {
       type: "smallest target",
       description: JSON.stringify(min),
     });
+    recordMetrics(test.info().project.name, {
+      smallestTarget: min,
+      targetsMeasuredByFixture: counts,
+    });
     expect([...new Set(small)]).toEqual([]);
+  });
+});
+
+test.describe("audit self-test", () => {
+  test("the contrast and target audits report a deliberately bad DOM", async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+      const bad = document.createElement("div");
+      bad.id = "audit-bad";
+      bad.style.cssText =
+        "position:fixed;top:0;left:0;z-index:9999;padding:8px;background:#808080";
+      bad.innerHTML = `
+        <span style="color:#8c8c8c">low contrast text</span>
+        <span style="color:#000">good text</span>
+        <span aria-hidden="true" style="color:#8c8c8c">decorative</span>
+        <span style="color:#8c8c8c;opacity:0.01">invisible</span>
+        <svg width="14" height="14" viewBox="0 0 14 14" style="color:#888">
+          <circle cx="7" cy="7" r="6" stroke="currentColor" fill="none" />
+        </svg>
+        <button style="display:inline-block;width:10px;height:10px;padding:0;border:0;color:#000">x</button>
+        <button style="display:inline-block;width:24px;height:24px;padding:0;border:0;color:#000">ok</button>`;
+      document.body.appendChild(bad);
+    });
+    const contrast = await page.evaluate(contrastAudit, "#audit-bad *");
+    // The aria-hidden and near-transparent spans are skipped by design.
+    expect(contrast.textCount).toBe(4);
+    expect(contrast.iconCount).toBe(1);
+    expect(contrast.failures.some((f) => f.includes("low contrast text"))).toBe(true);
+    expect(contrast.failures.some((f) => f.includes("[icon"))).toBe(true);
+    expect(contrast.failures.some((f) => f.includes("good text"))).toBe(false);
+    expect(contrast.minText).toBeLessThan(1.2);
+    expect(contrast.minIcon).toBeLessThan(1.2);
+    const targets = await page.evaluate(targetAudit, "#audit-bad button");
+    expect(targets.count).toBe(2);
+    expect(targets.small).toEqual([{ w: 10, h: 10, label: "x" }]);
+    expect(targets.min).toEqual({ w: 10, h: 10, label: "x" });
   });
 });
 
@@ -757,16 +912,28 @@ test.describe("keyboard and focus", () => {
 
   test("hover opens after the delay and closes after leaving", async ({ page }) => {
     await load(page);
+    // Fake, paused timers: the delays are stepped exactly, independent of
+    // load (an installed clock still flows until paused).
+    await page.clock.install();
+    await page.clock.pauseAt(Date.now() + 5_000);
     await chip(page).hover();
-    await page.waitForTimeout(120);
-    await expect(card(page)).toHaveCount(0);
+    await page.clock.runFor(219);
+    await settle(page);
+    expect(await card(page).count(), "chip card at 219ms").toBe(0);
+    await page.clock.runFor(1);
     await expect(card(page)).toBeVisible();
     await page.mouse.move(1200, 20);
+    await page.clock.runFor(99);
+    await settle(page);
+    expect(await card(page).count(), "card 99ms after leaving").toBe(1);
+    await page.clock.runFor(1);
     await expect(card(page)).toHaveCount(0);
     // The sidebar waits 400ms.
     await page.locator("#sb-row .sb-glyph").hover();
-    await page.waitForTimeout(260);
-    await expect(card(page)).toHaveCount(0);
+    await page.clock.runFor(399);
+    await settle(page);
+    expect(await card(page).count(), "sidebar card at 399ms").toBe(0);
+    await page.clock.runFor(1);
     await expect(card(page)).toBeVisible();
     const side = await page.evaluate(
       () =>
@@ -1098,17 +1265,14 @@ test.describe("measurements", () => {
     const metrics = await measure(page);
     const scroll = metrics.scroll40PrCard as { p95Ms: number };
     const open = metrics.cardOpenToPaint as { medianMs: number };
-    // Loose bounds: catches a pathological regression, not a benchmark.
-    expect(open.medianMs).toBeLessThan(100);
-    expect(scroll.p95Ms).toBeLessThan(50);
-    expect(metrics.domNodes40PrCard as number).toBeLessThan(2000);
-    const out = `test-results/pr-tracking-metrics-${browserName}.json`;
-    mkdirSync("test-results", { recursive: true });
-    writeFileSync(out, JSON.stringify(metrics, null, 2));
+    // Timing bounds only on a deliberate evidence run (PR_EVIDENCE=1), so a
+    // loaded CI host cannot fail the suite; loose, to catch pathologies.
     if (evidence) {
-      mkdirSync(EVIDENCE, { recursive: true });
-      writeFileSync(`${EVIDENCE}/metrics-${browserName}.json`, JSON.stringify(metrics, null, 2));
+      expect(open.medianMs).toBeLessThan(100);
+      expect(scroll.p95Ms).toBeLessThan(50);
     }
+    expect(metrics.domNodes40PrCard as number).toBeLessThan(2000);
+    recordMetrics(browserName, metrics);
     test.info().annotations.push({ type: "metrics", description: JSON.stringify(metrics) });
   });
 });
