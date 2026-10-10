@@ -77,13 +77,18 @@ const ACTIONS =
 //   number, 64 px of title, NOW and "fix 3 of 5" need 207 px; a 240 px tree with two lanes has
 //   190. The current task stays marked by its node and the `n` key. A row without refs keeps NOW
 //   and the meta's step count ("2/5", not "2/5 · 30m").
+// The meta never truncates mid-text either: it is its step count and its time ("3/4 · 32m"),
+// each shown whole or hidden whole, and the time goes first. Under 300 px every row drops the
+// time; under 400 px a row with a ref does too: NOW, "fix 3 of 5" and "3/4 · 32m" beside the
+// title's 104 px need a 385 px tree, while "3/4" alone leaves the title 122 px at 340.
 const NARROW_GAP = "gap-2 @max-[360px]:gap-1";
-// The title asks for 104 px (64 px under a 300 px tree) as its flex basis, not as a floor: the
-// meta gives up its width first (its shrink weight is 100 times the title's), then the title
-// truncates, so the shown pills always fit (four lanes at 240 px leave "fixed in 1 round" a
-// 30 px title rather than pushing the ref out of the row).
+// The title asks for 104 px (64 px under a 300 px tree) as its flex basis, not as a floor: once
+// the meta's time is gone the title truncates, so the shown pills and step count always fit
+// (four lanes at 240 px leave "fixed in 1 round" a 30 px title rather than pushing the ref out
+// of the row).
 const TITLE_ROOM = "min-w-0 grow basis-16 @min-[300px]:basis-26";
-const META = "min-w-0 shrink-100 truncate";
+// The meta and each of its parts keep their whole width.
+const WHOLE = "shrink-0 whitespace-nowrap";
 const metaHead = (meta: string) => meta.split(" · ")[0];
 const metaTail = (meta: string) => {
   const rest = meta.split(" · ").slice(1);
@@ -382,10 +387,15 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
                 <span
                   data-meta
                   title={row.meta}
-                  className={`${META} text-[11.5px] whitespace-nowrap tabular-nums ${running ? "text-content" : "text-muted"} ${row.refs.length > 0 ? "@max-[300px]:hidden" : ""} ${givesWay}`}
+                  className={`${WHOLE} text-[11.5px] tabular-nums ${running ? "text-content" : "text-muted"} ${row.refs.length > 0 ? "@max-[300px]:hidden" : ""} ${givesWay}`}
                 >
-                  {metaHead(row.meta)}
-                  {metaTail(row.meta) !== undefined ? <span className="@max-[300px]:hidden"> · {metaTail(row.meta)}</span> : null}
+                  <span data-meta-steps className={WHOLE}>{metaHead(row.meta)}</span>
+                  {metaTail(row.meta) !== undefined ? (
+                    <span data-meta-time className={`${WHOLE} ${row.refs.length > 0 ? "@max-[400px]:hidden" : "@max-[300px]:hidden"}`}>
+                      {" · "}
+                      {metaTail(row.meta)}
+                    </span>
+                  ) : null}
                 </span>
               ) : null}
               {actions.length > 0 ? (

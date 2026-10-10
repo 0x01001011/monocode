@@ -40,7 +40,8 @@ describe("TaskGraph classes", () => {
       "@max-[400px]:hidden",
       "@min-[300px]:basis-26",
       "basis-16",
-      "shrink-100",
+      "shrink-0",
+      "whitespace-nowrap",
       "@container",
     ];
     const missing = needed.filter((cls) => !css.includes(`.${escape(cls)}`));

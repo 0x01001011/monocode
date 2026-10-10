@@ -433,15 +433,47 @@ describe("TaskGraph", () => {
     expect(item("b").querySelector("[data-meta]")?.className).not.toMatch(/(^| )@max-\[300px\]:hidden/);
   });
 
-  it("the title asks for 104 px (64 under a 300 px tree) as room the meta yields first, with tighter gaps under 360 px", () => {
+  it("the title asks for 104 px (64 under a 300 px tree) as room, with tighter gaps under 360 px", () => {
     const rows = [row({ id: "a", shas: ["abc1234"], meta: "2m", refs: [{ text: "1 deferred", tone: "warn" }, { text: "review clean", tone: "ok" }] })];
     render({ graph: { rows, width: 1, counts: { all: 1, left: 1, problems: 1 } } });
     const title = item("a").querySelector<HTMLElement>("[title='a']")!;
-    // A basis, not a floor: once the meta is gone the title truncates, so the pills never leave the row.
+    // A basis, not a floor: once the meta's time is gone the title truncates, so the pills never leave the row.
     for (const cls of ["min-w-0", "grow", "basis-16", "@min-[300px]:basis-26"]) expect(title.className).toContain(cls);
     expect(title.className).not.toMatch(/min-w-(16|26)/);
-    expect(item("a").querySelector("[data-meta]")?.className).toContain("shrink-100");
     expect(title.parentElement!.className).toContain("@max-[360px]:gap-1");
+  });
+
+  it("never truncates the meta: its step count and time show whole or hide whole, the time first", () => {
+    const rows = [
+      row({ id: "a", now: true, meta: "3/4 · 32m", refs: [{ text: "fix 3 of 5", tone: "warn" }] }),
+      row({ id: "b", now: true, meta: "2/5 · 44m" }),
+      row({ id: "c", meta: "2m", refs: [{ text: "1 deferred", tone: "warn" }] }),
+    ];
+    render({ graph: { rows, width: 1, counts: { all: 3, left: 3, problems: 1 } } });
+    for (const id of ["a", "b", "c"]) {
+      const meta = item(id).querySelector<HTMLElement>("[data-meta]")!;
+      expect(meta.className).toContain("shrink-0");
+      expect(meta.className).not.toMatch(/truncate|min-w-0|shrink-100/);
+      for (const part of Array.from(meta.querySelectorAll<HTMLElement>("[data-meta-steps], [data-meta-time]"))) {
+        expect(part.className).toContain("shrink-0");
+        expect(part.className).toContain("whitespace-nowrap");
+      }
+    }
+    const steps = (id: string) => item(id).querySelector<HTMLElement>("[data-meta-steps]")!;
+    const time = (id: string) => item(id).querySelector<HTMLElement>("[data-meta-time]");
+    expect(steps("a").textContent).toBe("3/4");
+    expect(time("a")?.textContent).toBe(" · 32m");
+    // The step count itself never hides on its own; only a ref row under 300 px drops the whole meta.
+    expect(steps("a").className).not.toMatch(/@max-\[\d+px\]:hidden/);
+    // Beside a ref the time goes under 400 px; without one it lasts down to 300 px.
+    expect(time("a")?.className).toContain("@max-[400px]:hidden");
+    expect(time("b")?.className).toContain("@max-[300px]:hidden");
+    expect(time("b")?.className).not.toContain("@max-[400px]:hidden");
+    // A meta with one part has no separate time to drop.
+    expect(steps("c").textContent).toBe("2m");
+    expect(time("c")).toBeNull();
+    // Whatever hides is still read out with the row.
+    expect(item("a").getAttribute("aria-label")).toContain("3/4 · 32m");
   });
 
   it("draws a review stage hollow and an implement stage solid", () => {
