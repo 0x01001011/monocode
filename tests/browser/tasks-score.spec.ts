@@ -623,6 +623,46 @@ const RUBRIC: [string, Check][] = [
       return seen >= 10 && narrow.length === 0;
     },
   ],
+  [
+    "refs readable",
+    async (page, note) => {
+      const bad: string[] = [];
+      let pills = 0;
+      let hidden = 0;
+      for (const state of ["running", "problems"]) {
+        for (const width of [240, 340]) {
+          await render(page, state, "dark", "default", width);
+          await page.mouse.move(0, 0);
+          await settle(page);
+          const found = await page.locator('[role="treeitem"]').evaluateAll((els) =>
+            els
+              .filter((el) => /^task-\d+$/.test(el.getAttribute("data-row-id") ?? "") && el.getClientRects().length > 0)
+              .flatMap((el) => {
+                const id = el.getAttribute("data-row-id")!;
+                const all = Array.from(el.querySelectorAll<HTMLElement>("[data-row] [data-ref], [data-row] [data-now-pill]"));
+                const shown = all.filter((p) => getComputedStyle(p).display !== "none" && p.getClientRects().length > 0);
+                const firstRef = el.querySelector<HTMLElement>("[data-row] [data-ref]");
+                const out = shown.map((p) => ({ id, text: p.textContent ?? "", scroll: p.scrollWidth, client: p.clientWidth, hiddenFirst: false }));
+                if (firstRef && !shown.includes(firstRef)) out.push({ id, text: firstRef.textContent ?? "", scroll: 0, client: 0, hiddenFirst: true });
+                return out;
+              }),
+          );
+          for (const p of found) {
+            if (p.hiddenFirst) {
+              hidden++;
+              bad.push(`${state}@${width} ${p.id} first ref "${p.text}" hidden`);
+              continue;
+            }
+            pills++;
+            if (p.scroll > p.client + 1) bad.push(`${state}@${width} ${p.id} "${p.text}" ${p.scroll}/${p.client}`);
+          }
+        }
+      }
+      await render(page, "running");
+      note(bad.length > 0 ? `cut: ${bad.join("; ")}` : `all ${pills} pills fit`);
+      return pills >= 8 && hidden === 0 && bad.length === 0;
+    },
+  ],
 ];
 
 test("tasks score", async ({ page, browserName }) => {
