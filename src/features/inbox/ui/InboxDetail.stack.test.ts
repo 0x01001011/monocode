@@ -118,7 +118,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function render(relatedSessions: SessionSummary[] = [chat]) {
+async function render(
+  relatedSessions: SessionSummary[] = [chat],
+  sessionTitleById?: (id: string) => string | undefined,
+) {
   await act(async () =>
     root.render(
       createElement(InboxDetail, {
@@ -127,6 +130,7 @@ async function render(relatedSessions: SessionSummary[] = [chat]) {
         projects: [],
         revision: 0,
         relatedSessions,
+        sessionTitleById,
         onDiscuss: () => {},
         onStart: () => {},
       }),
@@ -191,4 +195,35 @@ it("offers no draft action without a related chat", async () => {
   await render([]);
   expect(rail()).not.toBeNull();
   expect(container.querySelector("[role='note'] button")).toBeNull();
+});
+
+it("drafts into the PR's owner chat even when no chat is linked to the PR", async () => {
+  await render([], (id) => (id === "s1" ? "Tasks panel audit" : undefined));
+  const button = container.querySelector<HTMLButtonElement>(
+    "[role='note'] button",
+  )!;
+  expect(button.textContent).toBe(
+    "Draft restack prompt in \u201CTasks panel audit\u201D",
+  );
+  act(() => button.click());
+  expect(getComposerDraft("s1")).toContain("Restack #482 onto main");
+});
+
+it("shows only the health line for a standalone PR that needs attention", async () => {
+  stack = {
+    group: {
+      repo: "acme/web",
+      baseRef: "main",
+      members: [482],
+      mergedCount: 0,
+    },
+    entries: [
+      lite(482, { attention: "block", attentionReason: "Checks failing" }),
+    ],
+  };
+  await render();
+  expect(rail()).toBeNull();
+  expect(container.querySelector("[role='note']")?.textContent).toBe(
+    "Checks failing",
+  );
 });

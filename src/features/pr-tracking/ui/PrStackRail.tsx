@@ -13,7 +13,8 @@ import { PR_STATUS, PrStatusIcon } from "./PrStatusIcon";
 
 /** Matches `.pr-rail` gap/padding and `.pr-rail-node` gap in index.css. */
 const RAIL_GAP = 4;
-const RAIL_PAD = 2;
+/** Leaves room inside the clipped rail for the 2px focus ring and 2px offset. */
+const RAIL_PAD = 4;
 const NODE_GAP = 6;
 
 const FULL: RailFit = { mode: "full", compactNumbers: [] };
@@ -30,8 +31,13 @@ function centerCurrent(ol: HTMLOListElement, current: number) {
 const width = (el: Element | null | undefined) =>
   el ? el.getBoundingClientRect().width : 0;
 
-/** Widths of each node with and without its title. Only valid in full mode. */
-function measure(ol: HTMLOListElement, key: string): Measured {
+/**
+ * Widths of each node with and without its title. Only valid in full mode.
+ * Null while the rail is not laid out (a `display: none` ancestor measures
+ * every box as 0), so nothing is cached and the next resize measures again.
+ */
+function measure(ol: HTMLOListElement, key: string): Measured | null {
+  if (ol.clientWidth === 0) return null;
   const items = [...ol.querySelectorAll<HTMLLIElement>("li[data-rail-node]")];
   const nodes = items.map((li) => {
     const full = width(li);
@@ -42,6 +48,7 @@ function measure(ol: HTMLOListElement, key: string): Measured {
       compact: title > 0 ? full - title - NODE_GAP : full,
     };
   });
+  if (nodes.some((node) => node.full === 0)) return null;
   const overhead =
     width(ol.querySelector("li[data-rail-terminus]")) +
     RAIL_GAP * items.length +
@@ -88,6 +95,7 @@ export function PrStackRail({ view, current, onOpenPr }: PrStackRailProps) {
         return;
       }
       m = measure(ol, key);
+      if (!m) return;
       measured.current = m;
     }
     const next = fitRail(m.nodes, ol.clientWidth - m.overhead, current);

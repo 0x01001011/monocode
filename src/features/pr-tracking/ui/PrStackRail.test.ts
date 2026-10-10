@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -45,7 +47,10 @@ const VIEW: PrStackView = {
 const NODE = 100;
 const TITLE = 60;
 const TERMINUS = 40;
-const OVERHEAD = TERMINUS + 4 * 3 + 2 * 2;
+/** Terminus, one 4px gap per node, and 4px padding each side (room for the focus ring). */
+const OVERHEAD = TERMINUS + 4 * 3 + 2 * 4;
+/** While true, every box measures 0 wide, as under a `display: none` ancestor. */
+let hidden = false;
 
 let observers: { cb: ResizeObserverCallback; targets: Element[] }[];
 let container: HTMLDivElement;
@@ -69,17 +74,20 @@ class FakeResizeObserver {
 
 beforeEach(() => {
   observers = [];
+  hidden = false;
   onOpenPr.mockReset();
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
     function (this: Element) {
-      const width = this.matches("[data-rail-title]")
-        ? TITLE
-        : this.matches("[data-rail-node]")
-          ? NODE
-          : this.matches("[data-rail-terminus]")
-            ? TERMINUS
-            : 0;
+      const width = hidden
+        ? 0
+        : this.matches("[data-rail-title]")
+          ? TITLE
+          : this.matches("[data-rail-node]")
+            ? NODE
+            : this.matches("[data-rail-terminus]")
+              ? TERMINUS
+              : 0;
       return {
         width,
         height: 28,
@@ -210,6 +218,37 @@ describe("PrStackRail", () => {
     // Growing back restores the title.
     resize(OVERHEAD + 3 * NODE);
     expect(container.querySelectorAll("[data-rail-title]")).toHaveLength(3);
+  });
+
+  it("does not keep widths measured while hidden; the next resize measures and refits", () => {
+    hidden = true;
+    render();
+    resize(0);
+    expect(ol().dataset.mode).toBe("full");
+    hidden = false;
+    resize(OVERHEAD + 3 * NODE - 1);
+    expect(ol().dataset.mode).toBe("compact");
+    expect(
+      nodes().map((a) => a.querySelector("[data-rail-title]") != null),
+    ).toEqual([false, true, true]);
+  });
+
+  it("does not keep widths when the rail has width but its nodes measure 0", () => {
+    hidden = true;
+    render();
+    resize(OVERHEAD + 3 * NODE - 1);
+    hidden = false;
+    resize(OVERHEAD + 3 * NODE - 1);
+    expect(ol().dataset.mode).toBe("compact");
+  });
+
+  it("leaves room for the focus ring around nodes", () => {
+    const css = readFileSync(
+      resolve(process.cwd(), "src/styles/index.css"),
+      "utf8",
+    );
+    const rule = /\.pr-rail \{[^}]*\}/.exec(css)?.[0] ?? "";
+    expect(rule).toMatch(/padding: 4px;/);
   });
 
   it("scrolls with faded edges and centers the viewed PR when numbers alone overflow", () => {

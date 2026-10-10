@@ -11357,6 +11357,21 @@ function Workspace({
     () => ciRepairSessions(history, sessions),
     [history, sessions],
   );
+  // Names a PR's owner chat in the Inbox (restack draft target) even when the
+  // chat is not linked to that PR. Archived chats and Inbox asks are left out.
+  const inboxSessionTitle = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const session of history) {
+      if (session.archived) continue;
+      titles.set(session.id, sessionDisplayTitle(session.title, session.harness));
+    }
+    for (const session of sessions) {
+      if (session.inboxAsk || session.ephemeral) continue;
+      const summary = summaryFromSession(session);
+      titles.set(session.id, sessionDisplayTitle(summary.title, summary.harness));
+    }
+    return (sessionId: string) => titles.get(sessionId);
+  }, [history, sessions]);
   const openProjectSessions = useMemo(
     () =>
       sessions
@@ -13085,6 +13100,7 @@ function Workspace({
                   onAskRestart={onRestartInboxAsk}
                   onAskMount={setInboxAskPortal}
                   sessions={inboxRelatedSessions}
+                  sessionTitleById={inboxSessionTitle}
                   repairSessions={repairSessions}
                   onRepairChecks={onRepairChecks}
                   onOpenSession={onOpenInboxSession}

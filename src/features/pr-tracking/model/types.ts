@@ -107,11 +107,15 @@ export type PrEntryLite = {
   attentionReason: string | null;
   /** Chats this PR is attributed to. */
   ownerSessionIds: string[];
-  /** Not the viewed PR and shares no chat with it. */
+  /** Another chat's PR: owned, but by none of the viewed PR's chats. */
   isNeighbor: boolean;
 };
 
-/** The stack holding one PR; `entries` follow `group.members` (base first). */
+/**
+ * The stack holding one PR; `entries` follow `group.members` (base first).
+ * A PR that stacks with nothing has a single-member group; only
+ * `PrSetView.stacks` guarantees two or more members.
+ */
 export type PrStackView = {
   group: PrStackGroup;
   entries: PrEntryLite[];

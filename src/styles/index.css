@@ -4690,7 +4690,8 @@ html.theme-light .pr-card .pr-list-container {
   align-items: center;
   gap: 4px;
   margin: 0;
-  padding: 2px;
+  /* Room for the 2px focus ring and its 2px offset inside the clip. */
+  padding: 4px;
   list-style: none;
   overflow: hidden;
 }

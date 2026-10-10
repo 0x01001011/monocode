@@ -86,6 +86,7 @@ class NoopResizeObserver {
 
 beforeEach(() => {
   answer = stack();
+  titles = {};
   handlers = [];
   onOpenPr.mockReset();
   vi.stubGlobal("ResizeObserver", NoopResizeObserver);
@@ -124,6 +125,8 @@ const SESSIONS = [
   { id: "s2", title: "Tasks panel audit" },
 ];
 
+let titles: Record<string, string>;
+
 async function render(sessions = SESSIONS, number = 482, repo = "Acme/App") {
   await act(async () => {
     root.render(
@@ -131,6 +134,7 @@ async function render(sessions = SESSIONS, number = 482, repo = "Acme/App") {
         repo,
         number,
         relatedSessions: sessions,
+        sessionTitleById: (id: string) => titles[id],
         onOpenPr,
       }),
     );
@@ -186,6 +190,18 @@ describe("restackPromptText", () => {
     );
   });
 
+  it("walks past merged ancestors to the first open base", () => {
+    // #480 merged into #478's branch without a retarget, and #478 merged too.
+    const view = stack();
+    view.entries[1] = { ...view.entries[1]!, baseRef: "mc/pr-478" };
+    expect(restackPromptText(view, 482)).toBe(PROMPT);
+    // An open #478 is where #482 lands instead.
+    view.entries[0] = { ...view.entries[0]!, state: "open" };
+    expect(restackPromptText(view, 482)).toContain(
+      "Rebase mc/pr-482 onto mc/pr-478,",
+    );
+  });
+
   it("has nothing to say about other reasons", () => {
     const view = stack();
     view.entries[2] = {
@@ -220,10 +236,62 @@ describe("PrInboxStack", () => {
     ).toBe("482");
   });
 
-  it("renders nothing for a PR in no stack", async () => {
+  it("renders nothing for a PR without a snapshot", async () => {
     answer = null;
     await render();
     expect(container.innerHTML).toBe("");
+  });
+
+  function standalone(extra: Partial<PrEntryLite>): PrStackView {
+    return {
+      group: {
+        repo: "acme/app",
+        baseRef: "main",
+        members: [490],
+        mergedCount: 0,
+      },
+      entries: [entry(490, extra)],
+    };
+  }
+
+  it("shows the health line without a rail for a PR that stacks with nothing", async () => {
+    answer = standalone({
+      attention: "block",
+      attentionReason: "Checks failing",
+    });
+    await render(SESSIONS, 490);
+    expect(container.querySelector("nav")).toBeNull();
+    expect(container.querySelector("[role='note']")?.textContent).toBe(
+      "Checks failing",
+    );
+  });
+
+  it("renders nothing for a standalone PR that needs no attention", async () => {
+    answer = standalone({});
+    await render(SESSIONS, 490);
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("drafts into the PR's owner chat even when it is not linked to the PR", async () => {
+    titles = { s2: "Tasks panel audit" };
+    await render([{ id: "s1", title: "Linked chat" }]);
+    const button = container.querySelector<HTMLButtonElement>(
+      "[role='note'] button",
+    )!;
+    expect(button.textContent).toBe(
+      "Draft restack prompt in \u201CTasks panel audit\u201D",
+    );
+    act(() => button.click());
+    expect(getComposerDraft("s2")).toBe(PROMPT);
+    expect(getComposerDraft("s1")).toBeUndefined();
+  });
+
+  it("drafts into an owner chat with no linked chats at all", async () => {
+    titles = { s2: "Tasks panel audit" };
+    await render([]);
+    expect(container.querySelector("[role='note'] button")?.textContent).toBe(
+      "Draft restack prompt in \u201CTasks panel audit\u201D",
+    );
   });
 
   it("renders the rail without a health line when the viewed PR needs nothing", async () => {
