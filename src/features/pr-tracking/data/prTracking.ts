@@ -150,7 +150,11 @@ async function load<T>(source: Source<T>): Promise<void> {
     do {
       source.dirty = false;
       const next = await source.fetchNow();
-      if (next == null) continue;
+      if (next == null) {
+        // Nothing was learned, so the next subscriber should try again.
+        source.fresh = false;
+        continue;
+      }
       if (JSON.stringify(next) === JSON.stringify(source.value)) continue;
       source.value = next;
       for (const listener of [...source.listeners]) listener();
@@ -190,8 +194,13 @@ function attach() {
     invalidateSessions(Array.isArray(ids) ? ids : []);
   })
     .then((unlisten) => {
-      if (mine === generation && consumers > 0) stopListening = unlisten;
-      else unlisten();
+      if (mine !== generation || consumers === 0) {
+        unlisten();
+        return;
+      }
+      stopListening = unlisten;
+      // Events sent between the first fetches and now were never heard.
+      invalidateSessions([]);
     })
     .catch((error) => warnOnce(PR_SET_CHANGED_EVENT, error));
 }

@@ -226,6 +226,22 @@ describe("stripBars", () => {
   it("returns an empty strip for an empty set", () => {
     expect(stripBars(view([]))).toEqual([]);
   });
+
+  it("never draws a closed draft as a hollow draft bar", () => {
+    const bars = stripBars(
+      view([
+        entry(1, { snapshot: { state: "closed", isDraft: true } }),
+        entry(2, {
+          relation: "other",
+          snapshot: { state: "closed", isDraft: true },
+        }),
+      ]),
+    );
+    expect(bars).toEqual([
+      { number: 1, kind: "normal" },
+      { number: 2, kind: "other" },
+    ]);
+  });
 });
 
 describe("sections", () => {

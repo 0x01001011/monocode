@@ -140,7 +140,7 @@ describe("fetch wrappers", () => {
 });
 
 describe("usePrSet", () => {
-  it("returns null first, fetches once, then serves the cache synchronously", async () => {
+  it("returns null first, then serves the cache synchronously without refetching per consumer", async () => {
     const m = await loadModule();
     const seen: (PrSetView | null)[] = [];
     function Probe({ id }: { id: string }) {
@@ -152,7 +152,8 @@ describe("usePrSet", () => {
     await flush();
     expect(seen[0]).toBeNull();
     expect(seen.at(-1)?.sessionId).toBe("s1");
-    expect(calls("pr_session_set", "s1")).toHaveLength(1);
+    // The first fetch, then one recheck once the event listener is live.
+    expect(calls("pr_session_set", "s1")).toHaveLength(2);
     expect(m.getPrSet("s1")?.sessionId).toBe("s1");
 
     // A second consumer sees the cached value on its very first render.
@@ -165,7 +166,7 @@ describe("usePrSet", () => {
     await b.render();
     expect(seen2[0]?.sessionId).toBe("s1");
     await flush();
-    expect(calls("pr_session_set", "s1")).toHaveLength(1);
+    expect(calls("pr_session_set", "s1")).toHaveLength(2);
     act(() => {
       a.root.unmount();
       b.root.unmount();
@@ -182,24 +183,24 @@ describe("usePrSet", () => {
     const a = mount(() => createElement(Probe));
     await a.render();
     await flush();
-    expect(calls("pr_session_set")).toHaveLength(1);
+    const base = calls("pr_session_set").length;
     expect(latest!.refreshedAt).toBe(1);
 
     version = 2;
     emit(["s2"]);
     await flush();
-    expect(calls("pr_session_set")).toHaveLength(1);
+    expect(calls("pr_session_set")).toHaveLength(base);
     expect(latest!.refreshedAt).toBe(1);
 
     emit(["s1", "s9"]);
     await flush();
-    expect(calls("pr_session_set", "s1")).toHaveLength(2);
+    expect(calls("pr_session_set", "s1")).toHaveLength(base + 1);
     expect(latest!.refreshedAt).toBe(2);
 
     version = 3;
     emit([]);
     await flush();
-    expect(calls("pr_session_set", "s1")).toHaveLength(3);
+    expect(calls("pr_session_set", "s1")).toHaveLength(base + 2);
     expect(latest!.refreshedAt).toBe(3);
     act(() => a.root.unmount());
   });
@@ -249,11 +250,12 @@ describe("usePrSet", () => {
     await flush();
     act(() => first.root.unmount());
     await flush();
+    const base = calls("pr_session_set", "s1").length;
     version = 2;
     emit(["s1"]);
     await flush();
     // Nobody is watching, so no fetch yet.
-    expect(calls("pr_session_set", "s1")).toHaveLength(1);
+    expect(calls("pr_session_set", "s1")).toHaveLength(base);
 
     let latest: PrSetView | null = null;
     const second = mount(() =>
@@ -264,9 +266,86 @@ describe("usePrSet", () => {
     );
     await second.render();
     await flush();
-    expect(calls("pr_session_set", "s1")).toHaveLength(2);
+    expect(calls("pr_session_set", "s1").length).toBeGreaterThan(base);
     expect(latest!.refreshedAt).toBe(2);
     act(() => second.root.unmount());
+  });
+
+  it("refetches once the listener attaches, covering events sent before it", async () => {
+    let attachListener: (() => void) | null = null;
+    vi.mocked(listen).mockImplementation(((_name: string, cb: Handler) =>
+      new Promise((resolve) => {
+        attachListener = () => {
+          handlers.push(cb);
+          resolve(() => {
+            unlisten();
+            handlers = handlers.filter((h) => h !== cb);
+          });
+        };
+      })) as never);
+    const m = await loadModule();
+    let latest: PrSetView | null = null;
+    const a = mount(() =>
+      createElement(function P() {
+        latest = m.usePrSet("s1");
+        return null;
+      }),
+    );
+    await a.render();
+    await flush();
+    expect(calls("pr_session_set", "s1")).toHaveLength(1);
+    expect(latest!.refreshedAt).toBe(1);
+
+    // The backend changes and emits while nobody is listening yet.
+    version = 2;
+    emit(["s1"]);
+    await act(async () => {
+      attachListener!();
+    });
+    await flush();
+    expect(calls("pr_session_set", "s1")).toHaveLength(2);
+    expect(latest!.refreshedAt).toBe(2);
+    act(() => a.root.unmount());
+  });
+
+  it("retries on the next subscribe after a failed first fetch", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ok = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation((async (
+      command: string,
+      args?: unknown,
+    ) => {
+      if (command === "pr_session_set") throw new Error("down");
+      return ok(command, args as never);
+    }) as never);
+    const m = await loadModule();
+    const first = mount(() =>
+      createElement(function P() {
+        m.usePrSet("s1");
+        return null;
+      }),
+    );
+    await first.render();
+    await flush();
+    const failed = calls("pr_session_set", "s1").length;
+    expect(failed).toBeGreaterThan(0);
+
+    vi.mocked(invoke).mockImplementation(ok);
+    let latest: PrSetView | null = null;
+    const second = mount(() =>
+      createElement(function P() {
+        latest = m.usePrSet("s1");
+        return null;
+      }),
+    );
+    await second.render();
+    await flush();
+    expect(calls("pr_session_set", "s1")).toHaveLength(failed + 1);
+    expect(latest!.sessionId).toBe("s1");
+    act(() => {
+      first.root.unmount();
+      second.root.unmount();
+    });
   });
 
   it("stops listening once the last consumer unmounts", async () => {
@@ -287,7 +366,7 @@ describe("usePrSet", () => {
 });
 
 describe("usePrSummaries", () => {
-  it("loads once, refetches on any pr-set-changed, and keeps a stable empty value", async () => {
+  it("loads, refetches on any pr-set-changed, and keeps a stable empty value", async () => {
     summaries = {
       s1: {
         count: 2,
@@ -309,12 +388,12 @@ describe("usePrSummaries", () => {
     expect(Object.keys(seen[0])).toEqual([]);
     await flush();
     expect(seen.at(-1)!.s1.primaryNumber).toBe(7);
-    expect(calls("pr_summaries")).toHaveLength(1);
+    const base = calls("pr_summaries").length;
 
     summaries = { ...summaries, s2: { ...summaries.s1, primaryNumber: 9 } };
     emit(["s2"]);
     await flush();
-    expect(calls("pr_summaries")).toHaveLength(2);
+    expect(calls("pr_summaries")).toHaveLength(base + 1);
     expect(seen.at(-1)!.s2.primaryNumber).toBe(9);
 
     // An identical payload does not produce a new reference.
@@ -337,10 +416,11 @@ describe("dismissPr", () => {
     );
     await a.render();
     await flush();
+    const base = calls("pr_session_set", "s1").length;
     await act(async () => {
       await m.dismissPr("s1", "acme/web", 1, true);
     });
-    expect(calls("pr_session_set", "s1")).toHaveLength(2);
+    expect(calls("pr_session_set", "s1")).toHaveLength(base + 1);
     act(() => a.root.unmount());
   });
 });

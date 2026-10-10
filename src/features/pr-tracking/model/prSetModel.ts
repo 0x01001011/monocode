@@ -121,7 +121,9 @@ export function stripBars(
     let kind: StripBarKind = "normal";
     if (k === current) kind = "current";
     else if (entry.snapshot.state === "merged") kind = "merged";
-    else if (entry.snapshot.isDraft) kind = "draft";
+    // Closed wins over draft, as in `statusIcon`: a closed draft is not hollow.
+    else if (entry.snapshot.state === "open" && entry.snapshot.isDraft)
+      kind = "draft";
     else if (entry.relation === "other") kind = "other";
     return { number: entry.snapshot.number, kind };
   });
