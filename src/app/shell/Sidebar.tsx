@@ -2181,6 +2181,7 @@ function SidebarComponent({
               onAction={onTasksAction}
               onOpenNode={onOpenTaskNode}
               onChangeDecision={onChangeTaskDecision}
+              onCopy={copyText}
               onOpenFile={(path) => {
                 // A ledger path that leaves the plan root is not opened.
                 const file = planFilePath(planRootFor(cwd, activeSession), path);

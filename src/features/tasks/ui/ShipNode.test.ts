@@ -72,11 +72,11 @@ afterEach(() => {
 });
 
 describe("ShipNode", () => {
-  it("says how many things stand before ship, in the singular too", () => {
+  it("is the Ship checklist with how many items are met (the graph row says the verdict)", () => {
     render({ open: false });
-    expect(header()?.textContent).toContain("3 things before ship");
-    render({ open: false, ship: { ...NOT_READY, left: 1 } });
-    expect(header()?.textContent).toContain("1 thing before ship");
+    expect(header()?.textContent).toBe("Ship checklist · 1 of 4 met");
+    render({ open: false, ship: READY });
+    expect(header()?.textContent).toBe("Ship checklist · 4 of 4 met");
   });
 
   it("is a disclosure: collapsed shows no checklist and a press asks to toggle", () => {
@@ -116,10 +116,11 @@ describe("ShipNode", () => {
 
   it("when ready: says so with the totals and offers Copy summary", () => {
     const props = render({ ship: READY });
-    expect(header()?.textContent).toContain("Ready to ship");
-    expect(text()).toContain("6 tasks · 31 steps · 14 commits");
+    expect(text()).toContain("Ready to ship · 6 tasks · 31 steps · 14 commits");
     click(button("Copy summary"));
     expect(props.onCopySummary).toHaveBeenCalledTimes(1);
+    render({ ship: READY, copied: true });
+    expect(button("Copied")).toBeDefined();
     render({ ship: NOT_READY });
     expect(button("Copy summary")).toBeUndefined();
   });

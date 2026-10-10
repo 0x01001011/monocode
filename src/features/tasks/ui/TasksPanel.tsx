@@ -4,7 +4,7 @@ import type { TaskBoard } from "../hooks/useTaskBoard";
 import { buildGraph, type GraphFilter as Filter, type GraphRow } from "../model/graph";
 import { planOverview } from "../model/overview";
 import { shipReadiness } from "../model/ship";
-import type { StatusAction, StatusCard as StatusCardData } from "../model/statusCard";
+import { strugglingNode, type StatusAction, type StatusCard as StatusCardData } from "../model/statusCard";
 import { planSummaryMarkdown } from "../model/summary";
 import type { BoardNode, BoardNote, BoardSection } from "../model/taskBoard";
 import { FlowStrip } from "./FlowStrip";
@@ -37,8 +37,8 @@ type CardRequest = { action: "see-issues" | "review-decisions"; token: number };
 const FOCUS = "focus-visible:focus-ring-inset";
 const SMALL_BUTTON = `min-h-6 rounded-md px-2 text-[11.5px] text-muted hover:bg-selection-subtle ${FOCUS}`;
 const SHIP_ID = "ship";
-const STRUGGLING_FROM_ROUND = 3;
 const COPIED_MS = 2000;
+const COPIED = "Copied";
 
 const LEGEND: [GlyphKind, string][] = [
   ["done", "Done"],
@@ -53,16 +53,6 @@ const LEGEND: [GlyphKind, string][] = [
 const KEYS = "On a row: o opens, c copies the commit, n jumps to now";
 
 const isActive = (node: BoardNode) => node.status === "running" || node.status === "attention";
-
-/** The task the reviewer keeps sending back, the worst first. */
-function strugglingNode(plan: BoardSection): BoardNode | undefined {
-  let worst: BoardNode | undefined;
-  for (const n of plan.nodes) {
-    if (n.status !== "attention" || (n.fixRounds ?? 0) < STRUGGLING_FROM_ROUND) continue;
-    if (!worst || (n.fixRounds ?? 0) > (worst.fixRounds ?? 0)) worst = n;
-  }
-  return worst;
-}
 
 /** Scrolls a heading to the top of the view and moves focus to it; reduced motion jumps instead. */
 function revealHeading(heading: Element | null | undefined) {
@@ -101,8 +91,8 @@ function useCopy(onCopy: Props["onCopy"]) {
   const copy = (text: string) => {
     try {
       const result = onCopy ? onCopy(text) : navigator.clipboard.writeText(text);
-      if (result instanceof Promise) result.then(() => show("Copied"), () => show("Could not copy"));
-      else show("Copied");
+      if (result instanceof Promise) result.then(() => show(COPIED), () => show("Could not copy"));
+      else show(COPIED);
     } catch {
       show("Could not copy");
     }
@@ -189,7 +179,7 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
   // A stage row has no node of its own: its commit belongs to its task (or the final review).
   const onOpenCommit = (row: GraphRow, sha: string) => {
     const node = row.node ?? graph.rows.find((r) => r.id === row.parentId)?.node ?? final;
-    if (node) onOpenNode?.({ ...node, target: { kind: "commit", ref: sha } }, plan);
+    if (node) onOpenNode?.({ ...node, target: { kind: "commit", ref: sha } }, sectionOf(node));
   };
   const copySummary = () => copy(planSummaryMarkdown(plan, ship, board.gaps));
 
@@ -199,6 +189,18 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
   };
   useLayoutEffect(() => {
     if (menu) menuItem.current?.focus();
+  }, [menu]);
+  // A press anywhere outside the menu and its button closes it.
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const onPointerDown = (event: Event) => {
+      const target = event.target as Node | null;
+      if (menuRef.current?.contains(target) || menuButton.current?.contains(target)) return;
+      setMenu(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [menu]);
 
   // The status card's See the open issues and Review decisions are answered here.
@@ -211,19 +213,25 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
       onReveal(stuck.id);
       return;
     }
-    const order: NoteGroupId[] = request.action === "review-decisions" ? ["decisions"] : ["deferred", "gaps", "decisions"];
+    // The open issues are the deferred items, then the gaps; decisions are not issues.
+    const order: NoteGroupId[] = request.action === "review-decisions" ? ["decisions"] : ["deferred", "gaps"];
     const group = order.find((id) => groupCounts[id] > 0);
-    if (!group) return;
+    if (!group) {
+      const problem = request.action === "see-issues" ? overview.problems[0] : undefined;
+      if (problem) onReveal(problem.id);
+      return;
+    }
     setGroupsOpen((prev) => ({ ...prev, [group]: true }));
     revealHeading(groupsRef.current?.querySelector(`[data-notes="${group}"]`));
     // Only a new token asks; a re-render with the same request must not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.token]);
 
-  const nowRow = nowNode ? graph.rows.find((r) => r.id === nowNode.id) : undefined;
+  // From the plan, not the visible rows, so a filter never empties it; steps only, no ticking time.
+  const nowSteps = nowNode?.steps ?? [];
   const barText = [
     nowNode ? (nowNode.index !== undefined ? `Task ${nowNode.index}` : nowNode.title) : plan.title,
-    ...(nowRow?.meta !== undefined ? [nowRow.meta] : []),
+    ...(nowSteps.length > 0 ? [`${nowSteps.filter((step) => step.done).length}/${nowSteps.length}`] : []),
     ...(overview.left > 0 ? [`${overview.left} left`] : []),
   ].join(" · ");
 
@@ -269,6 +277,7 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
       {menu ? (
         // In flow under the header, so the sidebar's scroller can never clip it.
         <div
+          ref={menuRef}
           role="menu"
           aria-label="Plan actions"
           onKeyDown={(e) => {
@@ -296,7 +305,8 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
           </button>
         </div>
       ) : null}
-      <div aria-live="polite" className="px-3 text-[11.5px] text-muted">
+      {/* Said, not drawn: a line appearing here would push the whole tab down for two seconds. */}
+      <div aria-live="polite" className="sr-only">
         {notice}
       </div>
       {legend ? <Legend /> : null}
@@ -316,7 +326,9 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
           className="sticky top-0 z-[1] -mb-7 flex h-7 items-center gap-2 border-b border-stroke bg-background-base pr-2 pl-3 text-[12px]"
         >
           <TaskGlyph kind={nowNode ? glyphFor(nowNode) : finished ? "done" : "pending"} small />
-          <span className="min-w-0 flex-1 truncate tabular-nums">{barText}</span>
+          <span data-bar-text className="min-w-0 flex-1 truncate tabular-nums">
+            {barText}
+          </span>
           {nowNode ? (
             <button type="button" onClick={() => onReveal(nowNode.id)} className={`${SMALL_BUTTON} shrink-0 text-focus`}>
               Jump to now
@@ -342,6 +354,7 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
         onToggle={() => onToggle(SHIP_ID)}
         onReveal={onReveal}
         onCopySummary={copySummary}
+        copied={notice === COPIED}
       />
       <div ref={groupsRef} className="mt-2">
         <NoteGroups
@@ -426,13 +439,16 @@ export function TasksPanel({ board, now, onAction, onOpenNode, onOpenFile, onCha
 
   const empty = board.sections.length === 0 && card.kind === "idle";
   return (
-    <div className="@container flex min-h-0 flex-1 flex-col overflow-auto pt-0.5 pb-3.5">
+    // scroll-pt-8: a row or heading scrolled into view lands below the 28 px sticky bar, not under it.
+    <div className="@container flex min-h-0 flex-1 scroll-pt-8 flex-col overflow-auto pt-0.5 pb-3.5">
       <StatusCard card={card} onAction={handleAction} />
       {board.planFilesUnavailable ? (
         <div className="px-4 pt-1 text-[11.5px] text-muted">Plan files are not available for remote projects yet.</div>
       ) : null}
       {plan ? (
         <PlanBlock
+          // Another plan starts with its own toggles, groups and menu.
+          key={planKey}
           board={board}
           plan={plan}
           now={now}

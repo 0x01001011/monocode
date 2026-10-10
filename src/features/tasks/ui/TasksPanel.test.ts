@@ -450,6 +450,22 @@ describe("TasksPanel header", () => {
     render({ board: board({ plan: plan() }) });
     expect((container.firstElementChild as HTMLElement).className).toContain("@container");
   });
+
+  it("the scroller keeps revealed rows and headings clear of the sticky bar", () => {
+    render({ board: board({ plan: plan() }) });
+    const scroller = container.firstElementChild as HTMLElement;
+    expect(scroller.className).toContain("overflow-auto");
+    expect(scroller.className).toContain("scroll-pt-8");
+  });
+
+  it("a new plan starts with its own toggles, groups and menu", () => {
+    const two = { workspaces: [{ slug: "alpha" }, { slug: "beta" }] as TaskBoard["workspaces"] };
+    render({ board: board({ ...two, plan: plan(), selectedWorkspace: "alpha" }) });
+    click(container.querySelector("button[aria-haspopup=menu]") ?? undefined);
+    expect(container.querySelector("[role=menu]")).not.toBeNull();
+    render({ board: board({ ...two, plan: plan({ id: "sdd:beta", title: "Beta plan" }), selectedWorkspace: "beta" }) });
+    expect(container.querySelector("[role=menu]")).toBeNull();
+  });
 });
 
 describe("TasksPanel filter", () => {
@@ -548,13 +564,36 @@ describe("TasksPanel sticky bar", () => {
     expect(bar()).toBeNull();
   });
 
-  it("names the current task, its meta and what is left, and Jump to now focuses its row", () => {
-    render({ board: board({ plan: plan() }) });
+  it("names the current task, its steps and what is left, and Jump to now focuses its row", () => {
+    const steps = [
+      { text: "a", done: true, ticked: true },
+      { text: "b", done: true, ticked: true },
+      { text: "c", done: false, ticked: false },
+      { text: "d", done: false, ticked: false },
+      { text: "e", done: false, ticked: false },
+    ];
+    const p = plan();
+    const withSteps = { ...p, nodes: p.nodes.map((n) => (n.index === 4 ? { ...n, steps } : n)) };
+    render({ board: board({ plan: withSteps }) });
     scrollAway(true);
-    expect(bar()?.textContent).toContain("Task 4 · 20m · 3 left");
+    // Only the steps: a ticking duration would re-announce and crowd the bar.
+    expect(bar()?.querySelector("[data-bar-text]")?.textContent).toBe("Task 4 · 2/5 · 3 left");
     expect(bar()?.querySelector("[role=img]")).not.toBeNull();
     click(Array.from(bar()?.querySelectorAll("button") ?? []).find((b) => b.textContent === "Jump to now"));
     expect(document.activeElement?.getAttribute("data-row-id")).toBe("task-4");
+  });
+
+  it("leaves the steps out for a task without any, and reads the plan even when the filter hides the now row", () => {
+    render({ board: board({ plan: plan() }) });
+    scrollAway(true);
+    expect(bar()?.querySelector("[data-bar-text]")?.textContent).toBe("Task 4 · 3 left");
+    const p = plan();
+    const steps = [{ text: "a", done: true, ticked: true }, { text: "b", done: false, ticked: false }];
+    const withSteps = { ...p, nodes: p.nodes.map((n) => (n.index === 4 ? { ...n, steps } : n)) };
+    render({ board: board({ plan: withSteps }) });
+    click(Array.from(container.querySelectorAll("[role=radio]")).find((r) => r.textContent?.startsWith("Problems")));
+    expect(container.querySelector('[data-row-id="task-4"]')).toBeNull();
+    expect(bar()?.querySelector("[data-bar-text]")?.textContent).toBe("Task 4 · 1/2 · 3 left");
   });
 
   it("never shows where IntersectionObserver is missing", () => {
@@ -581,8 +620,9 @@ describe("TasksPanel ship node", () => {
     render({ board: board({ plan: p, ship: shipReadiness(p, undefined) }) });
     const tree = container.querySelector("[role=tree]")!;
     expect(tree.compareDocumentPosition(shipBlock()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // Tasks left, the final review, no test run and the done tasks' missing commits.
-    expect(shipToggle()?.textContent).toContain("4 things before ship");
+    // The graph row says the verdict; the checklist says how far along it is.
+    expect(shipToggle()?.textContent).toBe("Ship checklist · 0 of 4 met");
+    expect(container.querySelector("[data-row-id=ship]")?.textContent).toContain("4 things before ship");
     expect(shipToggle()?.getAttribute("aria-expanded")).toBe("false");
     // The graph's own Ship row is the same disclosure.
     const shipRow = container.querySelector("[data-row-id=ship]");
@@ -607,7 +647,8 @@ describe("TasksPanel ship node", () => {
     expect(ship.ready).toBe(true);
     render({ board: board({ plan: p, ship }) });
     expect(shipToggle()?.getAttribute("aria-expanded")).toBe("true");
-    expect(shipToggle()?.textContent).toContain("Ready to ship");
+    expect(shipToggle()?.textContent).toBe("Ship checklist · 4 of 4 met");
+    expect(container.querySelector("[data-row-id=ship]")?.textContent).toContain("Ready to ship");
     expect(shipBlock()?.textContent).toContain("3 tasks · 9 steps · 3 commits");
   });
 
@@ -618,12 +659,17 @@ describe("TasksPanel ship node", () => {
       const ship = shipReadiness(p, { status: "passed", command: "npx vitest run" });
       const onCopy = vi.fn();
       render({ board: board({ plan: p, ship }), onCopy });
-      click(Array.from(shipBlock()?.querySelectorAll("button") ?? []).find((b) => b.textContent === "Copy summary"));
+      const copyButton = Array.from(shipBlock()?.querySelectorAll("button") ?? []).find((b) => b.textContent === "Copy summary");
+      click(copyButton);
       expect(onCopy).toHaveBeenCalledWith(planSummaryMarkdown(p, ship, []));
       const live = container.querySelector("[aria-live=polite]");
       expect(live?.textContent).toBe("Copied");
+      // Said, not drawn as a new line: the region takes no room and the button says it instead.
+      expect(live?.className).toContain("sr-only");
+      expect(copyButton?.textContent).toBe("Copied");
       act(() => vi.advanceTimersByTime(2000));
       expect(live?.textContent).toBe("");
+      expect(copyButton?.textContent).toBe("Copy summary");
     } finally {
       vi.useRealTimers();
     }
@@ -660,6 +706,15 @@ describe("TasksPanel menu", () => {
     act(() => item.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
     expect(container.querySelector("[role=menu]")).toBeNull();
     expect(document.activeElement).toBe(trigger());
+  });
+
+  it("a pointer press outside the menu closes it", () => {
+    render({ board: board({ plan: plan() }) });
+    click(trigger() ?? undefined);
+    act(() => container.querySelector("[role=menuitem]")!.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+    expect(container.querySelector("[role=menu]")).not.toBeNull();
+    act(() => document.body.dispatchEvent(new Event("pointerdown", { bubbles: true })));
+    expect(container.querySelector("[role=menu]")).toBeNull();
   });
 
   it("copies with the clipboard when the host passes no onCopy", async () => {
@@ -737,6 +792,31 @@ describe("TasksPanel status card buttons", () => {
     expect(scrolled).toContain(deferred);
     expect(document.activeElement).toBe(deferred);
     expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("See the open issues goes to Gaps without deferred items, never to Decisions", () => {
+    const gaps = [{ kind: "no-commit" as const, nodeId: "task-2", label: "Task 2", text: "no commit recorded" }];
+    render({ board: board({ plan: plan({ decisions: [{ taskIndex: 1, text: "Use X" }] }), gaps, statusCard: struggling }) });
+    click(button("See the open issues"));
+    const heading = container.querySelector('[data-notes="gaps"]');
+    expect(heading?.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("See the open issues reveals the first problem row when there are no notes, else does nothing", () => {
+    seen.reveals.length = 0;
+    const p = plan({ decisions: [{ taskIndex: 1, text: "Use X" }] });
+    const blocked = { ...p, nodes: p.nodes.map((n) => (n.index === 5 ? { ...n, status: "blocked" as const } : n)) };
+    render({ board: board({ plan: blocked, statusCard: struggling }) });
+    click(button("See the open issues"));
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-5", token: 1 });
+    expect(container.querySelector('[data-notes="decisions"]')).not.toBe(document.activeElement);
+
+    scrolled.length = 0;
+    render({ board: board({ plan: p, statusCard: struggling }) });
+    click(button("See the open issues"));
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-5", token: 1 });
+    expect(scrolled).toEqual([]);
   });
 
   it("See the open issues reveals the struggling task when there is one", () => {

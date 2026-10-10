@@ -13,6 +13,8 @@ type Props = {
   /** An unmet item was pressed: bring its row into view. */
   onReveal: (id: string) => void;
   onCopySummary: () => void;
+  /** The summary was just copied: the button says so for a moment. */
+  copied?: boolean;
 };
 
 const FOCUS = "focus-visible:focus-ring-inset";
@@ -27,18 +29,16 @@ function glyphOf(item: ShipItem): [GlyphKind, string] {
   return ["issues", "not met"];
 }
 
-export function shipHeadline(ship: Ship): string {
-  return ship.ready ? "Ready to ship" : `${plural(ship.left, "thing", "things")} before ship`;
-}
-
 /**
- * The Ship checklist under the graph's terminal node: every task done, a clean final review,
+ * The Ship checklist under the graph's terminal node (the row says the verdict, this says how far
+ * along it is): every task done, a clean final review,
  * passing tests, no gaps. An unmet item with a row is a button that reveals that row.
  * Deferred items are counted but never block.
  */
-export function ShipNode({ ship, tasks, steps, open, onToggle, onReveal, onCopySummary }: Props) {
+export function ShipNode({ ship, tasks, steps, open, onToggle, onReveal, onCopySummary, copied = false }: Props) {
   const listId = useId();
-  const totals = [plural(tasks, "task", "tasks"), ...(steps !== undefined ? [plural(steps, "step", "steps")] : []), plural(ship.commits, "commit", "commits")];
+  const met = ship.items.filter((i) => i.met === true).length;
+  const totals = ["Ready to ship", plural(tasks, "task", "tasks"), ...(steps !== undefined ? [plural(steps, "step", "steps")] : []), plural(ship.commits, "commit", "commits")];
   return (
     <div data-ship className="pt-0.5">
       <button
@@ -51,7 +51,9 @@ export function ShipNode({ ship, tasks, steps, open, onToggle, onReveal, onCopyS
         <span aria-hidden="true" className="grid w-4 shrink-0 place-items-center text-muted">
           {open ? <ChevronDown className="size-3" strokeWidth={2} /> : <ChevronRight className="size-3" strokeWidth={2} />}
         </span>
-        <span className={`min-w-0 flex-1 truncate ${ship.ready ? "font-semibold text-success" : "text-content"}`}>{shipHeadline(ship)}</span>
+        <span className="min-w-0 flex-1 truncate text-content tabular-nums">
+          Ship checklist · {met} of {ship.items.length} met
+        </span>
       </button>
       {open ? (
         <div id={listId} className="pt-0.5 pr-3 pb-1 pl-8">
@@ -88,7 +90,7 @@ export function ShipNode({ ship, tasks, steps, open, onToggle, onReveal, onCopyS
                 onClick={onCopySummary}
                 className={`min-h-6 rounded-md bg-selection px-2 text-[11.5px] text-content hover:bg-selection-subtle ${FOCUS}`}
               >
-                Copy summary
+                {copied ? "Copied" : "Copy summary"}
               </button>
             </div>
           ) : null}

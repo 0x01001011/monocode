@@ -112,7 +112,8 @@ function currentNode(plan?: BoardSection): BoardNode | undefined {
   return final && (final.status === "running" || final.status === "attention") ? final : undefined;
 }
 
-function strugglingNode(plan?: BoardSection): BoardNode | undefined {
+/** The task the reviewer keeps sending back (attention from fix round 3), the worst first. */
+export function strugglingNode(plan?: BoardSection): BoardNode | undefined {
   let worst: BoardNode | undefined;
   for (const n of plan?.nodes ?? []) {
     if (n.status !== "attention" || (n.fixRounds ?? 0) < STRUGGLING_FROM_ROUND) continue;
