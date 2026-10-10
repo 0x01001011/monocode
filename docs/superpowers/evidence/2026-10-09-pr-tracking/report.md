@@ -14,7 +14,10 @@ Verification of the real PR-tracking components in Chromium and Playwright WebKi
 - **Fixtures** (`?fixture=`): `stack` (3-stack with a merged middle, Other, another chat's PR), `ok`, `ghMissing`, `signedOut`, `offline`, `idle`, `rateLimited`, `many` (40 PRs), `i18n` (CJK, emoji, 200-character title), `stale` (20 min), `limited`, `hidden`, `empty`, `neighbor`.
 - **Query options:** `?theme=light`, `?w=` (composer row width), `?pw=` (panel width), `?iw=` (Inbox width).
 - **Spec.** `tests/browser/pr-tracking.spec.ts` runs on Chromium and Playwright WebKit. `PR_EVIDENCE=1` also writes the screenshots and `metrics-*.json` into this directory.
-- **Audits.** The contrast and target checks are ports of the audit scripts used on the design mockup. They add the popover glass layer and covering `::before` halos to the background stack, and skip app chrome outside this feature.
+- **Audits.** The contrast and target checks are ports of the audit scripts used on the design mockup. They add the popover glass layer and covering `::before` halos to the background stack.
+  - *Contrast* measures elements with their own text, and every `svg`. It skips text inside an `aria-hidden="true"` subtree (decorative; icons are still measured), `visibility: hidden`, `display: none`, zero-size boxes, effective opacity below 0.05 (ancestor opacities multiplied) and anything inside a disabled element. App chrome outside this feature is skipped (the ContextMeter wrapper and the CwdPicker root).
+  - *Targets* skip `display: none`, `visibility: hidden`, 0×0 boxes and the same two chrome rules; an absolutely positioned `::before` or `::after` counts as hit area.
+  - Both audits run per region (chip, sidebar glyph, Changes panel, Inbox, card, row menu) and per fixture, and assert that they measured at least one text item and one icon (or zero where the fixture renders nothing). A self-test feeds them a deliberately bad DOM and expects failures, so they cannot pass vacuously.
 
 ### What the spec checks
 
@@ -37,7 +40,7 @@ Verification of the real PR-tracking components in Chromium and Playwright WebKi
 - **Rail:** going from 3200px down to 320px, modes only move full, then compact, then scroll; the viewed node keeps its title, and in scroll mode it is centered (clamped at the ends).
 - **Other states:** reduced motion turns off the card's open animation; stale elements keep opacity 1; the icon halo matches the row fill; at 200% zoom (a 640×500 viewport) the card still fits; no console errors; row height is recorded and must be 38-48px.
 
-Result: 71 passed, 1 skipped across Chromium and WebKit (the skip is forced colors on WebKit, which Playwright can only emulate in Chromium). Full Chromium browser suite: 54 passed.
+Result: 69 passed, 5 skipped across Chromium and WebKit in a normal run (the skips are the 4 evidence-screenshot tests, which need `PR_EVIDENCE=1`, and forced colors on WebKit, which Playwright can only emulate in Chromium). With `PR_EVIDENCE=1`: 73 passed, 1 skipped. Hover timing is stepped with a paused `page.clock` (no card at 219ms, card at 220ms; 399/400ms on the sidebar) and was run 5 times per engine without a failure.
 
 ## Measured numbers
 
@@ -55,7 +58,7 @@ Result: 71 passed, 1 skipped across Chromium and WebKit (the skip is forced colo
 | 40-PR card scroll frames, p50/p95/max | 16.7/16.8/16.8ms | 16/25/27ms |
 | DOM nodes: page / stack card / 40-PR card | 556 / 190 / 857 | same |
 
-Raw data: `metrics-chromium.json`, `metrics-webkit.json`.
+Raw data: `metrics-chromium.json`, `metrics-webkit.json` (contrast minima per theme, fixture and region, smallest target, branch characters per width, rail modes, row heights, timings).
 
 ## Defects found by the browser run and fixed
 
