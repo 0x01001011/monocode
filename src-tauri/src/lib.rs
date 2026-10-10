@@ -34,6 +34,11 @@ mod notes;
 mod notifications;
 mod pasteboard;
 mod pi_usage;
+mod pr_attribution;
+mod pr_stack;
+mod pr_store;
+mod pr_trace;
+mod pr_tracker;
 mod project_logo;
 mod pty;
 #[cfg(target_os = "macos")]
@@ -227,8 +232,26 @@ fn should_request_quit(code: Option<i32>) -> bool {
     code.is_some() || cfg!(any(target_os = "linux", target_os = "windows"))
 }
 
+/// Variables a harness sets on the agents it spawns so their git activity is
+/// attributed to the chat (see `harness_spawn` and `pr_trace`). A MonoCode
+/// build launched from inside a chat inherits them and must not report its
+/// own git activity to the parent's socket; its own spawns set fresh values.
+const INHERITED_CHAT_ENV: [&str; 3] = [
+    "MONOCODE_SESSION_ID",
+    "GIT_TRACE2_EVENT",
+    "GIT_TRACE2_PARENT_SID",
+];
+
+fn strip_inherited_chat_env(mut remove: impl FnMut(&str)) {
+    for key in INHERITED_CHAT_ENV {
+        remove(key);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any thread or child process starts.
+    strip_inherited_chat_env(|key| std::env::remove_var(key));
     #[cfg(target_os = "macos")]
     macos::register_spellcheck_default();
     #[cfg(windows)]
@@ -253,6 +276,8 @@ pub fn run() {
         .setup(|app| {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
+            pr_trace::start(app.handle());
+            pr_tracker::start(app.handle());
             control::init(app.handle())?;
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
@@ -356,6 +381,7 @@ pub fn run() {
             fs::git_range_context,
             fs::git_pr_status,
             fs::git_pr_create,
+            fs::git_is_ancestor,
             fs::git_github_status,
             fs::github_monocode_star_status,
             fs::github_star_monocode,
@@ -505,6 +531,14 @@ pub fn run() {
             session_store::session_set_archived,
             session_store::session_set_pinned,
             session_store::session_set_linked_work_item,
+            pr_attribution::pr_record_url,
+            pr_attribution::pr_record_hints,
+            pr_attribution::pr_dismiss,
+            pr_tracker::pr_set_interest,
+            pr_tracker::pr_refresh,
+            pr_tracker::pr_session_set,
+            pr_tracker::pr_stack_for,
+            pr_tracker::pr_summaries,
             session_store::skill_usage_record,
             session_store::skill_usage_snapshot,
             session_store::skill_usage_backfill,
@@ -695,7 +729,21 @@ pub fn ensure_macos_dev_bundle() {
 
 #[cfg(test)]
 mod tests {
-    use super::should_request_quit;
+    use super::{should_request_quit, strip_inherited_chat_env};
+
+    #[test]
+    fn startup_strips_the_chat_variables_a_parent_harness_set() {
+        let mut removed = Vec::new();
+        strip_inherited_chat_env(|key| removed.push(key.to_string()));
+        assert_eq!(
+            removed,
+            [
+                "MONOCODE_SESSION_ID",
+                "GIT_TRACE2_EVENT",
+                "GIT_TRACE2_PARENT_SID"
+            ]
+        );
+    }
 
     #[test]
     fn explicit_exit_requests_quit() {

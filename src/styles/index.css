@@ -106,6 +106,54 @@
     oklch(76.5% 0.177 163.223) calc(100% - var(--status-lift)),
     white
   );
+  /* pr-tracking: GitHub's status vocabulary (emerald open, violet merged, rose
+     closed, amber needs action). Icon values clear 3:1, `-text` values 4.5:1.
+     Dark values are design/pr-tracking/mockup.html verbatim at the default 9%
+     ground and lift toward white with the slider like the status colors above;
+     light values are overridden in `html.theme-light`. Never color alone:
+     pair with an icon shape and a label. */
+  --color-pr-open: color-mix(
+    in srgb,
+    #34d399 calc(100% - var(--status-lift)),
+    white
+  );
+  --color-pr-merged: color-mix(
+    in srgb,
+    #a78bfa calc(100% - var(--status-lift)),
+    white
+  );
+  --color-pr-closed: color-mix(
+    in srgb,
+    #fb7185 calc(100% - var(--status-lift)),
+    white
+  );
+  --color-pr-warn: color-mix(
+    in srgb,
+    #fbbf24 calc(100% - var(--status-lift)),
+    white
+  );
+  --color-pr-open-text: var(--color-pr-open);
+  --color-pr-merged-text: var(--color-pr-merged);
+  --color-pr-closed-text: var(--color-pr-closed);
+  --color-pr-warn-text: var(--color-pr-warn);
+  /* Theme-scaled ink steps (strengths live in `:root` / `html.theme-light`).
+     `ink-muted` is secondary text, `ink-on-fill` is text on tag/kbd fills,
+     `ink-faint` is decorative glyphs only and is NOT text. */
+  --color-ink-muted: color-mix(
+    in srgb,
+    var(--color-content) var(--ink-muted),
+    transparent
+  );
+  --color-ink-on-fill: color-mix(
+    in srgb,
+    var(--color-content) var(--ink-on-fill),
+    transparent
+  );
+  --color-ink-faint: color-mix(
+    in srgb,
+    var(--color-content) var(--ink-faint),
+    transparent
+  );
   --color-skill: #e8c547;
   --color-mention: #38bdf8;
   /* Type scale for application chrome. Floor is 10px. Weight and ink come
@@ -200,6 +248,22 @@
     100%
   );
   --faint-strength: 40%;
+  /* pr-tracking ink steps (design/pr-tracking/mockup.html): 58% / 70% at the
+     default 9% ground, rising with the dark-lightness slider like
+     `--muted-strength` so text keeps 4.5:1. 35% is decorative glyphs only. */
+  --ink-muted: clamp(
+    58%,
+    calc(58% + (var(--theme-dark-lightness) - 9%) * 1.5),
+    100%
+  );
+  --ink-on-fill: clamp(
+    70%,
+    calc(70% + (var(--theme-dark-lightness) - 9%) * 1.5),
+    100%
+  );
+  --ink-faint: 35%;
+  /* pr-tracking: the HEAD tag's accent, which the mockup darkens in light. */
+  --pr-accent: hsl(211 92% 62%);
   /* How far status colors move toward white on lighter dark grounds. */
   --status-lift: clamp(0%, calc((var(--theme-dark-lightness) - 9%) * 2.5), 60%);
   --motion-press-scale: 0.96;
@@ -237,6 +301,18 @@ html.theme-light {
   --color-danger: #be123c;
   --color-warning: #a84a07;
   --color-success: #046c4e;
+  /* pr-tracking, from design/pr-tracking/mockup.html `html.theme-light`. */
+  --ink-muted: 70%;
+  --ink-on-fill: 80%;
+  --pr-accent: hsl(211 92% 45%);
+  --color-pr-open: #047857;
+  --color-pr-merged: #7c3aed;
+  --color-pr-closed: #e11d48;
+  --color-pr-warn: #b45309;
+  --color-pr-open-text: #047857;
+  --color-pr-merged-text: #7c3aed;
+  --color-pr-closed-text: #be123c;
+  --color-pr-warn-text: #92400e;
   color-scheme: light;
 }
 
@@ -3998,4 +4074,752 @@ html.theme-light .btw-burst {
     var(--color-content) 10%,
     var(--color-background-base)
   );
+}
+
+/* pr-tracking */
+/* Ported from design/pr-tracking/mockup.html (`.strip`, `.att`, `.pr-row`,
+   `.pr-main`). Focus uses the app's base `:focus-visible` ring (2px
+   `--color-focus`, 2px offset, `Highlight` in forced colors). Status is never
+   color alone: every hue here repeats an icon shape or a label. */
+.pr-list-container {
+  container: prlist / inline-size;
+  /* The surface behind the rows; icon halos and attention rings cut out of
+     it. Lists on a raised surface override this. */
+  --pr-ground: var(--color-background-base);
+}
+
+.pr-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.pr-stale {
+  display: inline-flex;
+  color: var(--color-ink-muted);
+}
+
+/* Stack strip: tall = this chat's current PR, short = merged, hollow = draft,
+   hairline = someone else's. */
+.pr-strip {
+  display: inline-flex;
+  gap: 1px;
+  align-items: center;
+  margin-left: 2px;
+  height: 12px;
+}
+.pr-strip > i {
+  display: block;
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.pr-strip > i[data-kind="current"] {
+  opacity: 1;
+  height: 12px;
+}
+.pr-strip > i[data-kind="merged"] {
+  height: 6px;
+}
+.pr-strip > i[data-kind="draft"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.pr-strip > i[data-kind="other"] {
+  width: 1px;
+}
+
+/* Attention marks: filled dot = blocking, ring = needs action. */
+.pr-att {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.pr-att[data-kind="block"] {
+  background: var(--color-pr-closed);
+}
+.pr-att[data-kind="action"] {
+  box-shadow: inset 0 0 0 1.5px var(--color-pr-warn);
+}
+
+/* Row: number, title, signals on line 1; refs and one tag on line 2. */
+.pr-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 6px;
+}
+.pr-row:hover,
+.pr-row:focus-within {
+  background: var(--color-selection-subtle);
+}
+.pr-row[data-selected="true"] {
+  background: var(--color-selection);
+}
+.pr-ico {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  padding-top: 1px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+}
+/* Masks a stack connector drawn behind the icon column. */
+.pr-ico::before {
+  content: "";
+  position: absolute;
+  inset: -1px -2px;
+  border-radius: 50%;
+  background: var(--pr-ground, var(--color-background-base));
+  z-index: -1;
+}
+/* The halo takes the row's own fill, so only the connector is masked and
+   no disc shows (light selection is 6%, not the mockup's fixed 12%). The
+   selected rule comes last so a hovered selected row keeps its fill. */
+.pr-row:hover .pr-ico::before,
+.pr-row:focus-within .pr-ico::before {
+  background: color-mix(
+    in srgb,
+    var(--color-content) var(--selection-subtle-strength),
+    var(--pr-ground, var(--color-background-base))
+  );
+}
+.pr-row[data-selected="true"] .pr-ico::before {
+  background: color-mix(
+    in srgb,
+    var(--color-content) var(--selection-strength),
+    var(--pr-ground, var(--color-background-base))
+  );
+}
+.pr-ico .pr-att {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+}
+.pr-ico .pr-att[data-kind="block"] {
+  box-shadow: 0 0 0 1.5px var(--pr-ground, var(--color-background-base));
+}
+.pr-ico .pr-att[data-kind="action"] {
+  background: var(--pr-ground, var(--color-background-base));
+}
+.pr-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "n ttl sig" "l2 l2 l2";
+  column-gap: 6px;
+  row-gap: 1px;
+  align-items: center;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: inherit;
+  text-decoration: none;
+}
+.pr-n {
+  grid-area: n;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--color-content) 72%, transparent);
+}
+.pr-ttl {
+  grid-area: ttl;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pr-sig {
+  grid-area: sig;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.pr-sig > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.pr-l2 {
+  grid-area: l2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+.pr-ref {
+  min-width: min(10ch, 45%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Narrow lists move signals to line 2 so the title keeps the line. */
+@container prlist (max-width: 340px) {
+  .pr-row-cq .pr-main {
+    grid-template-areas: "n ttl ttl" "l2 l2 sig";
+  }
+}
+.pr-tag {
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--color-content) 8%, transparent);
+  color: var(--color-ink-on-fill);
+}
+/* Out of room, the ref gives way first, down to its min-width; only then
+   does the tag ellipsize instead of running under the signals. 6.1em of the
+   tag's 10px is at least the ref's 10ch of 10px monospace (0.55-0.6em). */
+.pr-l2 .pr-tag {
+  max-width: calc(100% - min(6.1em, 45%) - 6px);
+}
+.pr-tag[data-tone="head"] {
+  background: color-mix(in srgb, var(--pr-accent) 18%, transparent);
+  color: color-mix(in srgb, var(--pr-accent) 60%, var(--color-content));
+}
+.pr-tag[data-tone="warn"] {
+  color: var(--color-pr-warn-text);
+}
+.pr-icon-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--color-ink-muted);
+}
+.pr-icon-btn:hover,
+.pr-icon-btn[aria-expanded="true"] {
+  background: var(--color-selection-hover);
+  color: var(--color-content);
+}
+/* Revealed on hover and keyboard focus; always shown without hover. */
+.pr-row-more {
+  opacity: 0;
+  margin-top: -3px;
+}
+.pr-row:hover .pr-row-more,
+.pr-row:focus-within .pr-row-more,
+.pr-row-more[aria-expanded="true"] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .pr-row-more {
+    opacity: 1;
+  }
+}
+
+/* Forced colors drop backgrounds and box-shadows; redraw the bar and dot
+   shapes in the system text color so shape still carries the meaning. */
+@media (forced-colors: active) {
+  .pr-strip > i,
+  .pr-att {
+    forced-color-adjust: none;
+    color: CanvasText;
+  }
+  .pr-strip > i:not([data-kind="draft"]),
+  .pr-att[data-kind="block"] {
+    background: CanvasText;
+  }
+  .pr-att[data-kind="action"] {
+    background: Canvas;
+    box-shadow: inset 0 0 0 1.5px CanvasText;
+  }
+}
+
+/* Sidebar row glyph (mockup `.sb-glyph`): one status icon, or a PR icon and
+   a count, with the attention mark on its corner. Stale status is a dashed
+   outline at full contrast, never reduced opacity. */
+.sb-glyph {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 3px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  --pr-ground: var(--color-background-base);
+}
+.sb-glyph::after { content: ""; position: absolute; inset: -4px -3px; } /* 24×24 hit area */
+.sb-glyph:hover,
+.sb-glyph[aria-expanded="true"] {
+  background: var(--color-selection-hover);
+}
+.sb-glyph[data-stale="true"] {
+  outline: 1px dashed var(--color-ink-muted);
+  outline-offset: 1px;
+}
+.sb-glyph[data-stale="true"]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.sb-glyph .pr-att {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+}
+.sb-glyph .pr-att[data-kind="block"] {
+  box-shadow: 0 0 0 1.5px var(--pr-ground);
+}
+.sb-glyph .pr-att[data-kind="action"] {
+  background: var(--pr-ground);
+}
+@media (forced-colors: active) {
+  .sb-glyph[data-stale="true"] {
+    outline-color: CanvasText;
+  }
+  .sb-glyph[data-stale="true"]:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* Composer header row (`composer-head`): next to a PR chip the branch
+   button keeps at least min(14ch, 45%); under 400px the PR chip drops its
+   strip and +N, under 320px the "Worktree" label collapses to its icon.
+   Queried on the row, not the window, so split panes degrade too. */
+.composer-head {
+  container: composer-head / inline-size;
+}
+/* The floor sits on the wrapper, the row's flex item (`cqi` resolves
+   against the row), so it still shrinks to the floor and no further. The
+   button fills it, so a short name leaves no dead gap, and truncates. The
+   wrapper takes the label's 12px so `14ch` is 14 label characters, not
+   the inherited 16px (which pushed the row past its edge at 360px). Only
+   rows holding a chip need it; with zero PRs the button is unchanged. */
+.composer-head:has(.pr-chip) > [data-branch-trigger] {
+  font-size: 12px;
+  min-width: min(14ch, 45cqi);
+}
+.composer-head:has(.pr-chip) > [data-branch-trigger] > button {
+  flex: 1 1 auto;
+}
+.pr-chip-num {
+  font-variant-numeric: tabular-nums;
+}
+.pr-chip-more {
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+@container composer-head (max-width: 400px) {
+  .pr-chip .pr-strip,
+  .pr-chip .pr-chip-more {
+    display: none;
+  }
+}
+@container composer-head (max-width: 320px) {
+  .composer-head .workspace-label {
+    display: none;
+  }
+}
+
+/* PrSetCard (mockup `.card-head`, `.card-body`, `.notice`, `.card-foot`). */
+.pr-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.pr-card .pr-list-container {
+  /* The popover's glass over the base ground. */
+  --pr-ground: color-mix(
+    in srgb,
+    var(--color-content) 2%,
+    var(--color-background-base)
+  );
+}
+html.theme-light .pr-card .pr-list-container {
+  --pr-ground: var(--color-background-base);
+}
+.pr-card-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 8px;
+  font-size: 12px;
+}
+.pr-card-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--color-content);
+}
+.pr-card-updated {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-ink-muted);
+}
+.pr-card-updated[data-stale="true"] {
+  color: var(--color-pr-warn-text);
+}
+.pr-card-body {
+  padding: 0 6px 6px;
+}
+.pr-group-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 4px;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+.pr-list {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Stack connector through the icon column; icons mask it with a halo. */
+.pr-stack-list::before {
+  content: "";
+  position: absolute;
+  left: 13.5px;
+  top: 18px;
+  bottom: 18px;
+  width: 1px;
+  background: color-mix(in srgb, var(--color-content) 14%, transparent);
+}
+.pr-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 6px 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--color-content);
+  background: color-mix(in srgb, var(--color-content) 4%, transparent);
+}
+.pr-notice[data-tone="warn"] {
+  background: color-mix(in srgb, var(--color-pr-warn) 10%, transparent);
+}
+.pr-notice-act {
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+.pr-notice-act:hover {
+  background: color-mix(in srgb, var(--color-content) 15%, transparent);
+}
+.pr-hidden-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  margin-top: 4px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+.pr-hidden-toggle:hover,
+.pr-hidden-toggle[aria-expanded="true"] {
+  color: var(--color-content);
+}
+.pr-card-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  padding: 7px 12px;
+  border-top: 1px solid
+    color-mix(in srgb, var(--color-content) 7%, transparent);
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--color-ink-muted);
+}
+.pr-undo {
+  flex: none;
+  min-height: 24px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--color-content);
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+.pr-undo:hover {
+  background: color-mix(in srgb, var(--color-content) 15%, transparent);
+}
+.pr-card-foot kbd {
+  margin-right: 3px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-ink-on-fill);
+  background: color-mix(in srgb, var(--color-content) 8%, transparent);
+}
+
+/* Changes panel (mockup `.pr-section`, `.btn-split`, `.base-field`). The
+   section is the `prlist` container, so rows go narrow under 340px. */
+.pr-section {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-stroke);
+}
+.pr-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.pr-section-head h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-content);
+}
+.pr-section-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-muted);
+}
+.pr-section .pr-row {
+  padding-left: 4px;
+  padding-right: 2px;
+}
+/* The panel's header area does not scroll; a long list scrolls itself so
+   the changed files stay in view. */
+.pr-section .pr-list {
+  max-height: 216px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 0;
+}
+.pr-section .pr-notice {
+  margin: 2px 0 6px;
+}
+.pr-section-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+.pr-split {
+  display: flex;
+  gap: 1px;
+  margin-top: 8px;
+}
+.pr-base-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+}
+.pr-base-field > label {
+  flex: none;
+  color: var(--color-ink-muted);
+}
+.pr-base-select {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--color-content) 6%, transparent);
+}
+.pr-base-select:hover {
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+.pr-base-select:has(> select:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+/* The native select covers the box and takes clicks and keys; the value
+   and tag beside it are what sighted users read. */
+.pr-base-select > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.pr-base-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-content);
+}
+@media (forced-colors: active) {
+  .pr-base-select:has(> select:focus-visible) {
+    outline-color: Highlight;
+  }
+}
+
+/* Inbox stack rail and health line (mockup `.rail`, `.node`, `.health`).
+   The rail is position: relative so a node's offsetLeft is measured from
+   it when the scroll mode centers the viewed PR. */
+.pr-inbox-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr-rail-nav {
+  min-width: 0;
+}
+.pr-rail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  /* Room for the 2px focus ring and its 2px offset inside the clip. */
+  padding: 4px;
+  list-style: none;
+  overflow: hidden;
+}
+.pr-rail > li {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.pr-rail[data-mode="scroll"] {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 20px,
+    #000 calc(100% - 20px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 20px,
+    #000 calc(100% - 20px),
+    transparent
+  );
+}
+.pr-rail[data-mode="scroll"]::-webkit-scrollbar {
+  display: none;
+}
+.pr-rail-trunk {
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+.pr-rail-arrow {
+  color: var(--color-ink-faint);
+  font-size: 12px;
+}
+.pr-rail-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--color-content) 9%, transparent);
+  border-radius: 14px;
+  font-size: 12px;
+  color: var(--color-content);
+  text-decoration: none;
+}
+.pr-rail-node:hover {
+  background: var(--color-selection-subtle);
+}
+.pr-rail-node[aria-current="step"] {
+  background: var(--color-selection-emphasis);
+  border-color: transparent;
+}
+/* Another chat's PR: dashed outline, so the shape carries it, not hue. */
+.pr-rail-node[data-other="true"] {
+  border-style: dashed;
+  border-color: var(--color-ink-muted);
+}
+.pr-rail-n {
+  font-variant-numeric: tabular-nums;
+}
+.pr-rail-ttl {
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Text on a fill: the viewed node sits on selection-emphasis, where 70%
+     ink measures 4.41:1 in light. */
+  color: var(--color-ink-on-fill);
+}
+.pr-health {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--color-pr-warn) 9%, transparent);
+}
+.pr-health-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pr-health-act {
+  flex: none;
+  max-width: 50%;
+  min-height: 24px;
+  margin-left: auto;
+  padding: 3px 9px;
+  overflow: hidden;
+  border-radius: 5px;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+.pr-health-act:hover {
+  background: color-mix(in srgb, var(--color-content) 15%, transparent);
+}
+.pr-health-status {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+@media (forced-colors: active) {
+  .pr-rail-node[aria-current="step"] {
+    border-color: Highlight;
+  }
 }

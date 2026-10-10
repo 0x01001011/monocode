@@ -67,6 +67,7 @@ import {
 import type {
   Attachment,
   HarnessId,
+  LinkedWorkItem,
   MessageQueueStatus,
   QueuedMessage,
   UsageLimit,
@@ -109,6 +110,7 @@ import {
   WorkspaceIdentity,
   WorkspacePicker,
 } from "../../workspace/ui/WorkspacePicker";
+import { PrChip } from "../../pr-tracking/ui/PrChip";
 import type { Worktree } from "../../source-control/model/worktrees";
 import { CwdPicker } from "../../projects/ui/CwdPicker";
 import { FileMentionPicker } from "./FileMentionPicker";
@@ -226,6 +228,8 @@ type Props = {
   hideTopBar?: boolean;
   /** Keeps local file mentions, skills, and app modes off for host sessions. */
   remoteSession?: boolean;
+  /** Opens one of the chat's PRs in the Inbox panel. */
+  onOpenPrInInbox?: (item: LinkedWorkItem) => void;
   remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean };
   context?: ContextUsage;
   compactSupported?: boolean;
@@ -351,6 +355,7 @@ export function Composer({
   hideBranchPicker = false,
   hideTopBar = false,
   remoteSession = false,
+  onOpenPrInInbox,
   remoteFeatures,
   context,
   compactSupported = false,
@@ -1955,7 +1960,7 @@ export function Composer({
             </div>
           ) : null}
           {hideTopBar ? null : (
-            <div className="flex min-w-0 items-center gap-2.5 overflow-hidden px-3 pt-2.5">
+            <div className="composer-head flex min-w-0 items-center gap-2.5 overflow-hidden px-3 pt-2.5">
               {!remote && !hideProjectPicker ? (
                 <CwdPicker
                   cwd={cwd}
@@ -2017,6 +2022,13 @@ export function Composer({
                     onChange={onBranchChange}
                     onClose={() => ref.current?.focus()}
                   />
+                  {sessionId && !remoteSession ? (
+                    <PrChip
+                      sessionId={sessionId}
+                      active={enabled}
+                      onOpenInbox={onOpenPrInInbox}
+                    />
+                  ) : null}
                 </>
               )}
               <div className="ml-auto flex shrink-0 items-center">

@@ -857,6 +857,11 @@ pub fn harness_spawn(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, &command);
+    cmd.env("MONOCODE_SESSION_ID", &session_id);
+    if let Some(vars) = crate::pr_trace::trace2_env(&session_id) {
+        // Lets git report which chat ran which command (see pr_trace).
+        cmd.envs(vars);
+    }
     apply_provider_account(&app, &mut cmd, account.as_ref())?;
     let codex_store = match codex_store.as_deref() {
         None => None,

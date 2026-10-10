@@ -292,7 +292,11 @@ export function BranchPicker({
   const interactive = enabled && !awaitingBranch && !missingGit;
 
   return (
-    <div ref={root} className="relative flex min-w-0 shrink">
+    <div
+      ref={root}
+      data-branch-trigger=""
+      className="relative flex min-w-0 shrink"
+    >
       <GitPickerTrigger
         title={title}
         aria-label={

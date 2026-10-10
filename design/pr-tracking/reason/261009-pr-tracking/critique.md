@@ -1,0 +1,42 @@
+WEAKNESS-1 [FATAL]: "turn_diff is still allowed because it is scoped to this chat's own turn" (Shared-cwd rule). This claim is false. A turn is a stretch of time in a shared checkout, not something that belongs to one chat. With 12 parallel chats on one checkout, turns overlap. If chat B runs `git checkout -b feat/x` or makes a commit while chat A's turn is running, A's turn-end snapshot sees "branch differs" or "HEAD gained commits" and attaches B's branch to A. The same goes for the user's own manual commits during A's turn. So the design brings back the cross-chat leakage it uses to reject passive observation (section g) and the "all my PRs" approach. Shared-cwd chats are the default case, so the per-chat set is wrong exactly where it matters.
+
+WEAKNESS-2 [MAJOR]: "`first_base_ref TEXT NOT NULL` -- stack edge survives GitHub's auto-retarget". The value is captured at the app's first fetch, not when the PR was created. Several kinds of PR are first fetched after the parent has already merged and GitHub has retargeted the child to `main`: `preexisting=1` PRs, PRs opened on github.com and found later by the warm re-check, PRs fetched once at the Cold tier, and every PR that exists before this feature ships. For those, `firstBaseRef` is `main` and the stack falls apart, which is the exact failure this column is meant to prevent. It also goes wrong the other way: a deliberate retarget by the user is ignored forever. The column sits in the shared `pr_snapshots` table, and the design never says how it is upserted. Phase 1 creates it as NOT NULL while Phase 2 is when "firstBaseRef" gets delivered, so rows written in Phase 1 carry whatever base was live then. GitHub's real record of base changes (`BaseRefChangedEvent` in the timeline) is never used.
+
+WEAKNESS-3 [MAJOR]: "one GraphQL query per repo per tick" together with "Parents: … walking up until the base is the default branch (at most 6 hops)" in "the same batched query". These contradict each other. You can't write the alias for a grandparent until a round trip has returned the parent's `baseRefName`, so a 6-hop walk takes up to 6 sequential queries. Child lookups have the same problem. The cost and cadence claims rest on the single-query premise and don't hold once stacks exist.
+
+WEAKNESS-4 [MAJOR]: "GraphQL cost scales with connection sizes, not with alias count. A 40-PR query costs roughly 1–2 points". This is hand-waved, and it ignores the real failure modes:
+- Each aliased PR adds its own nested connections (`commits(last:1)`, `statusCheckRollup.contexts`, plus a `baseRef.compare`). Compare is an expensive server-side diff that can time out on big repos.
+- `pullRequests(headRefName:)` is listed without the required `first:`.
+- `gh api graphql` exits non-zero when the response has any `errors` entry. One deleted PR, one transcript-parsed number from the wrong repo, or one compare timeout would fail the whole repo's batch. `gh_run` then discards the partial data, so every PR in that repo goes stale.
+- The quota is shared with the agents' own `gh` calls in their shells. Those calls bypass `GITHUB_RATE_LIMIT_BACKOFF` entirely, so "routed through the existing global backoff slot" protects only the app's own share.
+
+WEAKNESS-5 [MAJOR]: "Resolving branches to PRs … filtered client-side on `headRepositoryOwner` to replace the old `owner:branch` filter". Two problems:
+- It ignores fork workflows, which the codebase already handles (`git_github_repositories_for` returns fork plus parent) and which this very repo uses (`origin` is upstream, `fork` is the user's fork). The design never says which repo `repo` is: the `gh repo view` default, the fork, or the parent. `agent_created` keys `repo` from the URL in the transcript, while the poller keys it from the working copy. Those can differ, so the same PR gets two identities or never matches.
+- The neighbour lookups ("PRs whose `headRefName` equals my `baseRef`", "open PRs whose `baseRefName` equals my `headRef`") have no owner filter at all. A collaborator's or another fork's PR on a common branch name gets pulled into "my stack".
+
+WEAKNESS-6 [MAJOR]: Health line: "#480 was squash-merged; #482 still contains its commits and needs a rebase onto main." The field list in the query has no way to detect this. It selects no merge method, no merge commit, and no head-commit ancestry for the parent. And `behindBy` from `baseRef.compare` measures distance to `main` once the child has been retargeted, not "contains the parent's commits". So the UI promises its most valuable stack message without the data to back it.
+
+WEAKNESS-7 [MAJOR]: Transcript classifier rules.
+- `gh pr create` output with a `pull/N` URL is treated as proof of creation. But when a PR already exists, `gh pr create` fails with "a pull request for branch X already exists: https://github.com/o/r/pull/N", so an existing PR would attach as `agent_created`, not `preexisting`.
+- `push origin <b>` also matches `git push origin --delete foo` and `HEAD:other`.
+- `cd ../other && gh pr create` or `-R other/repo` would attach PRs from other repos.
+- PRs created through MCP GitHub tools or subagents produce no `{tool:{kind:"shell"}}` block and are missed.
+- The claim that `monocodeToolCall.ts` "shows a command classifier is practical" proves only that blocks can be parsed. It says nothing about classifying them correctly.
+
+WEAKNESS-8 [MAJOR]: The tier design undercuts the sidebar's selling point: "across 12 parallel chats, 'which one needs me' can be scanned". Warm polling covers only "chats visible in the sidebar". Hot covers only the focused chat "while a surface is visible". So chats scrolled off the list, and the whole fleet while the window is hidden, never refresh. Their attention dots show stale state with no staleness cue, because the stale styling is defined only for "hot tier, older than 5 min". Window-focus refresh is rate-limited to once per 60s, and the design doesn't say which tier it refreshes.
+
+WEAKNESS-9 [MAJOR]: Remote projects are ignored. The codebase has `remote_ssh.rs` and `remote://` cwds in `session_store.rs`. Yet the design relies on local Rust git reads at turn boundaries (`turn_diff`), local `upsert_session` git reads, a local `git merge-base --is-ancestor` ("costs no API calls"), and local `gh`. None of these work for a remote checkout, and the design neither scopes remote projects out nor handles them.
+
+WEAKNESS-10 [MINOR]: "Rust merges this across the main window and the floating Mono chat windows, so nothing polls twice." This holds only inside one process. The design itself notes that "several app versions share one DB", for example a dev build alongside the installed app. Each running instance would start its own `pr_tracker`, poll twice, and race writes to `pr_snapshots`.
+
+WEAKNESS-11 [MINOR]: "Rows: `role="listbox"` with `aria-activedescendant`" sits alongside an "`Other chat ›` link" inside each row. ARIA does not allow interactive descendants inside listbox options. On top of that, the per-row actions (⌘↵, ⌥↵, ⌫ dismiss) have no visible affordance, so the accessibility section's own model is invalid.
+
+WEAKNESS-12 [MINOR]: "Merge is disabled with a tooltip on a stack member whose parent is not merged yet". This blocks a legitimate workflow: merging a child into its parent's branch (base = `feat/a`) to fold the stack. The design presents the gate as a safety measure, but it is really a workflow restriction.
+
+WEAKNESS-13 [MINOR]: The model leaves several gaps:
+- "Branches still without a PR … dropped after 14 days": a PR opened on day 15 never attaches.
+- "Attention level" ordering leaves out merged and closed.
+- The chip's "current PR … otherwise the most recent open one" doesn't say what shows when every PR is merged or closed.
+- "mergeable: UNKNOWN … other tiers wait for the next tick" leaves warm rows showing unknown for 3+ minutes, because GitHub computes mergeability lazily.
+
+VERDICT: The UI work is thorough, but the tracking model leaks branches between chats in shared checkouts, the stack edge gets captured too late to survive retargeting, and the "one query per repo" cost story falls apart once stacks, forks or partial GraphQL errors are involved, so the core correctness claims don't hold.

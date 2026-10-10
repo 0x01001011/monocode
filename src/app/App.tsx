@@ -523,6 +523,7 @@ import { hiddenApprovalNotices } from "../features/notifications/model/approvalT
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
 import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
 import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
+import { recordTurnPrs } from "../features/pr-tracking/data/recordTurnPrs";
 import {
   loadNotificationsEnabled,
   NOTIFICATION_CLICK_EVENT,
@@ -8155,6 +8156,15 @@ function Workspace({
         .finally(() => {
           editedResend?.reject();
           if (editedResend) editedResends.finish(sessionId);
+          // Once the final blocks have rendered, note the PRs this turn
+          // produced, whether it completed, failed or was stopped. Best
+          // effort: recordTurnPrs never throws or waits.
+          window.setTimeout(() => {
+            const finished = sessionsRef.current.find(
+              (s) => s.id === sessionId,
+            );
+            if (finished) recordTurnPrs(finished);
+          }, 0);
           options?.onSettled?.(
             turnGen.current.get(sessionId) !== gen
               ? { status: "cancelled", text: controlText }
@@ -11347,6 +11357,21 @@ function Workspace({
     () => ciRepairSessions(history, sessions),
     [history, sessions],
   );
+  // Names a PR's owner chat in the Inbox (restack draft target) even when the
+  // chat is not linked to that PR. Archived chats and Inbox asks are left out.
+  const inboxSessionTitle = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const session of history) {
+      if (session.archived) continue;
+      titles.set(session.id, sessionDisplayTitle(session.title, session.harness));
+    }
+    for (const session of sessions) {
+      if (session.inboxAsk || session.ephemeral) continue;
+      const summary = summaryFromSession(session);
+      titles.set(session.id, sessionDisplayTitle(summary.title, summary.harness));
+    }
+    return (sessionId: string) => titles.get(sessionId);
+  }, [history, sessions]);
   const openProjectSessions = useMemo(
     () =>
       sessions
@@ -13075,6 +13100,7 @@ function Workspace({
                   onAskRestart={onRestartInboxAsk}
                   onAskMount={setInboxAskPortal}
                   sessions={inboxRelatedSessions}
+                  sessionTitleById={inboxSessionTitle}
                   repairSessions={repairSessions}
                   onRepairChecks={onRepairChecks}
                   onOpenSession={onOpenInboxSession}

@@ -115,6 +115,8 @@ import {
   type LinkedWorkItem,
 } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
+import type { PrEntryLite } from "../../pr-tracking/model/types";
+import { PrInboxStack } from "../../pr-tracking/ui/PrInboxStack";
 import {
   inboxItemMatchesLinkedWorkItem,
   linkedWorkItemInboxKey,
@@ -386,6 +388,8 @@ type Props = {
   repairSessions?: CiRepairProps["repairSessions"];
   onRepairChecks?: CiRepairProps["onRepairChecks"];
   sessions?: readonly SessionSummary[];
+  /** Display title of any live chat by id; names a PR's owner chat. */
+  sessionTitleById?: (sessionId: string) => string | undefined;
   onOpenSession?: (sessionId: string) => void | Promise<void>;
   /** Session-card destination to reveal after the Inbox list loads. */
   target?: LinkedWorkItem | null;
@@ -407,8 +411,9 @@ export function InboxView({
   repairSessions,
   onRepairChecks,
   sessions = [],
+  sessionTitleById,
   onOpenSession,
-  target = null,
+  target: linkedTarget = null,
   onOpenIntegrations,
 }: Props) {
   const [discussionOpen, setDiscussionOpen] = useState(false);
@@ -443,6 +448,17 @@ export function InboxView({
     () => peekInboxForRail(recents, cwd)?.errors ?? {},
   );
   const [refresh, setRefresh] = useState(0);
+  // A PR opened from the stack rail behaves like a linked target until the
+  // caller names a new one.
+  // It is looked up in the project of the PR it was opened from, and is
+  // dropped once another row is selected.
+  const [stackTarget, setStackTarget] = useState<{
+    item: LinkedWorkItem;
+    projectPath: string;
+  } | null>(null);
+  useEffect(() => setStackTarget(null), [linkedTarget]);
+  const target = stackTarget?.item ?? linkedTarget;
+  const targetCwd = stackTarget?.projectPath || cwd;
   const targetSelectionKey = target ? linkedWorkItemInboxKey(target) : null;
   const [selectedKey, setSelectedKey] = useState<string | null>(
     targetSelectionKey,
@@ -738,12 +754,12 @@ export function InboxView({
       return;
     }
     let cancelled = false;
-    void githubWorkItem(cwd, target.repo, target.kind, target.number)
+    void githubWorkItem(targetCwd, target.repo, target.kind, target.number)
       .then((item) => {
         if (cancelled) return;
         setTargetItem({
           ...item,
-          projectPath: cwd,
+          projectPath: targetCwd,
           provider: "github",
         });
       })
@@ -753,7 +769,7 @@ export function InboxView({
     return () => {
       cancelled = true;
     };
-  }, [cwd, items, target, targetSelectionKey]);
+  }, [targetCwd, items, target, targetSelectionKey]);
 
   const visibleItems = useMemo(() => {
     if (!sourceAvailable) return [];
@@ -820,6 +836,19 @@ export function InboxView({
     !!targetSelectionKey && selectedKey === targetSelectionKey;
   const selected =
     selectedByKey ?? (waitingForTarget ? null : visibleItems[0]) ?? null;
+  const openStackPr = useCallback(
+    (repo: string, pr: PrEntryLite, projectPath: string) => {
+      const linked: LinkedWorkItem = {
+        kind: "pr",
+        repo,
+        number: pr.number,
+        url: pr.url,
+      };
+      setStackTarget({ item: linked, projectPath });
+      setSelectedKey(linkedWorkItemInboxKey(linked));
+    },
+    [],
+  );
   const updateInboxItem = useCallback((next: InboxItem) => {
     const key = inboxItemKey(next);
     setItems((current) =>
@@ -1115,6 +1144,11 @@ export function InboxView({
                         key,
                         updatedAt: item.updatedAt,
                       });
+                      if (
+                        stackTarget &&
+                        key !== linkedWorkItemInboxKey(stackTarget.item)
+                      )
+                        setStackTarget(null);
                       setSelectedKey(key);
                     }}
                   />
@@ -1210,6 +1244,8 @@ export function InboxView({
               onRepairChecks={onRepairChecks}
               onOpenSession={onOpenSession}
               onItemChange={updateInboxItem}
+              onOpenStackPr={openStackPr}
+              sessionTitleById={sessionTitleById}
             />
           </div>
           {discussionOpen && selected ? (
@@ -1444,6 +1480,8 @@ function InboxDetailBody({
   onRepairChecks,
   onOpenSession,
   onItemChange,
+  onOpenStackPr,
+  sessionTitleById,
 }: {
   item: InboxItem | null;
   cwd: string;
@@ -1456,6 +1494,8 @@ function InboxDetailBody({
   onRepairChecks?: CiRepairProps["onRepairChecks"];
   onOpenSession?: (sessionId: string) => void | Promise<void>;
   onItemChange?: (item: InboxItem) => void;
+  onOpenStackPr?: (repo: string, pr: PrEntryLite, projectPath: string) => void;
+  sessionTitleById?: (sessionId: string) => string | undefined;
 }) {
   if (!item) {
     return (
@@ -1479,6 +1519,8 @@ function InboxDetailBody({
       onRepairChecks={onRepairChecks}
       onOpenSession={onOpenSession}
       onItemChange={onItemChange}
+      onOpenStackPr={onOpenStackPr}
+      sessionTitleById={sessionTitleById}
     />
   );
 }
@@ -2032,6 +2074,8 @@ export function InboxDetail({
   onRepairChecks,
   onOpenSession,
   onItemChange,
+  onOpenStackPr,
+  sessionTitleById,
 }: {
   item: InboxItem;
   cwd: string;
@@ -2046,6 +2090,9 @@ export function InboxDetail({
   onRepairChecks?: CiRepairProps["onRepairChecks"];
   onOpenSession?: (sessionId: string) => void | Promise<void>;
   onItemChange?: (item: InboxItem) => void;
+  /** Opens another PR of the viewed PR's stack; without it, it opens on GitHub. */
+  onOpenStackPr?: (repo: string, pr: PrEntryLite, projectPath: string) => void;
+  sessionTitleById?: (sessionId: string) => string | undefined;
 }) {
   const detailLock = useLockOverscroll<HTMLDivElement>();
   const panel = mode === "panel";
@@ -2188,6 +2235,16 @@ export function InboxDetail({
       : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
         ? "text-danger"
         : "text-muted";
+  const stackChats = useMemo(
+    () =>
+      relatedSessions
+        .filter((session) => !session.archived)
+        .map((session) => ({
+          id: session.id,
+          title: sessionDisplayTitle(session.title, session.harness),
+        })),
+    [relatedSessions],
+  );
   const baseRef =
     details?.baseRefName?.trim() || thread?.baseRefName?.trim() || "";
   const headRef =
@@ -2981,6 +3038,19 @@ export function InboxDetail({
                   <InboxLabel key={label.name} label={label} />
                 ))}
               </div>
+            ) : null}
+            {tab === "summary" && isPr && githubKind === "pr" ? (
+              <PrInboxStack
+                repo={item.repo}
+                number={item.number}
+                relatedSessions={stackChats}
+                sessionTitleById={sessionTitleById}
+                onOpenPr={(pr) =>
+                  onOpenStackPr
+                    ? onOpenStackPr(item.repo, pr, item.projectPath || cwd)
+                    : void openUrl(pr.url)
+                }
+              />
             ) : null}
             {isPr && tab === "code" ? (
               diffLoading ? (

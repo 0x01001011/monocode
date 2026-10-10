@@ -12,6 +12,7 @@ import {
   runHarnessTextPrompt,
   canRewindHarnessLastTurn,
   compactHarnessContext,
+  generateHarnessPrContent,
   isLiveHarness,
   listHarnesses,
   refreshHarnessCatalogs,
@@ -432,5 +433,21 @@ describe("harness registry", () => {
     );
     expect(restoreTaskLists).toHaveBeenCalledTimes(1);
     expect(restoreTaskLists).toHaveBeenCalledWith("s1", [taskList]);
+  });
+});
+
+describe("generateHarnessPrContent", () => {
+  it("passes the chosen base to the adapter", async () => {
+    const generatePrContent = vi.fn(async (_cwd: string, base?: string) => ({
+      title: "T",
+      body: "B",
+      base: base ?? "main",
+      head: "mc/next",
+    }));
+    registerHarness(stub("claude", { generatePrContent }));
+    await expect(
+      generateHarnessPrContent("claude", "/repo", "mc/parent"),
+    ).resolves.toMatchObject({ base: "mc/parent" });
+    expect(generatePrContent).toHaveBeenCalledWith("/repo", "mc/parent");
   });
 });

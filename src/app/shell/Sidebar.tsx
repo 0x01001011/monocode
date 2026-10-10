@@ -135,6 +135,7 @@ import type {
   LinkedWorkItem,
 } from "../../features/sessions/model/session";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
+import { PrSidebarSlot } from "../../features/pr-tracking/ui/PrSidebarGlyph";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { SettingsSectionId } from "../../features/settings/model/settings";
 import type { InstalledUpdate } from "../model/updateNotice";
@@ -602,6 +603,20 @@ function SidebarComponent({
     remoteProject && hostProject
       ? remotePath(hostProject.environmentId, remoteExecutionCwd ?? hostProject.cwd)
       : gitCwd || cwd;
+  // A PR created from the Changes panel belongs to the active chat, but only
+  // when the panel shows that chat's own checkout. Remote chats are not tracked.
+  const activeSummary = activeSessionId
+    ? sessions.find((session) => session.id === activeSessionId)
+    : undefined;
+  const prSessionId =
+    !remoteProject &&
+    activeSummary &&
+    sameProjectPath(
+      activeSummary.worktreeCwd || activeSummary.cwd,
+      gitRoot,
+    )
+      ? activeSummary.id
+      : undefined;
   const resize = useDragResize({
     min: MIN_WIDTH,
     max: () => Math.min(MAX_WIDTH, Math.floor(window.innerWidth * 0.5)),
@@ -1573,6 +1588,7 @@ function SidebarComponent({
         now={now}
         onSelect={cardActions.select}
         onOpenWorkItem={onOpenInboxItem && !remoteProject ? cardActions.openWorkItem : undefined}
+        prTracking={!remoteProject}
         onPrefetch={onPrefetchSession ? cardActions.prefetch : undefined}
         onPlaceOnPane={
           onPlaceSessionOnPane ? cardActions.placeOnPane : undefined
@@ -2156,6 +2172,12 @@ function SidebarComponent({
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <SourceControl
                 cwd={gitRoot}
+                sessionId={prSessionId}
+                onOpenInbox={
+                  onOpenInboxItem && prSessionId
+                    ? (item) => onOpenInboxItem(item, prSessionId)
+                    : undefined
+                }
                 enabled={panelOpen}
                 textHarness={textHarness}
                 selectedPath={selectedDiffPath}
@@ -3292,6 +3314,7 @@ const SessionCard = memo(function SessionCard({
   dropTarget,
   compact = false,
   now,
+  prTracking = false,
   onSelect,
   onOpenWorkItem,
   onPrefetch,
@@ -3313,6 +3336,8 @@ const SessionCard = memo(function SessionCard({
   dropTarget?: boolean;
   compact?: boolean;
   now: number;
+  /** Local chat: show its PR glyph. Remote chats are not tracked. */
+  prTracking?: boolean;
   onSelect: (
     sessionId: string,
     event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
@@ -3733,7 +3758,20 @@ const SessionCard = memo(function SessionCard({
                 <Archive className="size-3 shrink-0" strokeWidth={1.75} />
               </button>
             ) : null}
-            {workItemBadge}
+            {prTracking ? (
+              <PrSidebarSlot
+                sessionId={session.id}
+                linkedWorkItem={linkedWorkItem}
+                badge={workItemBadge}
+                onOpenInbox={
+                  onOpenWorkItem
+                    ? (item) => onOpenWorkItem(item, session.id)
+                    : undefined
+                }
+              />
+            ) : (
+              workItemBadge
+            )}
             {session.automationId ? (
               <span
                 data-automation-icon

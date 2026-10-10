@@ -1,9 +1,13 @@
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId, LinkedWorkItem } from "../../sessions/model/session";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { GitChangesPanel } from "./GitChangesPanel";
 
 type Props = {
   cwd: string;
+  /** The chat a PR created here is attributed to, when the checkout is its own. */
+  sessionId?: string;
+  /** Opens one of the chat's PRs in the Inbox panel. */
+  onOpenInbox?: (item: LinkedWorkItem) => void;
   enabled: boolean;
   textHarness?: HarnessId;
   selectedPath?: string;
@@ -16,6 +20,8 @@ type Props = {
 
 export function SourceControl({
   cwd,
+  sessionId,
+  onOpenInbox,
   enabled,
   textHarness,
   selectedPath,
@@ -30,6 +36,8 @@ export function SourceControl({
       <GitChangesPanel
         key={cwd}
         cwd={cwd}
+        sessionId={sessionId}
+        onOpenInbox={onOpenInbox}
         enabled={enabled}
         textHarness={textHarness}
         selectedPath={selectedPath}

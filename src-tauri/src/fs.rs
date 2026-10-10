@@ -1122,12 +1122,18 @@ pub struct GitRangeContext {
     pub diff_patch: String,
 }
 
-/// Commits and diff between the default branch and HEAD, for PR text generation.
+/// Commits and diff between `base` (default: the default branch) and HEAD,
+/// for PR text generation.
 #[tauri::command]
-pub async fn git_range_context(cwd: String) -> Result<GitRangeContext, String> {
-    tauri::async_runtime::spawn_blocking(move || git_range_context_for(&expand_home(&cwd)))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn git_range_context(
+    cwd: String,
+    base: Option<String>,
+) -> Result<GitRangeContext, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        git_range_context_with_base(&expand_home(&cwd), base.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -1177,6 +1183,50 @@ pub async fn git_pr_create(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Whether `ancestor` is an ancestor of (or equal to) `descendant`.
+#[tauri::command]
+pub async fn git_is_ancestor(
+    cwd: String,
+    ancestor: String,
+    descendant: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        git_is_ancestor_for(&expand_home(&cwd), &ancestor, &descendant)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// `git merge-base --is-ancestor`: exit 0 is true, 1 is false, anything else
+/// (an unknown ref, not a repo) is an error. Refs that could parse as an
+/// option are refused.
+fn git_is_ancestor_for(root: &Path, ancestor: &str, descendant: &str) -> Result<bool, String> {
+    let ancestor = checked_rev(ancestor)?;
+    let descendant = checked_rev(descendant)?;
+    let output = git_cmd()
+        .arg("--no-pager")
+        .arg("-C")
+        .arg(root)
+        .args(["merge-base", "--is-ancestor", ancestor, descendant])
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .map_err(|e| e.to_string())?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = stderr.trim();
+            Err(if msg.is_empty() {
+                format!("git merge-base --is-ancestor {ancestor} {descendant} failed")
+            } else {
+                msg.to_string()
+            })
+        }
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -2618,9 +2668,39 @@ fn git_sync_changes_for(root: &Path) -> Result<(), String> {
     git_push_for(root)
 }
 
+/// The default-branch range (`git_range_context` without a base).
+#[cfg(test)]
 fn git_range_context_for(root: &Path) -> Result<GitRangeContext, String> {
+    git_range_context_with_base(root, None)
+}
+
+/// A user-supplied ref, trimmed; refuses blanks and anything git could parse
+/// as an option.
+fn checked_rev(rev: &str) -> Result<&str, String> {
+    let rev = rev.trim();
+    if rev.is_empty() || rev.starts_with('-') {
+        return Err(format!("Invalid ref: {rev:?}"));
+    }
+    Ok(rev)
+}
+
+/// With `base`, the range starts at `<remote>/<base>` when that remote
+/// branch exists, else the local branch; an unknown base is an error. Without
+/// it, the default branch, as before.
+fn git_range_context_with_base(root: &Path, base: Option<&str>) -> Result<GitRangeContext, String> {
     let head = git_branch(root).ok_or_else(|| "Not on a branch".to_string())?;
     let remote = git_remote_name(root);
+    if let Some(base) = base {
+        let base = checked_rev(base)?;
+        let base_ref = match &remote {
+            Some(remote) if git_ref_exists(root, &format!("refs/remotes/{remote}/{base}")) => {
+                format!("{remote}/{base}")
+            }
+            _ if git_ref_exists(root, &format!("refs/heads/{base}")) => base.to_string(),
+            _ => return Err(format!("Base branch {base} not found")),
+        };
+        return git_range_context_between(root, base.to_string(), &base_ref, head);
+    }
     let default_branch = git_default_branch(root, remote.as_deref())
         .ok_or_else(|| "Could not resolve the default branch".to_string())?;
     let base_ref = match &remote {
@@ -2631,6 +2711,15 @@ fn git_range_context_for(root: &Path) -> Result<GitRangeContext, String> {
         }
         _ => default_branch.clone(),
     };
+    git_range_context_between(root, default_branch, &base_ref, head)
+}
+
+fn git_range_context_between(
+    root: &Path,
+    base: String,
+    base_ref: &str,
+    head: String,
+) -> Result<GitRangeContext, String> {
     let spec = format!("{base_ref}...HEAD");
     let commit_summary =
         git_run(root, &["log", "--format=%s", &format!("{base_ref}..HEAD")]).unwrap_or_default();
@@ -2640,7 +2729,7 @@ fn git_range_context_for(root: &Path) -> Result<GitRangeContext, String> {
         return Err("No commits to include in a pull request".into());
     }
     Ok(GitRangeContext {
-        base: default_branch,
+        base,
         head,
         commit_summary,
         diff_summary,
@@ -3855,7 +3944,7 @@ fn github_fetch_remote(root: &Path) -> Option<String> {
     git_remote_name(root)
 }
 
-fn gh_resolved_remote(root: &Path) -> Option<String> {
+pub(crate) fn gh_resolved_remote(root: &Path) -> Option<String> {
     let listed = git_stdout(
         root,
         &["config", "--get-regexp", r"remote\..*\.gh-resolved"],
@@ -4102,13 +4191,21 @@ fn gh_checked(root: &Path, args: &[&str]) -> Result<String, String> {
     gh_run(root, args, false)
 }
 
-struct GitHubRateLimitBackoff {
+pub(crate) struct GitHubRateLimitBackoff {
     until: SystemTime,
     error: String,
 }
 
 // Shared by all webviews, including background Inbox and PR checks requests.
-static GITHUB_RATE_LIMIT_BACKOFF: Mutex<Option<GitHubRateLimitBackoff>> = Mutex::new(None);
+pub(crate) static GITHUB_RATE_LIMIT_BACKOFF: Mutex<Option<GitHubRateLimitBackoff>> =
+    Mutex::new(None);
+
+/// When the shared GitHub rate-limit backoff ends, if one is active.
+pub(crate) fn github_rate_limit_until() -> Option<SystemTime> {
+    let mut slot = GITHUB_RATE_LIMIT_BACKOFF.lock().ok()?;
+    github_rate_limit_error(&mut slot, SystemTime::now())?;
+    slot.as_ref().map(|active| active.until)
+}
 
 fn gh_run(root: &Path, args: &[&str], allow_empty: bool) -> Result<String, String> {
     gh_with_backoff(
@@ -4130,7 +4227,7 @@ fn github_rate_limit_error(
     None
 }
 
-fn gh_with_backoff(
+pub(crate) fn gh_with_backoff(
     backoff: &Mutex<Option<GitHubRateLimitBackoff>>,
     args: &[&str],
     allow_empty: bool,
@@ -4473,7 +4570,7 @@ fn git_branch(root: &Path) -> Option<String> {
     git_head_branch(root).or_else(|| git_stdout(root, &["rev-parse", "--short", "HEAD"]))
 }
 
-fn git_head_branch(root: &Path) -> Option<String> {
+pub(crate) fn git_head_branch(root: &Path) -> Option<String> {
     git_stdout(root, &["symbolic-ref", "--short", "HEAD"]).filter(|branch| branch != "HEAD")
 }
 
@@ -4730,7 +4827,7 @@ fn git_sync_for(root: &Path) -> GitSync {
     }
 }
 
-fn git_remote_name(root: &Path) -> Option<String> {
+pub(crate) fn git_remote_name(root: &Path) -> Option<String> {
     let remotes = git_stdout(root, &["remote"])?;
     let mut names = remotes
         .lines()
@@ -4743,7 +4840,7 @@ fn git_remote_name(root: &Path) -> Option<String> {
     Some(first)
 }
 
-fn git_default_branch(root: &Path, remote: Option<&str>) -> Option<String> {
+pub(crate) fn git_default_branch(root: &Path, remote: Option<&str>) -> Option<String> {
     if let Some(remote) = remote {
         if let Some(head) = git_stdout(
             root,
@@ -4793,7 +4890,7 @@ fn git_ahead_behind(root: &Path, base: &str) -> (i64, i64) {
     (ahead, behind)
 }
 
-fn git_stdout(root: &Path, args: &[&str]) -> Option<String> {
+pub(crate) fn git_stdout(root: &Path, args: &[&str]) -> Option<String> {
     let output = git_cmd().arg("-C").arg(root).args(args).output().ok()?;
     if !output.status.success() {
         return None;
@@ -7249,6 +7346,69 @@ mod tests {
         let history = git_history_for(&dir.0, Some(1)).unwrap();
         let sha = &history.commits[0].sha;
         assert!(git_commit_file_diff_for(&dir.0, sha, "../secret.txt").is_err());
+    }
+
+    #[test]
+    fn git_range_context_uses_the_chosen_base() {
+        let dir = tmp("git-range-base");
+        if !init_git_commit(&dir.0, &[("a.txt", "alpha\n")]) {
+            return;
+        }
+        assert!(git(&dir.0, &["checkout", "-b", "parent"]));
+        std::fs::write(dir.0.join("p.txt"), "parent\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "parent work"]));
+        assert!(git(&dir.0, &["checkout", "-b", "child"]));
+        std::fs::write(dir.0.join("c.txt"), "child\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "child work"]));
+
+        let stacked = git_range_context_with_base(&dir.0, Some("parent")).unwrap();
+        assert_eq!(stacked.base, "parent");
+        assert_eq!(stacked.head, "child");
+        assert_eq!(stacked.commit_summary.trim(), "child work");
+        assert!(stacked.diff_summary.contains("c.txt"));
+        assert!(!stacked.diff_summary.contains("p.txt"));
+        assert!(!stacked.diff_patch.contains("p.txt"));
+
+        let default = git_range_context_with_base(&dir.0, None).unwrap();
+        assert_eq!(default, git_range_context_for(&dir.0).unwrap());
+        assert_eq!(default.base, "main");
+        assert!(default.commit_summary.contains("child work"));
+        assert!(default.commit_summary.contains("parent work"));
+
+        assert!(git_range_context_with_base(&dir.0, Some("-p")).is_err());
+        assert!(git_range_context_with_base(&dir.0, Some("  ")).is_err());
+        assert!(git_range_context_with_base(&dir.0, Some("no-such-branch")).is_err());
+    }
+
+    #[test]
+    fn git_is_ancestor_true_and_false() {
+        let dir = tmp("git-is-ancestor");
+        if !init_git_commit(&dir.0, &[("a.txt", "alpha\n")]) {
+            return;
+        }
+        assert!(git(&dir.0, &["checkout", "-b", "parent"]));
+        std::fs::write(dir.0.join("p.txt"), "parent\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "parent work"]));
+        assert!(git(&dir.0, &["checkout", "-b", "child"]));
+        std::fs::write(dir.0.join("c.txt"), "child\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "child work"]));
+        assert!(git(&dir.0, &["checkout", "-b", "sibling", "main"]));
+        std::fs::write(dir.0.join("s.txt"), "sibling\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "sibling work"]));
+
+        assert_eq!(git_is_ancestor_for(&dir.0, "parent", "child"), Ok(true));
+        assert_eq!(git_is_ancestor_for(&dir.0, "main", "child"), Ok(true));
+        assert_eq!(git_is_ancestor_for(&dir.0, "child", "parent"), Ok(false));
+        assert_eq!(git_is_ancestor_for(&dir.0, "sibling", "child"), Ok(false));
+        assert!(git_is_ancestor_for(&dir.0, "no-such-branch", "child").is_err());
+        assert!(git_is_ancestor_for(&dir.0, "--all", "child").is_err());
+        assert!(git_is_ancestor_for(&dir.0, "parent", "-c").is_err());
+        assert!(git_is_ancestor_for(&dir.0, " ", "child").is_err());
     }
 
     #[test]
