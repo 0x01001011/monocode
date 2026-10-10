@@ -1148,9 +1148,24 @@ test.describe("evidence screenshots", () => {
   };
 
   for (const theme of THEMES) {
-    test(`screenshots, ${theme}`, async ({ page }) => {
+    test(`screenshots, ${theme}`, async ({ page, browserName }) => {
       test.setTimeout(120_000);
       await page.emulateMedia({ reducedMotion: "reduce" });
+      if (browserName !== "chromium") {
+        // A WebKit cross-check of the main surfaces, prefixed by engine.
+        await load(page, { theme });
+        await pin(page);
+        await shot(page, `${browserName}-${theme}-composer-chip-pinned`, [
+          "#composer",
+          await frameOf(page),
+        ]);
+        await page.keyboard.press("Escape");
+        await shot(page, `${browserName}-${theme}-changes-panel-section`, ["#panel"]);
+        await shot(page, `${browserName}-${theme}-inbox-rails-3-6-12-health`, ["#inbox"]);
+        await load(page, { theme, w: 360 });
+        await shot(page, `${browserName}-${theme}-composer-narrow-360`, ["#composer"]);
+        return;
+      }
       await load(page, { theme });
       await shot(page, `${theme}-composer-chip-closed`, ["#composer"]);
       await chip(page).hover();

@@ -1,0 +1,24 @@
+{
+  "harnessReadyMsMedian": 102,
+  "harnessReadyMs": [
+    93,
+    97,
+    102,
+    104,
+    200
+  ],
+  "domNodesPage": 556,
+  "cardOpenToPaint": {
+    "medianMs": 33.6,
+    "p95Ms": 34.9,
+    "note": "includes two rAF waits (~33ms floor at 60Hz)"
+  },
+  "domNodesStackCard": 190,
+  "domNodes40PrCard": 857,
+  "scroll40PrCard": {
+    "frames": 60,
+    "p50Ms": 16.7,
+    "p95Ms": 16.8,
+    "maxMs": 16.8
+  }
+}
