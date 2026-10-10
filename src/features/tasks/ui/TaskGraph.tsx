@@ -52,8 +52,16 @@ const STAGE_ID = /:stage:(\d+)$/;
  * meta, refs and NOW pill, so the title truncates instead of being covered. A focused row alone
  * keeps its normal look (keyboard users have `o` and `c`).
  */
-const ACTIONS_SHOWN = "group-has-[[data-actions]:focus-within]/row";
-const GIVES_WAY = `group-hover/row:hidden ${ACTIONS_SHOWN}:hidden`;
+// Tailwind only builds class names it finds spelled out whole, so every variant below stays a
+// complete literal; never assemble a variant prefix with a template string.
+const GIVES_WAY = "group-hover/row:hidden group-has-[[data-actions]:focus-within]/row:hidden";
+const TITLE_YIELDS = "group-hover/row:min-w-0 group-has-[[data-actions]:focus-within]/row:min-w-0";
+const ACTIONS =
+  "pointer-events-none flex max-w-0 shrink-0 items-center gap-px overflow-hidden opacity-0 " +
+  "group-hover/row:pointer-events-auto group-hover/row:max-w-none group-hover/row:opacity-100 " +
+  "group-has-[[data-actions]:focus-within]/row:pointer-events-auto " +
+  "group-has-[[data-actions]:focus-within]/row:max-w-none " +
+  "group-has-[[data-actions]:focus-within]/row:opacity-100";
 
 const levelOf = (row: GraphRow) => (row.kind === "stage" || row.kind === "step" ? 2 : 1);
 
@@ -316,7 +324,7 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
               <span
                 title={row.title}
                 // At least 64 px of title beside the refs; it may give that up only while the actions show.
-                className={`min-w-16 flex-1 ${actions.length > 0 ? `group-hover/row:min-w-0 ${ACTIONS_SHOWN}:min-w-0` : ""} ${
+                className={`min-w-16 flex-1 ${actions.length > 0 ? TITLE_YIELDS : ""} ${
                   isStep ? "line-clamp-2 leading-4 break-words" : "truncate"
                 } ${titleTone}`}
               >
@@ -352,7 +360,7 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
                 // focused row walks into them and focus inside opens them.
                 <span
                   data-actions
-                  className={`pointer-events-none flex max-w-0 shrink-0 items-center gap-px overflow-hidden opacity-0 group-hover/row:pointer-events-auto group-hover/row:max-w-none group-hover/row:opacity-100 ${ACTIONS_SHOWN}:pointer-events-auto ${ACTIONS_SHOWN}:max-w-none ${ACTIONS_SHOWN}:opacity-100`}
+                  className={ACTIONS}
                 >
                   {actions}
                 </span>
