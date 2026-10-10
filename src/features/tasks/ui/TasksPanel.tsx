@@ -269,26 +269,24 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
             {plan.title}
           </span>
         )}
-        {/* Under 300 px the group dissolves: the menu and legend buttons stay beside the plan picker
-            and the filter takes a line of its own, so two-digit counts never push the tab sideways. */}
-        <div className="ml-auto flex shrink-0 items-center gap-1 @max-[300px]:contents">
-          <div className="flex @max-[300px]:order-last @max-[300px]:basis-full">
-            <GraphFilter value={filter} counts={graph.counts} onChange={onFilter} />
-          </div>
-          <button
-            ref={menuButton}
-            type="button"
-            aria-label="More plan actions"
-            aria-haspopup="menu"
-            aria-expanded={menu}
-            onClick={() => setMenu(!menu)}
-            className={`${SMALL_BUTTON} grid min-w-6 place-items-center px-0`}
-          >
-            <MoreHorizontal className="size-3.5" strokeWidth={2} aria-hidden="true" />
-          </button>
-          <button type="button" aria-label="What the symbols mean" aria-expanded={legend} onClick={() => setLegend(!legend)} className={`${SMALL_BUTTON} min-w-6`}>
-            ?
-          </button>
+        {/* DOM order is the visual order at every width: plan, menu, legend, then the filter. Under 300 px the
+            filter wraps onto a line of its own (basis-full) so two-digit counts never push the tab sideways. */}
+        <button
+          ref={menuButton}
+          type="button"
+          aria-label="More plan actions"
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          onClick={() => setMenu(!menu)}
+          className={`${SMALL_BUTTON} grid min-w-6 shrink-0 place-items-center px-0`}
+        >
+          <MoreHorizontal className="size-3.5" strokeWidth={2} aria-hidden="true" />
+        </button>
+        <button type="button" aria-label="What the symbols mean" aria-expanded={legend} onClick={() => setLegend(!legend)} className={`${SMALL_BUTTON} min-w-6 shrink-0`}>
+          ?
+        </button>
+        <div className="flex shrink-0 @max-[300px]:basis-full">
+          <GraphFilter value={filter} counts={graph.counts} onChange={onFilter} />
         </div>
       </div>
       {menu ? (
