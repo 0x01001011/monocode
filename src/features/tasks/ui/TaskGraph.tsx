@@ -362,8 +362,9 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
                   {ref.text}
                 </span>
               ))}
+              {/* -my-0.5: the 24 px link overlaps the row's padding, so the stage row stays 24 px tall. */}
               {isStage
-                ? row.shas.map((sha, i) => shaLink(row, sha, actionTab, i < row.shas.length - 1 ? "@max-[340px]:hidden" : ""))
+                ? row.shas.map((sha, i) => shaLink(row, sha, actionTab, `-my-0.5 ${i < row.shas.length - 1 ? "@max-[340px]:hidden" : ""}`))
                 : null}
               {row.meta !== undefined ? (
                 <span
@@ -378,9 +379,10 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
               {actions.length > 0 ? (
                 // In flow and zero-width until shown; the buttons stay focusable, so Tab from the
                 // focused row walks into them and focus inside opens them.
+                // A stage row is 24 px tall: its 24 px buttons overlap the row's padding (-my-0.5).
                 <span
                   data-actions
-                  className={ACTIONS}
+                  className={isStage ? `-my-0.5 ${ACTIONS}` : ACTIONS}
                 >
                   {actions}
                 </span>
