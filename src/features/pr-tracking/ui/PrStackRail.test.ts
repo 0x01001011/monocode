@@ -251,6 +251,15 @@ describe("PrStackRail", () => {
     expect(rule).toMatch(/padding: 4px;/);
   });
 
+  it("keeps titles on the selected node at 4.5:1 in light (ink-on-fill, not 70%)", () => {
+    const css = readFileSync(
+      resolve(process.cwd(), "src/styles/index.css"),
+      "utf8",
+    );
+    const rule = /\.pr-rail-ttl \{[^}]*\}/.exec(css)?.[0] ?? "";
+    expect(rule).toMatch(/color: var\(--color-ink-on-fill\);/);
+  });
+
   it("scrolls with faded edges and centers the viewed PR when numbers alone overflow", () => {
     render(VIEW, 480);
     const width = OVERHEAD + NODE + 2 * (NODE - TITLE - 6) - 1;

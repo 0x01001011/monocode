@@ -4767,7 +4767,9 @@ html.theme-light .pr-card .pr-list-container {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: color-mix(in srgb, var(--color-content) 70%, transparent);
+  /* Text on a fill: the viewed node sits on selection-emphasis, where 70%
+     ink measures 4.41:1 in light. */
+  color: var(--color-ink-on-fill);
 }
 .pr-health {
   display: flex;
