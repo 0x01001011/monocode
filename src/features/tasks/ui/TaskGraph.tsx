@@ -23,12 +23,16 @@ type Props = {
 
 const MAX_REFS = 2;
 
+// Measured in the browser fixture (tests/browser/tasks-panel.spec.ts) over the tinted rows they sit
+// on: a /12 tint left light-theme warning text at 4.18:1 on a struggling row, and the NOW pill's
+// focus text on accent/22 at 3.74:1 on the running row. The solid accent pill (git `HEAD` style)
+// reads 5.79:1 on any row.
 const REF_TONE: Record<RefTone, string> = {
-  warn: "bg-warning/12 text-warning",
-  danger: "bg-danger/12 text-danger",
-  ok: "bg-success/12 text-success",
+  warn: "bg-warning/8 text-warning",
+  danger: "bg-danger/8 text-danger",
+  ok: "bg-success/8 text-success",
   muted: "bg-content/8 text-muted",
-  now: "bg-accent/22 text-focus",
+  now: "bg-accent text-accent-foreground",
 };
 const PILL = "rounded-full px-1.5 text-[11px] leading-4 whitespace-nowrap";
 const ICON_BUTTON =
@@ -62,6 +66,17 @@ const ACTIONS =
   "group-has-[[data-actions]:focus-within]/row:pointer-events-auto " +
   "group-has-[[data-actions]:focus-within]/row:max-w-none " +
   "group-has-[[data-actions]:focus-within]/row:opacity-100";
+
+// Under a 300 px tree the row's gaps tighten and the meta keeps only its step count ("2/5", not
+// "2/5 · 30m"), so the NOW pill, refs and meta fit beside a 64 px title with four lanes drawn.
+const NARROW_GAP = "gap-2 @max-[300px]:gap-1";
+// The meta yields last: refs shrink first, and only then does it truncate (never clipped silently).
+const META = "min-w-0 shrink-[0.001] truncate";
+const metaHead = (meta: string) => meta.split(" · ")[0];
+const metaTail = (meta: string) => {
+  const rest = meta.split(" · ").slice(1);
+  return rest.length > 0 ? rest.join(" · ") : undefined;
+};
 
 const levelOf = (row: GraphRow) => (row.kind === "stage" || row.kind === "step" ? 2 : 1);
 
@@ -300,11 +315,11 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
           onClick={onRowClick}
           className={`mx-1 grid grid-rows-[1fr] rounded-md hover:bg-selection-subtle ${
             level === 2 ? "motion-safe:transition-[grid-template-rows] motion-safe:duration-150 motion-safe:ease-out motion-safe:starting:grid-rows-[0fr]" : ""
-          } ${row.expandable || row.node ? "cursor-pointer" : ""} ${running ? "bg-accent/11" : glyph === "struggling" ? "bg-warning/6" : ""} ${
+          } ${row.expandable || row.node ? "cursor-pointer" : ""} ${running ? "bg-accent/11" : glyph === "struggling" ? "bg-warning/4" : ""} ${
             hidden ? "text-muted" : ""
           }`}
         >
-          <div className="flex min-h-0 gap-2 overflow-hidden pr-2 pl-1.5 text-[12.5px]">
+          <div className={`flex min-h-0 overflow-hidden pr-2 pl-1.5 text-[12.5px] ${NARROW_GAP}`}>
             <GraphGutter
               cells={row.cells}
               status={row.status}
@@ -314,7 +329,7 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
               above={above}
               below={below}
             />
-            <div className={`flex min-w-0 flex-1 gap-2 ${isStep ? "min-h-6 items-start py-1" : `items-center py-0.5 ${level === 2 ? "min-h-6" : "min-h-6.5"}`}`}>
+            <div className={`flex min-w-0 flex-1 ${NARROW_GAP} ${isStep ? "min-h-6 items-start py-1" : `items-center py-0.5 ${level === 2 ? "min-h-6" : "min-h-6.5"}`}`}>
               {hidden ? null : (
                 <TaskGlyph kind={glyph} small={level === 2} label={glyphText(row)} />
               )}
@@ -324,7 +339,8 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
               <span
                 title={row.title}
                 // At least 64 px of title beside the refs; it may give that up only while the actions show.
-                className={`min-w-16 flex-1 ${actions.length > 0 ? TITLE_YIELDS : ""} ${
+                // Ship's title is one word: it keeps only its own width, so the verdict beside it fits.
+                className={`${row.kind === "ship" ? "min-w-max" : "min-w-16"} flex-1 ${actions.length > 0 ? TITLE_YIELDS : ""} ${
                   isStep ? "line-clamp-2 leading-4 break-words" : "truncate"
                 } ${titleTone}`}
               >
@@ -346,13 +362,17 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
                   {ref.text}
                 </span>
               ))}
-              {isStage ? row.shas.map((sha) => shaLink(row, sha, actionTab)) : null}
+              {isStage
+                ? row.shas.map((sha, i) => shaLink(row, sha, actionTab, i < row.shas.length - 1 ? "@max-[340px]:hidden" : ""))
+                : null}
               {row.meta !== undefined ? (
                 <span
                   data-meta
-                  className={`shrink-0 text-[11.5px] whitespace-nowrap tabular-nums ${running ? "text-content" : "text-muted"} ${givesWay}`}
+                  title={row.meta}
+                  className={`${META} text-[11.5px] whitespace-nowrap tabular-nums ${running ? "text-content" : "text-muted"} ${givesWay}`}
                 >
-                  {row.meta}
+                  {metaHead(row.meta)}
+                  {metaTail(row.meta) !== undefined ? <span className="@max-[300px]:hidden"> · {metaTail(row.meta)}</span> : null}
                 </span>
               ) : null}
               {actions.length > 0 ? (

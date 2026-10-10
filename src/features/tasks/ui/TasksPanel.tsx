@@ -256,8 +256,12 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
             {plan.title}
           </span>
         )}
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          <GraphFilter value={filter} counts={graph.counts} onChange={onFilter} />
+        {/* Under 300 px the group dissolves: the menu and legend buttons stay beside the plan picker
+            and the filter takes a line of its own, so two-digit counts never push the tab sideways. */}
+        <div className="ml-auto flex shrink-0 items-center gap-1 @max-[300px]:contents">
+          <div className="flex @max-[300px]:order-last @max-[300px]:basis-full">
+            <GraphFilter value={filter} counts={graph.counts} onChange={onFilter} />
+          </div>
           <button
             ref={menuButton}
             type="button"

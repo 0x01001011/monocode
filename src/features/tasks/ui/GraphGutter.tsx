@@ -23,6 +23,9 @@ const LANE = 12;
 const STROKE = 1.5;
 const center = (column: number) => column * LANE + LANE / 2;
 
+/** The wrapper's width per lane count, spelled out whole so Tailwind builds each class. */
+const WRAPPER_WIDTH: Record<number, string> = { 1: "w-3", 2: "w-6", 3: "w-9", 4: "w-12" };
+
 const lineProps = { stroke: "currentColor", strokeWidth: STROKE } as const;
 
 const HOLLOW_STROKE: Record<BoardStatus, string | undefined> = {
@@ -145,9 +148,11 @@ export function GraphGutter({ cells, status, kind, now, hollow = false, above, b
       </svg>,
     );
   }
+  // The svg fills the wrapper absolutely: an in-flow svg with `height="100%"` in an auto-height row
+  // falls back to its 150 px default and stretches every row to that height.
   return (
-    <span className="flex shrink-0 self-stretch text-muted">
-      <svg data-gutter aria-hidden="true" focusable="false" width={width} height="100%" overflow="visible" className="block">
+    <span className={`relative shrink-0 self-stretch text-muted ${WRAPPER_WIDTH[cells.length] ?? "w-12"}`}>
+      <svg data-gutter aria-hidden="true" focusable="false" width={width} height="100%" overflow="visible" className="absolute inset-y-0 left-0 block h-full">
         {parts}
       </svg>
     </span>

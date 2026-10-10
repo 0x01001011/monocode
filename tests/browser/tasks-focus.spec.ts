@@ -68,7 +68,7 @@ function expectKinds(stops: FocusStop[], kinds: Kind[]) {
 const THEMES_UNDER_TEST = ["dark", "light"] as const;
 
 test.describe("tasks panel keyboard focus ring", () => {
-  const SCENES = ["running", "many problems", "needs-you", "no steps", "finished"] as const;
+  const SCENES = ["running", "problems", "many problems", "needs-you", "no steps", "ready", "workers"] as const;
   for (const theme of THEMES_UNDER_TEST) {
     for (const scene of SCENES) {
       test(`${theme} ${scene}`, async ({ page }, testInfo) => {
@@ -89,6 +89,37 @@ test.describe("tasks panel keyboard focus ring", () => {
         expect(bad.map((s) => `${s.label}: ${s.problem}`)).toEqual([]);
       });
     }
+  }
+});
+
+// The sticky bar shows only once the header scrolls away, so the tab walk above never meets it.
+test.describe("tasks panel sticky bar focus ring", () => {
+  for (const theme of THEMES_UNDER_TEST) {
+    test(`${theme}: Jump to now draws a visible ring`, async ({ page }) => {
+      await page.goto("/tests/browser/tasks-panel.html");
+      await freezeTransitions(page);
+      await page.evaluate((t) => {
+        window.setTheme(t as "dark");
+        window.showTasks("running");
+      }, theme);
+      await page.locator('ol[aria-label="Superpowers flow"]').waitFor();
+      // A short column, so the header scrolls away.
+      await page.evaluate(() => {
+        document.getElementById("root")!.style.height = "360px";
+      });
+      await page.evaluate(() => {
+        const scroller = document.getElementById("root")!.firstElementChild as HTMLElement;
+        scroller.scrollTop = scroller.scrollHeight;
+      });
+      const jump = page.locator("[data-sticky-bar]").getByRole("button", { name: "Jump to now" });
+      await expect(jump).toBeVisible();
+      // Keyboard modality first, so the browser treats the focus as keyboard focus.
+      await press(page, "Shift");
+      await jump.focus();
+      const stop = await focusStop(page);
+      expect(stop?.label).toContain("Jump to now");
+      expect(stop?.problem ?? null).toBeNull();
+    });
   }
 });
 
