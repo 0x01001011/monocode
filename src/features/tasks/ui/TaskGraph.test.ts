@@ -584,6 +584,19 @@ describe("GraphGutter", () => {
     expect(container.querySelector("[data-node]")?.getAttribute("stroke")).toBe("currentColor");
   });
 
+  it("fills a non-review attention node with the warning token and keeps review stages hollow", () => {
+    gutter({ kind: "task", status: "attention" });
+    const task = container.querySelector("[data-node]")!;
+    expect(task.getAttribute("class")).toContain("fill-warning");
+    expect(task.getAttribute("class")).not.toContain("fill-background-base");
+    gutter({ kind: "ship", status: "attention" });
+    expect(container.querySelector("[data-node]")?.getAttribute("class")).toContain("fill-warning");
+    gutter({ kind: "stage", status: "attention", hollow: true });
+    const review = container.querySelector("[data-node]")!;
+    expect(review.getAttribute("class")).toContain("fill-background-base");
+    expect(review.getAttribute("class")).toContain("stroke-warning");
+  });
+
   it("draws a dashed rail for hidden rows", () => {
     gutter({ cells: ["dashed"], kind: "hidden" });
     expect(container.querySelector("[stroke-dasharray]")).not.toBeNull();

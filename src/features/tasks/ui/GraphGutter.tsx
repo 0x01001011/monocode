@@ -55,6 +55,7 @@ function NodeShape({ status, kind, hollow }: { status: BoardStatus; kind: GraphR
   if (kind === "ship") {
     const points = "0,-4.5 4.5,0 0,4.5 -4.5,0";
     if (status === "done") return <polygon data-node points={points} className="fill-success" />;
+    if (status === "attention") return <polygon data-node points={points} className="fill-warning" />;
     const tone = status === "pending" ? undefined : "stroke-warning";
     return (
       <polygon
@@ -77,7 +78,8 @@ function NodeShape({ status, kind, hollow }: { status: BoardStatus; kind: GraphR
         </g>
       );
     case "attention":
-      return <circle data-node r={3.5} className="fill-background-base stroke-warning" strokeWidth={2} />;
+      // Only review stages are hollow; a task in a fix loop is a filled warning dot.
+      return <circle data-node r={3.5} className="fill-warning" />;
     case "failed":
       return <circle data-node r={3.5} className="fill-danger" />;
     case "blocked":
