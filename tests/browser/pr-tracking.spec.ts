@@ -582,6 +582,32 @@ test.describe("layout", () => {
     test.info().annotations.push({ type: "rail modes at 640px", description: JSON.stringify(modes) });
   });
 
+  test("200% zoom equivalent: the card fits a 640x500 CSS px window", async ({ page }) => {
+    // A 1280x1000 window at 200% zoom lays out in 640x500 CSS px.
+    await page.setViewportSize({ width: 640, height: 500 });
+    for (const fixture of ["stack", "many", "i18n"]) {
+      await load(page, { fixture, w: 600 });
+      await pin(page);
+      const box = await page.evaluate(() => {
+        const surface = document.querySelector<HTMLElement>('[role="dialog"].pr-card')!;
+        const r = surface.parentElement!.getBoundingClientRect();
+        const body = surface.querySelector<HTMLElement>(".pr-card-body")!;
+        return {
+          inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+          bodyVisible: body.clientHeight,
+          bodyOverflowX: body.scrollWidth - body.clientWidth,
+          headAndFoot:
+            surface.querySelector(".pr-card-head")!.getBoundingClientRect().height +
+            surface.querySelector(".pr-card-foot")!.getBoundingClientRect().height,
+        };
+      });
+      expect(box.inside, fixture).toBe(true);
+      expect(box.bodyOverflowX, fixture).toBeLessThanOrEqual(0);
+      // At least one full row stays visible between header and footer.
+      expect(box.bodyVisible, fixture).toBeGreaterThanOrEqual(46);
+    }
+  });
+
   test("zero entries render no chip, glyph or panel section", async ({ page }) => {
     await load(page, { fixture: "empty" });
     await expect(chip(page)).toHaveCount(0);
