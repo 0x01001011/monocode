@@ -175,6 +175,9 @@ pub struct PrSummary {
     pub primary_is_draft: bool,
     pub attention: Attention,
     pub stale: bool,
+    /// `"owner/repo#N"` (repo lowercased) for every PR counted in `count`,
+    /// so the sidebar can match a linked PR without loading the set.
+    pub members: Vec<String>,
 }
 
 pub fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
@@ -525,17 +528,31 @@ fn make_entry(
 }
 
 /// The chat's own PR rows that already have a snapshot, in first-seen order.
+/// Whether a `session_prs` row counts as "from this chat": every PR the chat
+/// created, and any other only when its head is a branch the chat worked on
+/// in that repo. A PR merely mentioned in a transcript stays out.
+fn is_attributed(relation: Relation, snapshot: &PrSnapshot, branches: &[(String, String)]) -> bool {
+    relation == Relation::Owned
+        || branches
+            .iter()
+            .any(|(repo, branch)| *repo == snapshot.repo && *branch == snapshot.head_ref)
+}
+
+/// The chat's own rows with a snapshot, filtered by `is_attributed`. Both
+/// `build_set_view` and (through it) `build_summaries` read only these.
 fn own_entries(
     conn: &Connection,
     session_id: &str,
     live_branch: Option<(&str, &str)>,
 ) -> Vec<PrEntry> {
+    let branches = session_branches(conn, session_id).unwrap_or_default();
     session_pr_keys(conn, session_id)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|(repo, number, relation, dismissed)| {
             let snapshot = load_snapshot(conn, &repo, number)?;
-            Some(make_entry(snapshot, relation, None, dismissed, live_branch))
+            is_attributed(relation, &snapshot, &branches)
+                .then(|| make_entry(snapshot, relation, None, dismissed, live_branch))
         })
         .collect()
 }
@@ -735,6 +752,10 @@ pub fn build_summaries(conn: &Connection, now: i64) -> HashMap<String, PrSummary
                     .max()
                     .unwrap_or(Attention::None),
                 stale: freshest.is_some_and(|at| now - at > STALE_AFTER_MS),
+                members: entries
+                    .iter()
+                    .map(|e| format!("{}#{}", e.snapshot.repo.to_lowercase(), e.snapshot.number))
+                    .collect(),
             },
         );
     }
@@ -1103,6 +1124,8 @@ mod tests {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
         record_pr(&conn, "s1", "o/r", 1, Relation::Owned, "url", 1).unwrap();
+        // Found on a branch the chat worked on.
+        record_branch(&conn, "s1", "o/r", "feat/b", "trace2", 1).unwrap();
         put(
             &conn,
             "s1",
@@ -1181,6 +1204,7 @@ mod tests {
         closed.review = Review::None;
         closed.mergeable = Mergeable::Unknown;
         closed.author = None;
+        record_branch(&conn, "s1", "o/r", "patch-1", "trace2", 1).unwrap();
         put(&conn, "s1", &closed, Relation::Existing);
         let view = build_set_view(&conn, "s1", None, TrackerStatus::Ok, 100);
         assert_eq!(view.entries[0].attention, Attention::None);
@@ -1262,6 +1286,79 @@ mod tests {
         assert_eq!(pick_primary(&skipped).unwrap().snapshot.number, 2);
         assert!(pick_primary(&skipped[..2]).is_none());
         assert!(pick_primary(&[]).is_none());
+    }
+
+    #[test]
+    fn only_owned_prs_or_prs_on_tracked_branches_count_as_from_this_chat() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let now = 10_000_000;
+        add_session(&conn, "s1", Some("feat/a"), false);
+        record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 1).unwrap();
+        // Owned always shows, whatever its branch.
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 1, "elsewhere", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        // Existing on a branch the chat worked on: shows.
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 2, "feat/a", "main", "main", PrState::Open, now),
+            Relation::Existing,
+        );
+        // A transcript hint for someone else's PR: never "from this chat".
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 3, "their/branch", "main", "main", PrState::Open, now),
+            Relation::Existing,
+        );
+        // Same branch name, other repo: not tracked there.
+        put(
+            &conn,
+            "s1",
+            &pr_snap("x/y", 4, "feat/a", "main", "main", PrState::Open, now),
+            Relation::Existing,
+        );
+        let view = build_set_view(&conn, "s1", None, TrackerStatus::Ok, now);
+        let mut shown = numbers(&view);
+        shown.sort();
+        assert_eq!(shown, vec![1, 2]);
+        let summary = &build_summaries(&conn, now)["s1"];
+        assert_eq!(summary.count, 2);
+        assert_eq!(
+            summary.members,
+            vec!["o/r#2".to_string(), "o/r#1".to_string()]
+        );
+    }
+
+    #[test]
+    fn summary_members_list_own_visible_prs_lowercased() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let now = 10_000_000;
+        add_session(&conn, "s1", None, false);
+        put(
+            &conn,
+            "s1",
+            &pr_snap("Octo/Repo", 9, "a", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s1",
+            &pr_snap("Octo/Repo", 8, "b", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        set_dismissed(&conn, "s1", "Octo/Repo", 8, true).unwrap();
+        let summary = &build_summaries(&conn, now)["s1"];
+        assert_eq!(summary.members, vec!["octo/repo#9".to_string()]);
+        let v = serde_json::to_value(summary).unwrap();
+        assert_eq!(v["members"], serde_json::json!(["octo/repo#9"]));
+        assert_eq!(v["primaryIsDraft"], false);
     }
 
     #[test]
@@ -1390,6 +1487,7 @@ mod tests {
         );
         let mut failing = pr_snap("o/r", 2, "feat/b", "main", "main", PrState::Open, now);
         failing.checks = Checks::Failing;
+        record_branch(&conn, "s1", "o/r", "feat/b", "trace2", 1).unwrap();
         put(&conn, "s1", &failing, Relation::Existing);
         set_dismissed(&conn, "s1", "o/r", 2, true).unwrap();
         assert_eq!(build_summaries(&conn, now)["s1"].attention, Attention::None);
