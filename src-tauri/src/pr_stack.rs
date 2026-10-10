@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::pr_store::{PrSnapshot, PrStackGroup, PrState, Tracking};
+use crate::pr_store::{Attention, PrSnapshot, PrStackGroup, PrState, Tracking};
 
 /// `(repo, child number) -> parent number`. When several PRs share the parent
 /// head branch name, the most recently fetched one wins (highest number on a
@@ -107,6 +107,56 @@ pub fn group_stacks(
     groups
 }
 
+/// What `attention_for` looks at for one PR.
+pub struct PrEntryInputs<'a> {
+    pub snapshot: &'a PrSnapshot,
+    /// The PR this one is stacked on, when known.
+    pub parent: Option<&'a PrSnapshot>,
+    /// Branch name shown in "Behind <base> by N".
+    pub base_ref_label: String,
+}
+
+/// Health dot and its reason for one PR. First match wins: conflict, failing
+/// checks, changes requested (`Block`); restack, behind (`Action`); running
+/// checks (`Pending`, not shown for drafts). Merged and closed PRs never need
+/// attention.
+pub fn attention_for(inputs: &PrEntryInputs) -> (Attention, Option<String>) {
+    use crate::pr_store::{Checks, Mergeable, Review};
+    let pr = inputs.snapshot;
+    if pr.state != PrState::Open {
+        return (Attention::None, None);
+    }
+    let block = |reason: &str| (Attention::Block, Some(reason.to_string()));
+    if pr.mergeable == Mergeable::Conflicting {
+        return block("Merge conflict");
+    }
+    if pr.checks == Checks::Failing {
+        return block("Checks failing");
+    }
+    if pr.review == Review::ChangesRequested {
+        return block("Changes requested");
+    }
+    let behind = pr.behind_by.unwrap_or(0);
+    // The parent merged (GitHub moved this PR to the parent's base), or the
+    // parent's head gained commits this PR does not have.
+    let restack = inputs.parent.is_some_and(|parent| {
+        parent.state == PrState::Merged || (behind > 0 && pr.base_ref == parent.head_ref)
+    });
+    if restack {
+        return (Attention::Action, Some("Needs restack".into()));
+    }
+    if behind > 0 {
+        return (
+            Attention::Action,
+            Some(format!("Behind {} by {behind}", inputs.base_ref_label)),
+        );
+    }
+    if pr.checks == Checks::Pending && !pr.is_draft {
+        return (Attention::Pending, Some("Checks running".into()));
+    }
+    (Attention::None, None)
+}
+
 /// `Full` only when git activity of the chat was observed through trace2.
 pub fn tracking_for(has_trace2_rows: bool, _has_branches: bool) -> Tracking {
     if has_trace2_rows {
@@ -119,7 +169,7 @@ pub fn tracking_for(has_trace2_rows: bool, _has_branches: bool) -> Tracking {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pr_store::{Checks, Mergeable, PrState, Review};
+    use crate::pr_store::{Attention, Checks, Mergeable, PrState, Review};
 
     fn pr(
         repo: &str,
@@ -272,5 +322,154 @@ mod tests {
         assert_eq!(tracking_for(false, true), Tracking::Limited);
         assert_eq!(tracking_for(true, true), Tracking::Full);
         assert_eq!(tracking_for(true, false), Tracking::Full);
+    }
+
+    fn attention(
+        snapshot: &PrSnapshot,
+        parent: Option<&PrSnapshot>,
+    ) -> (Attention, Option<String>) {
+        attention_for(&PrEntryInputs {
+            snapshot,
+            parent,
+            base_ref_label: snapshot.base_ref.clone(),
+        })
+    }
+
+    fn reason(text: &str) -> Option<String> {
+        Some(text.to_string())
+    }
+
+    #[test]
+    fn order_conflict_beats_failing_checks() {
+        let mut s = open("o/r", 2, "feat/b", "main");
+        s.mergeable = Mergeable::Conflicting;
+        s.checks = Checks::Failing;
+        s.review = Review::ChangesRequested;
+        s.behind_by = Some(4);
+        assert_eq!(
+            attention(&s, None),
+            (Attention::Block, reason("Merge conflict"))
+        );
+        s.mergeable = Mergeable::Mergeable;
+        assert_eq!(
+            attention(&s, None),
+            (Attention::Block, reason("Checks failing"))
+        );
+        s.checks = Checks::Pending;
+        assert_eq!(
+            attention(&s, None),
+            (Attention::Block, reason("Changes requested"))
+        );
+        s.review = Review::Approved;
+        assert_eq!(
+            attention(&s, None),
+            (Attention::Action, reason("Behind main by 4"))
+        );
+        s.behind_by = Some(0);
+        assert_eq!(
+            attention(&s, None),
+            (Attention::Pending, reason("Checks running"))
+        );
+        s.checks = Checks::Passing;
+        assert_eq!(attention(&s, None), (Attention::None, None));
+        // A PR without checks or reviews is healthy.
+        s.checks = Checks::None;
+        s.review = Review::None;
+        s.mergeable = Mergeable::Unknown;
+        s.behind_by = None;
+        assert_eq!(attention(&s, None), (Attention::None, None));
+    }
+
+    #[test]
+    fn merged_pr_has_no_attention() {
+        let mut s = pr("o/r", 1, "feat/a", "main", "main", PrState::Merged, 100);
+        s.mergeable = Mergeable::Conflicting;
+        s.checks = Checks::Failing;
+        s.behind_by = Some(9);
+        let parent = pr("o/r", 0, "base", "main", "main", PrState::Merged, 100);
+        assert_eq!(attention(&s, Some(&parent)), (Attention::None, None));
+    }
+
+    #[test]
+    fn closed_without_merge_is_none() {
+        let mut s = pr("o/r", 1, "patch-1", "main", "main", PrState::Closed, 100);
+        s.review = Review::ChangesRequested;
+        s.checks = Checks::Pending;
+        assert_eq!(attention(&s, None), (Attention::None, None));
+    }
+
+    #[test]
+    fn restack_when_parent_merged() {
+        let parent = pr("o/r", 1, "feat/a", "main", "main", PrState::Merged, 100);
+        // GitHub retargeted the child to main when its parent merged.
+        let mut child = pr("o/r", 2, "feat/b", "main", "feat/a", PrState::Open, 100);
+        child.behind_by = Some(2);
+        child.checks = Checks::Pending;
+        assert_eq!(
+            attention(&child, Some(&parent)),
+            (Attention::Action, reason("Needs restack"))
+        );
+        // Blocking problems still win over a restack.
+        child.checks = Checks::Failing;
+        assert_eq!(attention(&child, Some(&parent)).0, Attention::Block);
+    }
+
+    #[test]
+    fn restack_when_parent_head_moved() {
+        let parent = open("o/r", 1, "feat/a", "main");
+        let mut child = open("o/r", 2, "feat/b", "feat/a");
+        assert_eq!(attention(&child, Some(&parent)), (Attention::None, None));
+        // The parent got new commits the child does not have.
+        child.behind_by = Some(1);
+        assert_eq!(
+            attention(&child, Some(&parent)),
+            (Attention::Action, reason("Needs restack"))
+        );
+        // Behind a base that is not the parent's head is just "behind".
+        let unrelated = open("o/r", 3, "feat/z", "main");
+        assert_eq!(
+            attention(&child, Some(&unrelated)),
+            (Attention::Action, reason("Behind feat/a by 1"))
+        );
+    }
+
+    #[test]
+    fn behind_reason_includes_base_and_count() {
+        let mut s = open("o/r", 5, "feat/x", "release/2.0");
+        s.behind_by = Some(12);
+        let inputs = PrEntryInputs {
+            snapshot: &s,
+            parent: None,
+            base_ref_label: "release/2.0".into(),
+        };
+        assert_eq!(
+            attention_for(&inputs),
+            (Attention::Action, reason("Behind release/2.0 by 12"))
+        );
+        s.behind_by = Some(1);
+        assert_eq!(
+            attention(&s, None),
+            (Attention::Action, reason("Behind release/2.0 by 1"))
+        );
+    }
+
+    #[test]
+    fn drafts_skip_checks_running_but_keep_other_reasons() {
+        let mut s = open("o/r", 5, "feat/x", "main");
+        s.is_draft = true;
+        s.checks = Checks::Pending;
+        assert_eq!(attention(&s, None), (Attention::None, None));
+        s.checks = Checks::Failing;
+        assert_eq!(
+            attention(&s, None),
+            (Attention::Block, reason("Checks failing"))
+        );
+    }
+
+    #[test]
+    fn attention_orders_none_pending_action_block() {
+        assert!(Attention::None < Attention::Pending);
+        assert!(Attention::Pending < Attention::Action);
+        assert!(Attention::Action < Attention::Block);
     }
 }

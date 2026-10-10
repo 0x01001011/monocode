@@ -47,7 +47,7 @@ const GH_TIMED_OUT: &str = "GitHub request timed out";
 
 const PR_FIELDS: &str = "fragment PrFields on PullRequest { number url title state isDraft \
 isCrossRepository headRepositoryOwner { login } headRefName baseRefName headRefOid \
-author { login } mergeable reviewDecision \
+baseRef { target { oid } } author { login } mergeable reviewDecision \
 commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } \
 timelineItems(itemTypes: [BASE_REF_CHANGED_EVENT], first: 10) { nodes { \
 ... on BaseRefChangedEvent { previousRefName currentRefName createdAt } } } }";
@@ -70,12 +70,23 @@ pub enum Target {
         name: String,
         number: u32,
     },
+    /// How far the open PR `number`'s head branch is behind its base branch.
+    Compare {
+        alias: String,
+        owner: String,
+        name: String,
+        number: u32,
+        base: String,
+        head: String,
+    },
 }
 
 impl Target {
     fn alias(&self) -> &str {
         match self {
-            Target::Branch { alias, .. } | Target::Pr { alias, .. } => alias,
+            Target::Branch { alias, .. }
+            | Target::Pr { alias, .. }
+            | Target::Compare { alias, .. } => alias,
         }
     }
 }
@@ -95,6 +106,19 @@ pub struct ParsedPr {
     pub base_changes: Vec<BaseChange>,
     /// Owner of the head repository when the PR comes from a fork.
     pub fork_owner: Option<String>,
+    /// Current tip of the base branch (`baseRef.target.oid`), when it exists.
+    pub base_oid: Option<String>,
+}
+
+/// One `Target::Compare` answer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompareResult {
+    /// Tip of the base branch the comparison ran against.
+    pub base_oid: String,
+    /// Tip of the head branch the comparison ran against.
+    pub head_oid: String,
+    pub behind_by: u32,
+    pub ahead_by: u32,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -112,6 +136,8 @@ pub struct ParsedBatch {
     /// PRs per alias: at most one for `Target::Pr`, up to five for
     /// `Target::Branch`. A PR alias that failed has no entry.
     pub prs: HashMap<String, Vec<ParsedPr>>,
+    /// Comparison per `Target::Compare` alias that resolved.
+    pub compares: HashMap<String, CompareResult>,
     /// GraphQL error message per alias whose lookup failed.
     pub errors: HashMap<String, String>,
 }
@@ -216,6 +242,25 @@ pub fn build_query(targets: &[Target]) -> String {
                     gql_string(name),
                 );
             }
+            Target::Compare {
+                alias,
+                owner,
+                name,
+                base,
+                head,
+                ..
+            } => {
+                let _ = write!(
+                    query,
+                    " {alias}: repository(owner: {}, name: {}) {{ nameWithOwner \
+                     ref(qualifiedName: {}) {{ target {{ oid }} \
+                     compare(headRef: {}) {{ behindBy aheadBy headTarget {{ oid }} }} }} }}",
+                    gql_string(owner),
+                    gql_string(name),
+                    gql_string(&format!("refs/heads/{base}")),
+                    gql_string(head),
+                );
+            }
         }
     }
     query.push_str(" } ");
@@ -306,6 +351,23 @@ fn parse_pr(repo: &str, pr: &Value, fetched_at: i64) -> Option<ParsedPr> {
         },
         base_changes,
         fork_owner,
+        base_oid: pr["baseRef"]["target"]["oid"]
+            .as_str()
+            .filter(|oid| !oid.is_empty())
+            .map(str::to_string),
+    })
+}
+
+/// `ref { target { oid } compare { behindBy aheadBy headTarget { oid } } }`;
+/// `None` when the base ref or the head ref did not resolve.
+fn parse_compare(reference: &Value) -> Option<CompareResult> {
+    let count = |value: &Value| value.as_u64().and_then(|n| u32::try_from(n).ok());
+    let compare = &reference["compare"];
+    Some(CompareResult {
+        base_oid: reference["target"]["oid"].as_str()?.to_string(),
+        head_oid: compare["headTarget"]["oid"].as_str()?.to_string(),
+        behind_by: count(&compare["behindBy"])?,
+        ahead_by: count(&compare["aheadBy"]).unwrap_or(0),
     })
 }
 
@@ -371,6 +433,25 @@ pub fn parse_response(json: &str) -> Result<ParsedBatch, TrackerError> {
                 .or_insert_with(|| "Repository not found".into());
             continue;
         };
+        if let Some(reference) = value.get("ref") {
+            match parse_compare(reference) {
+                Some(compare) => {
+                    batch.compares.insert(alias.clone(), compare);
+                }
+                None => {
+                    let message = if reference.is_null() {
+                        "Base branch not found"
+                    } else {
+                        "Head branch not found"
+                    };
+                    batch
+                        .errors
+                        .entry(alias.clone())
+                        .or_insert_with(|| message.into());
+                }
+            }
+            continue;
+        }
         let prs: Vec<ParsedPr> = if let Some(pr) = value.get("pullRequest") {
             if pr.is_null() {
                 batch
@@ -503,6 +584,10 @@ struct Timers {
     forced_targets: HashSet<(String, Due)>,
     /// When each session last forced a refresh, for throttling.
     last_forced: HashMap<String, i64>,
+    /// Latest base-branch tip seen per open PR, from refreshes and compares.
+    base_oids: HashMap<(String, u32), String>,
+    /// Last compare attempt per PR: `(head_oid, base_oid, at)`.
+    compare_tried: HashMap<(String, u32), (String, String, i64)>,
 }
 
 pub struct Tracker {
@@ -646,6 +731,8 @@ struct Want {
 enum Due {
     Branch(String),
     Pr(u32),
+    /// Behind count of an open PR: `(number, base branch, head branch)`.
+    Compare(u32, String, String),
 }
 
 /// Picks this cycle's targets: per repo, forced first, then the most overdue,
@@ -694,6 +781,7 @@ fn plan_cycle(
                     want.forced = true;
                 }
             }
+            Due::Compare(..) => {}
         }
     }
     let tracking_anything = !branches.is_empty() || !prs.is_empty();
@@ -742,6 +830,40 @@ fn plan_cycle(
         }
     }
 
+    // Behind counts of open PRs whose (head, base) tips are not cached yet.
+    // The base tip comes from the last refresh or compare of the PR.
+    let mut compare_pairs: HashMap<(String, u32), (String, String)> = HashMap::new();
+    for (repo, number) in prs.keys() {
+        let key = (repo.clone(), *number);
+        let Some(base_oid) = timers.base_oids.get(&key).cloned() else {
+            continue;
+        };
+        let Some(snapshot) = pr_store::load_snapshot(conn, repo, *number) else {
+            continue;
+        };
+        if snapshot.state != PrState::Open || snapshot.head_oid.is_empty() {
+            continue;
+        }
+        if pr_store::load_compare(conn, repo, &snapshot.head_oid, &base_oid).is_some() {
+            continue;
+        }
+        let tried_recently = timers
+            .compare_tried
+            .get(&key)
+            .is_some_and(|(head, base, at)| {
+                *head == snapshot.head_oid && *base == base_oid && now - at < DISCOVERY_FLEET_MS
+            });
+        if tried_recently {
+            continue;
+        }
+        due.entry(repo.clone()).or_default().push((
+            false,
+            0,
+            Due::Compare(*number, snapshot.base_ref, snapshot.head_ref),
+        ));
+        compare_pairs.insert(key, (snapshot.head_oid, base_oid));
+    }
+
     let mut requests = Vec::new();
     for (repo, mut items) in due {
         let Some((owner, name)) = repo.split_once('/') else {
@@ -752,6 +874,14 @@ fn plan_cycle(
         for (forced, _, item) in cut {
             if forced {
                 timers.forced_targets.insert((repo.clone(), item));
+            }
+        }
+        for (_, _, item) in &items {
+            if let Due::Compare(number, ..) = item {
+                let key = (repo.clone(), *number);
+                if let Some((head, base)) = compare_pairs.remove(&key) {
+                    timers.compare_tried.insert(key, (head, base, now));
+                }
             }
         }
         let targets = items
@@ -769,6 +899,14 @@ fn plan_cycle(
                     owner: owner.to_string(),
                     name: name.to_string(),
                     number,
+                },
+                Due::Compare(number, base, head) => Target::Compare {
+                    alias: format!("c{i}"),
+                    owner: owner.to_string(),
+                    name: name.to_string(),
+                    number,
+                    base,
+                    head,
                 },
             })
             .collect();
@@ -801,17 +939,25 @@ fn mark_attempted(tracker: &Tracker, request: &RepoRequest, now: i64) {
                     .refreshed
                     .insert((request.repo.clone(), *number), now);
             }
+            Target::Compare { .. } => {}
         }
     }
 }
 
-/// Writes one fetched PR under the request's repo key. Keeps `behind_by`
-/// while head and base are unchanged and appends unseen base changes.
+/// Writes one fetched PR under the request's repo key. `behind_by` comes from
+/// the compare cache for the current head and base tips; otherwise it is kept
+/// while head and base are unchanged. Appends unseen base changes.
 fn write_pr(conn: &Connection, repo: &str, pr: &ParsedPr, now: i64) -> rusqlite::Result<()> {
     let mut snapshot = pr.snapshot.clone();
     snapshot.repo = repo.to_string();
     snapshot.fetched_at = now;
-    if let Some(old) = pr_store::load_snapshot(conn, repo, snapshot.number) {
+    let cached = pr
+        .base_oid
+        .as_deref()
+        .and_then(|base_oid| pr_store::load_compare(conn, repo, &snapshot.head_oid, base_oid));
+    if let Some(behind_by) = cached {
+        snapshot.behind_by = Some(behind_by);
+    } else if let Some(old) = pr_store::load_snapshot(conn, repo, snapshot.number) {
         if old.head_oid == snapshot.head_oid && old.base_ref == snapshot.base_ref {
             snapshot.behind_by = old.behind_by;
         }
@@ -840,12 +986,19 @@ fn apply_batch(
 ) -> rusqlite::Result<BTreeSet<String>> {
     let repo = request.repo.as_str();
     let mut touched: BTreeSet<u32> = BTreeSet::new();
+    // Base-branch tips of open PRs, for the next compare decision.
+    let mut base_oids: Vec<(u32, String)> = Vec::new();
+    let open_base = |pr: &ParsedPr| match (pr.snapshot.state, &pr.base_oid) {
+        (PrState::Open, Some(oid)) => Some((pr.snapshot.number, oid.clone())),
+        _ => None,
+    };
     for target in &request.targets {
         let found = batch.prs.get(target.alias());
         match target {
             Target::Pr { alias, number, .. } => {
                 for pr in found.into_iter().flatten() {
                     write_pr(conn, repo, pr, now)?;
+                    base_oids.extend(open_base(pr));
                 }
                 let error = batch.errors.get(alias).map(String::as_str);
                 tracker.set_error(repo, *number, error);
@@ -884,10 +1037,40 @@ fn apply_batch(
                         )?;
                     }
                     write_pr(conn, repo, pr, now)?;
+                    base_oids.extend(open_base(pr));
                     tracker.set_error(repo, pr.snapshot.number, None);
                     touched.insert(pr.snapshot.number);
                 }
             }
+            Target::Compare { alias, number, .. } => {
+                let Some(compare) = batch.compares.get(alias) else {
+                    continue;
+                };
+                pr_store::store_compare(
+                    conn,
+                    repo,
+                    &compare.head_oid,
+                    &compare.base_oid,
+                    compare.behind_by,
+                )?;
+                base_oids.push((*number, compare.base_oid.clone()));
+                // A head that moved since the snapshot gets its count from
+                // the cache on its next refresh.
+                if let Some(mut snapshot) = pr_store::load_snapshot(conn, repo, *number) {
+                    if snapshot.head_oid == compare.head_oid
+                        && snapshot.behind_by != Some(compare.behind_by)
+                    {
+                        snapshot.behind_by = Some(compare.behind_by);
+                        pr_store::upsert_snapshot(conn, &snapshot)?;
+                        touched.insert(*number);
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(mut timers) = tracker.timers.lock() {
+        for (number, oid) in base_oids {
+            timers.base_oids.insert((repo.to_string(), number), oid);
         }
     }
     let mut changed = BTreeSet::new();
@@ -1303,6 +1486,12 @@ mod tests {
     const NO_CHECKS_NULL_AUTHOR: &str =
         include_str!("pr_tracker_fixtures/no_checks_null_author.json");
     const DISCOVERY_FOREIGN: &str = include_str!("pr_tracker_fixtures/discovery_foreign.json");
+    /// Real `gh api graphql` output for four compare aliases (see
+    /// `build_query_emits_compare_alias`): c0 resolves, c1 names a missing
+    /// head branch, c2 a missing base branch, c3 resolves against trunk.
+    const COMPARE_BEHIND: &str = include_str!("pr_tracker_fixtures/compare_behind.json");
+    const ARTIFACT_CREATE_TIP: &str = "10d9dd67a1492d4d99f085e0cb1be7fc337f0d8d";
+    const ARTIFACT_EDIT_TIP: &str = "740b05942657170a840cc8bee293f63e07fe9a0b";
 
     const NOW: i64 = 1_791_000_000_000;
 
@@ -1623,7 +1812,9 @@ mod tests {
             .targets
             .iter()
             .map(|t| match t {
-                Target::Branch { alias, .. } | Target::Pr { alias, .. } => alias.as_str(),
+                Target::Branch { alias, .. }
+                | Target::Pr { alias, .. }
+                | Target::Compare { alias, .. } => alias.as_str(),
             })
             .collect();
         assert_eq!(aliases.len(), MAX_ALIASES);
@@ -1787,9 +1978,19 @@ mod tests {
                 name: "cli".into(),
                 branch: "bagtoad/artifact-edit".into(),
             },
+            Target::Compare {
+                alias: "c3".into(),
+                owner: "cli".into(),
+                name: "cli".into(),
+                number: 14571,
+                base: "trunk".into(),
+                head: "bagtoad/artifact-edit".into(),
+            },
         ]);
         let json = GhCli.graphql(&std::env::temp_dir(), &query).unwrap();
         let batch = parse_response(&json).unwrap();
+        assert!(batch.compares["c3"].behind_by > 0);
+        assert!(batch.prs["p0"][0].base_oid.is_some());
         assert!(batch.viewer.is_some());
         assert!(batch.rate_limit.is_some());
         assert_eq!(batch.prs["p0"][0].snapshot.number, 14148);
@@ -2000,5 +2201,205 @@ mod tests {
         tracker.set_status(S::SignedOut);
         run_cycle(&store, &runner, &tracker, "t", NOW);
         assert_eq!(tracker.status(), S::Ok);
+    }
+
+    /// `DISCOVERY_FOREIGN`'s PR as a refresh answer that carries the base tip.
+    fn refresh_with_base_oid() -> String {
+        let with_base = DISCOVERY_FOREIGN.replace(
+            r#""baseRefName":"bagtoad/artifact-create","#,
+            &format!(
+                r#""baseRefName":"bagtoad/artifact-create","baseRef":{{"target":{{"oid":"{ARTIFACT_CREATE_TIP}"}}}},"#
+            ),
+        );
+        let as_refresh = with_base
+            .replace(
+                r#""b0":{"nameWithOwner":"cli/cli","pullRequests":{"nodes":["#,
+                r#""p0":{"nameWithOwner":"cli/cli","pullRequest":"#,
+            )
+            .replace("}]}}}}", "}}}}");
+        assert_ne!(as_refresh, with_base);
+        as_refresh
+    }
+
+    #[test]
+    fn build_query_emits_compare_alias() {
+        let query = build_query(&[Target::Compare {
+            alias: "c0".into(),
+            owner: "cli".into(),
+            name: "cli".into(),
+            number: 14571,
+            base: "bagtoad/artifact-create".into(),
+            head: "bagtoad/artifact-edit".into(),
+        }]);
+        assert!(
+            query.contains(
+                "c0: repository(owner: \"cli\", name: \"cli\") { nameWithOwner ref(qualifiedName: \"refs/heads/bagtoad/artifact-create\") { target { oid } compare(headRef: \"bagtoad/artifact-edit\") { behindBy aheadBy headTarget { oid } } } }"
+            ),
+            "{query}"
+        );
+        assert_eq!(query.matches('{').count(), query.matches('}').count());
+        // Refreshes learn the base tip, so a moved base triggers a compare.
+        assert!(build_query(&[]).contains("baseRef { target { oid } }"));
+    }
+
+    #[test]
+    fn parse_response_maps_compare_results() {
+        let batch = parse_response(COMPARE_BEHIND).unwrap();
+        assert_eq!(
+            batch.compares["c0"],
+            CompareResult {
+                base_oid: ARTIFACT_CREATE_TIP.into(),
+                head_oid: ARTIFACT_EDIT_TIP.into(),
+                behind_by: 0,
+                ahead_by: 3,
+            }
+        );
+        assert_eq!(
+            batch.compares["c3"],
+            CompareResult {
+                base_oid: "ec5b512045db67e5a2a4ff4a1b02660b2fb24390".into(),
+                head_oid: ARTIFACT_EDIT_TIP.into(),
+                behind_by: 23,
+                ahead_by: 16,
+            }
+        );
+        assert_eq!(batch.compares.len(), 2);
+        assert!(batch.errors["c1"].contains("Could not resolve head ref"));
+        assert_eq!(batch.errors["c2"], "Base branch not found");
+        assert!(batch.prs.is_empty(), "compare aliases are not PRs");
+    }
+
+    #[test]
+    fn parse_pr_reads_base_oid() {
+        let batch = parse_response(&refresh_with_base_oid()).unwrap();
+        assert_eq!(
+            batch.prs["p0"][0].base_oid.as_deref(),
+            Some(ARTIFACT_CREATE_TIP)
+        );
+        let batch = parse_response(DISCOVERY_FOREIGN).unwrap();
+        assert_eq!(batch.prs["b0"][0].base_oid, None);
+    }
+
+    fn compare_targets(plan: &Plan) -> Vec<(u32, String, String)> {
+        plan.requests
+            .iter()
+            .flat_map(|r| &r.targets)
+            .filter_map(|t| match t {
+                Target::Compare {
+                    number, base, head, ..
+                } => Some((*number, base.clone(), head.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn compare_cache_skips_known_oid_pair() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        add_session(&conn, "s1");
+        pr_store::record_pr(&conn, "s1", "cli/cli", 14571, Relation::Owned, "create", 1).unwrap();
+        let mut snapshot = parse_response(DISCOVERY_FOREIGN).unwrap().prs["b0"][0]
+            .snapshot
+            .clone();
+        // Fresh: the PR itself is not due.
+        snapshot.fetched_at = NOW;
+        pr_store::upsert_snapshot(&conn, &snapshot).unwrap();
+        let key = ("cli/cli".to_string(), 14571);
+        let wanted = vec![(
+            14571,
+            "bagtoad/artifact-create".to_string(),
+            "bagtoad/artifact-edit".to_string(),
+        )];
+
+        // Unknown base tip: nothing to compare against yet.
+        let mut timers = Timers::default();
+        assert!(compare_targets(&plan_cycle(&conn, &mut timers, None, NOW).unwrap()).is_empty());
+
+        // Known base tip, uncached pair: one compare alias, attempted once.
+        let mut timers = Timers::default();
+        timers
+            .base_oids
+            .insert(key.clone(), ARTIFACT_CREATE_TIP.into());
+        let plan = plan_cycle(&conn, &mut timers, None, NOW).unwrap();
+        assert_eq!(compare_targets(&plan), wanted);
+        assert_eq!(plan.requests[0].targets.len(), 1);
+        assert!(
+            compare_targets(&plan_cycle(&conn, &mut timers, None, NOW + 1_000).unwrap()).is_empty()
+        );
+
+        // Cached pair: skipped.
+        pr_store::store_compare(&conn, "cli/cli", ARTIFACT_EDIT_TIP, ARTIFACT_CREATE_TIP, 2)
+            .unwrap();
+        let mut timers = Timers::default();
+        timers
+            .base_oids
+            .insert(key.clone(), ARTIFACT_CREATE_TIP.into());
+        assert!(compare_targets(&plan_cycle(&conn, &mut timers, None, NOW).unwrap()).is_empty());
+
+        // The base moved: compare again.
+        let mut timers = Timers::default();
+        timers.base_oids.insert(key.clone(), "moved".into());
+        assert_eq!(
+            compare_targets(&plan_cycle(&conn, &mut timers, None, NOW).unwrap()),
+            wanted
+        );
+
+        // Merged PRs are never compared.
+        snapshot.state = PrState::Merged;
+        pr_store::upsert_snapshot(&conn, &snapshot).unwrap();
+        let mut timers = Timers::default();
+        timers.base_oids.insert(key, "moved".into());
+        assert!(compare_targets(&plan_cycle(&conn, &mut timers, None, NOW).unwrap()).is_empty());
+    }
+
+    #[test]
+    fn cycle_compares_open_pr_and_caches_behind() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_pr(&conn, "s1", "cli/cli", 14571, Relation::Owned, "create", 1)
+                .unwrap();
+        }
+        let refresh = refresh_with_base_oid();
+        let compare = COMPARE_BEHIND.replace(r#""behindBy":0"#, r#""behindBy":7"#);
+        assert_ne!(compare, COMPARE_BEHIND);
+        let runner = FakeRunner::new(vec![Ok(&refresh), Ok(&compare), Ok(&refresh)]);
+        let tracker = Tracker::new();
+        let snapshot = |store: &SessionStore| {
+            let conn = store.lock_conn().unwrap();
+            pr_store::load_snapshot(&conn, "cli/cli", 14571).unwrap()
+        };
+
+        run_cycle(&store, &runner, &tracker, "t", NOW);
+        assert_eq!(snapshot(&store).behind_by, None);
+
+        // Next cycle: the open PR's head is compared with its base.
+        let outcome = run_cycle(&store, &runner, &tracker, "t", NOW + 1_000);
+        let queries = runner.queries();
+        assert_eq!(queries.len(), 2);
+        assert!(queries[1].contains("c0: repository(owner: \"cli\", name: \"cli\")"));
+        assert!(queries[1].contains("refs/heads/bagtoad/artifact-create"));
+        assert!(!queries[1].contains("pullRequest("));
+        assert_eq!(snapshot(&store).behind_by, Some(7));
+        assert!(outcome.changed.contains("s1"));
+        {
+            let conn = store.lock_conn().unwrap();
+            assert_eq!(
+                pr_store::load_compare(&conn, "cli/cli", ARTIFACT_EDIT_TIP, ARTIFACT_CREATE_TIP),
+                Some(7)
+            );
+        }
+
+        // A refresh with unchanged tips keeps the cached count and sends no compare.
+        assert!(tracker.force("s1", NOW + 10_000));
+        run_cycle(&store, &runner, &tracker, "t", NOW + 10_000);
+        let queries = runner.queries();
+        assert_eq!(queries.len(), 3);
+        assert!(!queries[2].contains("compare("));
+        assert_eq!(snapshot(&store).behind_by, Some(7));
+        run_cycle(&store, &runner, &tracker, "t", NOW + 11_000);
+        assert_eq!(runner.queries().len(), 3);
     }
 }

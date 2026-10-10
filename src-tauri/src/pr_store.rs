@@ -79,7 +79,8 @@ impl Relation {
 }
 
 /// Dot on the chip: `Block` is filled, `Action` is a ring.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+/// Ordered by urgency: `None < Pending < Action < Block`.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(rename_all = "camelCase")]
 pub enum Attention {
     None,
@@ -454,6 +455,35 @@ pub fn last_branch(conn: &Connection, session_id: &str) -> Option<(String, Strin
     .flatten()
 }
 
+/// Cached `behindBy` of `head_oid` against `base_oid`.
+pub fn load_compare(conn: &Connection, repo: &str, head_oid: &str, base_oid: &str) -> Option<u32> {
+    conn.query_row(
+        "SELECT behind_by FROM pr_compare
+         WHERE repo = ?1 AND head_oid = ?2 AND base_oid = ?3",
+        params![repo, head_oid, base_oid],
+        |row| row.get::<_, i64>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+    .and_then(|n| u32::try_from(n).ok())
+}
+
+pub fn store_compare(
+    conn: &Connection,
+    repo: &str,
+    head_oid: &str,
+    base_oid: &str,
+    behind_by: u32,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO pr_compare (repo, head_oid, base_oid, behind_by) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (repo, head_oid, base_oid) DO UPDATE SET behind_by = excluded.behind_by",
+        params![repo, head_oid, base_oid, behind_by],
+    )?;
+    Ok(())
+}
+
 /// Every stored snapshot of one repo; unreadable rows are skipped.
 fn repo_snapshots(conn: &Connection, repo: &str) -> Vec<PrSnapshot> {
     let Ok(mut stmt) = conn.prepare("SELECT snapshot_json FROM pr_snapshots WHERE repo = ?1")
@@ -475,9 +505,11 @@ fn make_entry(
     dismissed: bool,
     live_branch: Option<(&str, &str)>,
 ) -> PrEntry {
-    let on_live_branch = live_branch.is_some_and(|(repo, branch)| {
-        snapshot.repo.eq_ignore_ascii_case(repo) && snapshot.head_ref == branch
-    });
+    // Another chat's PR is never "this chat's live branch".
+    let on_live_branch = relation != Relation::Other
+        && live_branch.is_some_and(|(repo, branch)| {
+            snapshot.repo.eq_ignore_ascii_case(repo) && snapshot.head_ref == branch
+        });
     let error = crate::pr_tracker::pr_error(&snapshot.repo, snapshot.number);
     PrEntry {
         snapshot,
@@ -598,6 +630,18 @@ pub fn build_set_view(
         entry.parent = parents
             .get(&(entry.snapshot.repo.clone(), entry.snapshot.number))
             .copied();
+        let parent = entry.parent.and_then(|number| {
+            snapshots
+                .iter()
+                .find(|s| s.repo == entry.snapshot.repo && s.number == number)
+        });
+        let (attention, reason) = pr_stack::attention_for(&pr_stack::PrEntryInputs {
+            snapshot: &entry.snapshot,
+            parent,
+            base_ref_label: entry.snapshot.base_ref.clone(),
+        });
+        entry.attention = attention;
+        entry.attention_reason = reason;
     }
     entries.sort_by(|a, b| {
         let key = |e: &PrEntry| {
@@ -644,27 +688,36 @@ pub fn pick_primary(entries: &[PrEntry]) -> Option<&PrEntry> {
 /// A summary is stale when its freshest snapshot is older than this.
 const STALE_AFTER_MS: i64 = 10 * 60 * 1000;
 
-/// One summary per chat with at least one visible snapshot-backed PR.
+/// One summary per live (not archived) chat with at least one visible
+/// snapshot-backed PR. The primary PR agrees with the chip: the live branch
+/// is the chat's stored `sessions.branch`, matched by head branch name.
+/// `attention` is the most urgent one among the visible PRs.
 pub fn build_summaries(conn: &Connection, now: i64) -> HashMap<String, PrSummary> {
-    let ids: Vec<String> = conn
-        .prepare("SELECT DISTINCT session_id FROM session_prs")
+    let chats: Vec<(String, Option<String>)> = conn
+        .prepare(
+            "SELECT s.id, s.branch FROM sessions s
+             WHERE s.archived = 0
+               AND s.id IN (SELECT session_id FROM session_prs)",
+        )
         .and_then(|mut stmt| {
-            let rows = stmt.query_map([], |row| row.get(0))?;
+            let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
             rows.collect()
         })
         .unwrap_or_default();
     let mut summaries = HashMap::new();
-    for id in ids {
-        let live = last_branch(conn, &id);
-        let entries: Vec<PrEntry> = own_entries(
-            conn,
-            &id,
-            live.as_ref()
-                .map(|(repo, branch)| (repo.as_str(), branch.as_str())),
-        )
-        .into_iter()
-        .filter(|e| !e.dismissed && e.relation != Relation::Other)
-        .collect();
+    for (id, branch) in chats {
+        // Status is not part of a summary; the view is only used for its
+        // entries, which carry stack-aware attention.
+        let view = build_set_view(conn, &id, None, TrackerStatus::Idle, now);
+        let entries: Vec<PrEntry> = view
+            .entries
+            .into_iter()
+            .filter(|e| !e.dismissed && e.relation != Relation::Other)
+            .map(|mut e| {
+                e.on_live_branch = branch.as_deref() == Some(e.snapshot.head_ref.as_str());
+                e
+            })
+            .collect();
         let Some(primary) = pick_primary(&entries) else {
             continue;
         };
@@ -676,7 +729,11 @@ pub fn build_summaries(conn: &Connection, now: i64) -> HashMap<String, PrSummary
                 primary_number: primary.snapshot.number,
                 primary_state: primary.snapshot.state,
                 primary_is_draft: primary.snapshot.is_draft,
-                attention: Attention::None,
+                attention: entries
+                    .iter()
+                    .map(|e| e.attention)
+                    .max()
+                    .unwrap_or(Attention::None),
                 stale: freshest.is_some_and(|at| now - at > STALE_AFTER_MS),
             },
         );
@@ -1011,7 +1068,14 @@ mod tests {
         assert_eq!(view.stacks[0].base_ref, "main");
         assert_eq!(view.refreshed_at, Some(30));
         assert_eq!(view.tracking, Tracking::Full);
-        assert!(view.entries.iter().all(|e| e.attention == Attention::None));
+        // #2's parent merged: it needs a restack; the others are healthy.
+        assert_eq!(view.entries[1].attention, Attention::Action);
+        assert_eq!(
+            view.entries[1].attention_reason.as_deref(),
+            Some("Needs restack")
+        );
+        assert_eq!(view.entries[0].attention, Attention::None);
+        assert_eq!(view.entries[2].attention, Attention::None);
     }
 
     #[test]
@@ -1205,7 +1269,9 @@ mod tests {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
         let now = 10_000_000;
-        // s1: last branch is feat/a whose PR is merged; it stays primary.
+        add_session(&conn, "s1", Some("feat/a"), false);
+        add_session(&conn, "s2", None, false);
+        // s1: live branch is feat/a whose PR is merged; it stays primary.
         record_branch(&conn, "s1", "o/r", "feat/b", "trace2", 1).unwrap();
         record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 2).unwrap();
         put(
@@ -1285,5 +1351,139 @@ mod tests {
         assert_eq!((s2.count, s2.primary_number), (2, 3));
         assert_eq!(s2.primary_state, PrState::Open);
         assert!(s2.stale);
+    }
+
+    fn add_session(conn: &Connection, id: &str, branch: Option<&str>, archived: bool) {
+        conn.execute(
+            "INSERT INTO sessions (id, cwd, harness, model, runtime_mode, title, created_at,
+                                   updated_at, branch, archived)
+             VALUES (?1, '/work', 'claude', 'm', 'default', 't', 1, 1, ?2, ?3)",
+            params![id, branch, archived as i64],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn compare_cache_roundtrips_by_oid_pair() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        assert_eq!(load_compare(&conn, "o/r", "h1", "b1"), None);
+        store_compare(&conn, "o/r", "h1", "b1", 3).unwrap();
+        assert_eq!(load_compare(&conn, "o/r", "h1", "b1"), Some(3));
+        assert_eq!(load_compare(&conn, "o/r", "h1", "b2"), None);
+        assert_eq!(load_compare(&conn, "x/y", "h1", "b1"), None);
+        store_compare(&conn, "o/r", "h1", "b1", 5).unwrap();
+        assert_eq!(load_compare(&conn, "o/r", "h1", "b1"), Some(5));
+    }
+
+    #[test]
+    fn dismissed_entries_do_not_raise_summary_attention() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let now = 10_000_000;
+        add_session(&conn, "s1", Some("feat/a"), false);
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 1, "feat/a", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        let mut failing = pr_snap("o/r", 2, "feat/b", "main", "main", PrState::Open, now);
+        failing.checks = Checks::Failing;
+        put(&conn, "s1", &failing, Relation::Existing);
+        set_dismissed(&conn, "s1", "o/r", 2, true).unwrap();
+        assert_eq!(build_summaries(&conn, now)["s1"].attention, Attention::None);
+
+        let mut running = pr_snap("o/r", 3, "feat/c", "main", "main", PrState::Open, now);
+        running.checks = Checks::Pending;
+        put(&conn, "s1", &running, Relation::Owned);
+        assert_eq!(
+            build_summaries(&conn, now)["s1"].attention,
+            Attention::Pending
+        );
+
+        set_dismissed(&conn, "s1", "o/r", 2, false).unwrap();
+        assert_eq!(
+            build_summaries(&conn, now)["s1"].attention,
+            Attention::Block
+        );
+        // The set view still reports the dismissed entry's own attention.
+        set_dismissed(&conn, "s1", "o/r", 2, true).unwrap();
+        let view = build_set_view(&conn, "s1", None, TrackerStatus::Ok, now);
+        let two = view
+            .entries
+            .iter()
+            .find(|e| e.snapshot.number == 2)
+            .unwrap();
+        assert!(two.dismissed);
+        assert_eq!(two.attention, Attention::Block);
+        assert_eq!(two.attention_reason.as_deref(), Some("Checks failing"));
+    }
+
+    #[test]
+    fn summary_primary_follows_session_branch_and_skips_archived() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let now = 10_000_000;
+        // The stored live branch is feat/b, but the chat touched feat/a last.
+        add_session(&conn, "s1", Some("feat/b"), false);
+        record_branch(&conn, "s1", "o/r", "feat/b", "trace2", 1).unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 2).unwrap();
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 2, "feat/b", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 3, "feat/a", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        // Archived chats and deleted chats get no summary.
+        add_session(&conn, "s2", Some("x"), true);
+        put(
+            &conn,
+            "s2",
+            &pr_snap("o/r", 4, "x", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "gone",
+            &pr_snap("o/r", 5, "y", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        let summaries = build_summaries(&conn, now);
+        assert_eq!(summaries.len(), 1, "{summaries:?}");
+        assert_eq!(summaries["s1"].primary_number, 2);
+        assert_eq!(summaries["s1"].count, 2);
+    }
+
+    #[test]
+    fn other_entries_are_never_on_live_branch() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 2, "feat/b", "main", "main", PrState::Open, 20),
+            Relation::Owned,
+        );
+        upsert_snapshot(
+            &conn,
+            &pr_snap("o/r", 3, "feat/c", "feat/b", "feat/b", PrState::Open, 30),
+        )
+        .unwrap();
+        let view = build_set_view(&conn, "s1", Some(("o/r", "feat/c")), TrackerStatus::Ok, 100);
+        let three = view
+            .entries
+            .iter()
+            .find(|e| e.snapshot.number == 3)
+            .unwrap();
+        assert_eq!(three.relation, Relation::Other);
+        assert!(!three.on_live_branch);
+        assert!(view.entries.iter().all(|e| !e.on_live_branch));
     }
 }
