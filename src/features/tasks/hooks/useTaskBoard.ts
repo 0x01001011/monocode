@@ -3,6 +3,8 @@ import { orchestrator } from "../../orchestration/model/orchestration";
 import { sameProjectPath } from "../../projects/model/recents";
 import type { Block, Session } from "../../sessions/model/session";
 import { deriveFlow, type FlowPhase } from "../model/flow";
+import { gapsFor, type Gap } from "../model/gaps";
+import { shipReadiness, type Ship } from "../model/ship";
 import { buildSddSection } from "../model/sddBoard";
 import {
   findSddWorkspaces,
@@ -21,6 +23,7 @@ import { deriveStatusCard, type StatusCard, type StatusSessionInput } from "../m
 import type { BoardSection } from "../model/taskBoard";
 import { applySnoozes, snoozeVersion, subscribeSnoozes } from "../model/taskSnooze";
 import { tauriSddFs } from "../model/tauriSddFs";
+import { lastTestRun, type TestRun } from "../model/testRuns";
 
 export type TaskBoard = {
   sections: BoardSection[];
@@ -28,6 +31,12 @@ export type TaskBoard = {
   statusCard: StatusCard;
   /** Spec, plan, build, check: empty without a plan or while the panel is hidden. */
   flow: FlowPhase[];
+  /** The newest test run in the session; absent when none ran (or while the panel is hidden). */
+  testRun?: TestRun;
+  /** Whether the branch can ship; absent without a plan or while the panel is hidden. */
+  ship?: Ship;
+  /** What the plan is missing (no commit, parked at close, unticked steps, no final review). */
+  gaps: Gap[];
   workspaces: SddWorkspaceRef[];
   selectedWorkspace?: string;
   selectWorkspace(slug: string): void;
@@ -69,6 +78,7 @@ export const DEFAULT_QUIET_AFTER_MS = 5 * 60_000;
 /** What a closed panel exposes: only the status card and tab badge are read then. */
 const NO_SECTIONS: BoardSection[] = [];
 const NO_FLOW: FlowPhase[] = [];
+const NO_GAPS: Gap[] = [];
 
 /** Keeps the previous reference while the serialized content is unchanged. */
 function useStable<T>(value: T): T {
@@ -267,12 +277,19 @@ export function useTaskBoard(input: Input): TaskBoard {
 
   const workspaces = useStable(data?.workspaces ?? []);
   const planSection = sections.find((s) => s.source === "sdd");
+  // The last test run feeds both Check and Ship; `clock` keeps its age current as polls complete.
+  const testRun = useStable(useMemo(() => (visible ? lastTestRun(blocks) : undefined), [visible, blocks, clock]));
+  const gaps = useStable(useMemo(() => (visible && planSection ? gapsFor(planSection) : NO_GAPS), [visible, planSection]));
+  const ship = useStable(
+    useMemo(() => (visible && planSection ? shipReadiness(planSection, testRun) : undefined), [visible, planSection, testRun]),
+  );
   const flow = useStable(
     useMemo(
       () =>
         visible && planSection
           ? deriveFlow({
               plan: planSection,
+              ...(ship ? { ship } : {}),
               ...(blocks ? { blocks } : {}),
               subagentsRunning: countSubagentsRunning(sections, planSection),
               now: nowRef.current(),
@@ -280,7 +297,7 @@ export function useTaskBoard(input: Input): TaskBoard {
             })
           : NO_FLOW,
       // `clock` re-derives the age of the last test run as polls complete.
-      [visible, planSection, sections, blocks, clock, planCwd],
+      [visible, planSection, sections, blocks, clock, planCwd, ship],
     ),
   );
   return {
@@ -288,6 +305,9 @@ export function useTaskBoard(input: Input): TaskBoard {
     ...(planSection ? { plan: planSection } : {}),
     statusCard,
     flow,
+    ...(testRun ? { testRun } : {}),
+    ...(ship ? { ship } : {}),
+    gaps,
     workspaces,
     ...(data?.selected ? { selectedWorkspace: data.selected } : {}),
     selectWorkspace,

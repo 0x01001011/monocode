@@ -531,7 +531,7 @@ describe("useTaskBoard", () => {
       expect(latest?.flow).toEqual([]);
     });
 
-    it("derives spec, plan, build and check from the ledger", async () => {
+    it("derives spec, plan, build, check and ship from the ledger", async () => {
       const { fs } = fakeFs(flowWorkspace());
       await mount(flowInput(fs));
       expect(latest?.flow.map((p) => [p.id, p.status, p.detail, p.path])).toEqual([
@@ -539,6 +539,7 @@ describe("useTaskBoard", () => {
         ["plan", "done", "1 task", "docs/plan.md"],
         ["build", "running", "0 of 1", undefined],
         ["check", "pending", undefined, undefined],
+        ["ship", "attention", "3 left", undefined],
       ]);
     });
 
@@ -556,13 +557,14 @@ describe("useTaskBoard", () => {
         ["plan", undefined],
         ["build", undefined],
         ["check", undefined],
+        ["ship", undefined],
       ]);
     });
 
     it("has no Spec phase when the ledger names no spec", async () => {
       const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
       await mount(flowInput(fs));
-      expect(latest?.flow.map((p) => p.id)).toEqual(["plan", "build", "check"]);
+      expect(latest?.flow.map((p) => p.id)).toEqual(["plan", "build", "check", "ship"]);
     });
 
     it("reads the last test run from the active session", async () => {
@@ -610,14 +612,27 @@ describe("useTaskBoard", () => {
       await mount(flowInput(fs, [], { visible: false, sessions: busy }));
       expect(latest?.flow).toEqual([]);
       await mount(flowInput(fs, [], { visible: true, sessions: busy }));
-      expect(latest?.flow.length).toBe(4);
+      expect(latest?.flow.length).toBe(5);
+    });
+
+    it("exposes the test run, ship readiness and gaps, and nothing while hidden", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs, [testRun("npm test", "failed")]));
+      expect(latest?.testRun).toMatchObject({ status: "failed", command: "npm test" });
+      expect(latest?.ship?.items.find((i) => i.id === "tests")).toMatchObject({ met: false, text: "tests failed" });
+      expect(latest?.flow.find((p) => p.id === "ship")?.status).toBe("failed");
+      expect(latest?.gaps).toEqual([]);
+      await mount(flowInput(fs, [testRun("npm test", "failed")], { visible: false }));
+      expect(latest?.testRun).toBeUndefined();
+      expect(latest?.ship).toBeUndefined();
+      expect(latest?.gaps).toEqual([]);
     });
 
     it("keeps the same flow array while a poll finds nothing new", async () => {
       const { fs } = fakeFs(flowWorkspace());
       await mount(flowInput(fs));
       const first = latest?.flow;
-      expect(first?.length).toBe(4);
+      expect(first?.length).toBe(5);
       await advance(3_000);
       await advance(3_000);
       expect(latest?.flow).toBe(first);

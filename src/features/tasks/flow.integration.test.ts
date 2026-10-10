@@ -147,6 +147,8 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
       { label: "Build", glyph: "running", detail: "4 of 8, 2 subagents working", current: true, button: false },
       // Tests passed 5m ago (npm test ended NOW - 5m); the piped run and the commit are older/ignored.
       { label: "Check", glyph: "not started", detail: "tests passed 5m ago", current: false, button: false },
+      // Four tasks and the final review are still open.
+      { label: "Ship", glyph: "review found issues", detail: "2 left", current: false, button: false },
     ]);
     expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(container.textContent).toContain("4 of 8 tasks · 5 left");
@@ -159,7 +161,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
   it("(a) Spec and Plan open their files through the callback with the repo-relative path", async () => {
     await render(MID_RUN, transcript(npmTestPassed()));
     const phases = strip();
-    expect(phases.map((p) => [p.label, p.button])).toEqual([["Spec", true], ["Plan", true], ["Build", false], ["Check", false]]);
+    expect(phases.map((p) => [p.label, p.button])).toEqual([["Spec", true], ["Plan", true], ["Build", false], ["Check", false], ["Ship", false]]);
     expect(stripButton("Spec")?.getAttribute("title")).toBe(SPEC_PATH);
     click(stripButton("Spec"));
     click(stripButton("Plan"));
@@ -201,21 +203,23 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
     expect(strip()).toEqual(withCancelled);
   });
 
-  it("(e) a finished plan with the final review done and no test run: Check done on the review alone, nothing current", async () => {
+  it("(e) a finished plan with the final review done and no test run: Check done on the review alone, Ship is current", async () => {
     await render(FINISHED, [userBlock("ship it"), unrelatedCommit(), shellBlock("git status", { startedAt: NOW - MIN, endedAt: NOW - MIN })]);
     expect(strip()).toEqual([
       { label: "Spec", glyph: "done", detail: "", current: false, button: true },
       { label: "Plan", glyph: "done", detail: "8 tasks", current: false, button: true },
       { label: "Build", glyph: "done", detail: "8 of 8", current: false, button: false },
       { label: "Check", glyph: "done", detail: "final review done", current: false, button: false },
+      // Every task and the final review are done, but no test run was found and a gap remains: Ship is what is next.
+      { label: "Ship", glyph: "review found issues", detail: "2 left", current: true, button: false },
     ]);
-    expect(container.querySelector("[aria-current]")).toBeNull();
+    expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
   });
 
   it("(f) a ledger with Spec: n/a shows no Spec phase", async () => {
     await render({ ...MID_RUN, transform: compose(MID_RUN.transform!, withSpecLine("Spec: n/a")) }, transcript(npmTestPassed()));
     const phases = strip();
-    expect(labels(phases)).toEqual(["Plan", "Build", "Check"]);
+    expect(labels(phases)).toEqual(["Plan", "Build", "Check", "Ship"]);
     expect(board?.plan?.specPath).toBeUndefined();
     // The rest of the flow is unaffected.
     expect(phaseOf(phases, "Plan")?.detail).toBe("8 tasks");
@@ -226,7 +230,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
     const options = { ...MID_RUN, transform: compose(MID_RUN.transform!, withSpecLine("Spec: ../../etc/passwd.md")) };
     await render(options, transcript(npmTestPassed()));
     const phases = strip();
-    expect(labels(phases)).toEqual(["Spec", "Plan", "Build", "Check"]);
+    expect(labels(phases)).toEqual(["Spec", "Plan", "Build", "Check", "Ship"]);
     expect(phaseOf(phases, "Spec")).toMatchObject({ glyph: "done", button: false });
     // The safe Plan next to it still opens.
     expect(phases.filter((p) => p.button).map((p) => p.label)).toEqual(["Plan"]);
@@ -242,7 +246,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
   it("(g) a path that is not even a document is dropped by the ledger: no Spec phase, nothing to open", async () => {
     const options = { ...MID_RUN, transform: compose(MID_RUN.transform!, withSpecLine("Spec: ../../etc/passwd")) };
     await render(options, transcript(npmTestPassed()));
-    expect(labels(strip())).toEqual(["Plan", "Build", "Check"]);
+    expect(labels(strip())).toEqual(["Plan", "Build", "Check", "Ship"]);
     click(stripButton("Plan"));
     expect(onOpenFile.mock.calls).toEqual([[PLAN_PATH]]);
   });
@@ -254,7 +258,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
     };
     await render(options, transcript(npmTestPassed()));
     const phases = strip();
-    expect(labels(phases)).toEqual(["Spec", "Plan", "Build", "Check"]);
+    expect(labels(phases)).toEqual(["Spec", "Plan", "Build", "Check", "Ship"]);
     expect(phases.filter((p) => p.button).map((p) => p.label)).toEqual(["Spec"]);
     expect(container.textContent).not.toContain("Open plan");
   });
@@ -304,7 +308,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
       await act(async () =>
         root.render(createElement(TaskBoardView, { projectCwd: CWD, session: sessionWith(transcript()), sessions: [], onOpenPlan: onOpenFile })),
       );
-      expect(labels(strip())).toEqual(["Spec", "Plan", "Build", "Check"]);
+      expect(labels(strip())).toEqual(["Spec", "Plan", "Build", "Check", "Ship"]);
       expect(stripButton("Spec")).toBeUndefined();
       click(stripButton("Plan"));
       expect(onOpenFile.mock.calls).toEqual([[`${CWD}/${PLAN_PATH}`]]);
@@ -333,7 +337,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
 
     // The only test run is the oldest block: the scan walked every newer one to find it.
     expect(phaseOf(strip(), "Check")?.detail).toBe("tests passed 5m ago");
-    expect(board?.flow.map((p) => p.id)).toEqual(["spec", "plan", "build", "check"]);
+    expect(board?.flow.map((p) => p.id)).toEqual(["spec", "plan", "build", "check", "ship"]);
     expect(elapsed).toBeLessThan(1000);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Block } from "../../sessions/model/session";
 import { deriveFlow, type FlowInput, type FlowPhase } from "./flow";
 import type { BoardNode, BoardSection, BoardStatus } from "./taskBoard";
+import type { Ship } from "./ship";
 
 const NOW = 1_700_000_000_000;
 const MIN = 60_000;

@@ -1,14 +1,15 @@
 import type { Block } from "../../sessions/model/session";
 import { formatDuration } from "./duration";
 import { isSafePlanPath } from "./planRoot";
+import type { Ship } from "./ship";
 import type { BoardSection, BoardStatus } from "./taskBoard";
 import { lastTestRun, type TestRun } from "./testRuns";
 
-export type FlowPhaseId = "spec" | "plan" | "build" | "check";
+export type FlowPhaseId = "spec" | "plan" | "build" | "check" | "ship";
 
 export type FlowPhase = {
   id: FlowPhaseId;
-  /** "Spec", "Plan", "Build", "Check". */
+  /** "Spec", "Plan", "Build", "Check", "Ship". */
   label: string;
   /** The board vocabulary, so a phase renders with the same glyphs as a task. */
   status: BoardStatus;
@@ -25,6 +26,8 @@ export type FlowInput = {
   /** Subagents working right now (the transcript's and the plan's own). */
   subagentsRunning: number;
   now: number;
+  /** Ship readiness; the Ship phase is left out without it. */
+  ship?: Ship;
   /**
    * Where the plan files live. A spec or plan path that is unsafe to open (`..`, a URL, `~`,
    * or absolute outside this root) is dropped, so its phase renders as plain text.
@@ -90,11 +93,22 @@ function checkStatus(run: TestRun | undefined, final: BoardStatus | undefined): 
 }
 
 /**
- * Where the superpowers flow stands: spec, plan, build, check. A phase appears only with
+ * failed (the tests failed) > done (ready) > pending (nothing started) > attention.
+ * Pending is a fact: no task has begun, so there is nothing to ship yet.
+ */
+function shipStatus(plan: BoardSection, ship: Ship): BoardStatus {
+  if (ship.items.some((i) => i.id === "tests" && i.met === false)) return "failed";
+  if (ship.ready) return "done";
+  const started = plan.done > 0 || plan.nodes.some((n) => n.status !== "pending") || plan.finalReview !== undefined;
+  return started ? "attention" : "pending";
+}
+
+/**
+ * Where the superpowers flow stands: spec, plan, build, check, ship. A phase appears only with
  * evidence on disk or in the transcript, so there is no "unknown" state: with no `Spec:`
  * line in the ledger there is no Spec phase. Pure: `now` is the only clock.
  */
-export function deriveFlow({ plan, blocks, subagentsRunning, now, planRoot }: FlowInput): FlowPhase[] {
+export function deriveFlow({ plan, blocks, subagentsRunning, now, planRoot, ship }: FlowInput): FlowPhase[] {
   const phases: FlowPhase[] = [];
   const openable = (path: string | undefined) =>
     path !== undefined && isSafePlanPath(planRoot, path) ? { path } : {};
@@ -122,5 +136,13 @@ export function deriveFlow({ plan, blocks, subagentsRunning, now, planRoot }: Fl
     status: checkStatus(run, final),
     ...(detail ? { detail } : {}),
   });
+  if (ship && plan.total > 0) {
+    phases.push({
+      id: "ship",
+      label: "Ship",
+      status: shipStatus(plan, ship),
+      detail: ship.ready ? "ready" : `${ship.left} left`,
+    });
+  }
   return phases;
 }
