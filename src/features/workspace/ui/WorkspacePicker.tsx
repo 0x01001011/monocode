@@ -142,7 +142,8 @@ export function WorkspaceIdentity({ worktree }: { worktree: boolean }) {
       className="-ml-1.5 flex h-6 min-w-0 shrink-0 items-center gap-1.5 px-1.5 text-[12px] text-muted"
     >
       <Icon className="size-3.5 shrink-0" />
-      <span className="truncate">{label}</span>
+      {/* Narrow composer rows hide the label (`composer-head` query). */}
+      <span className="workspace-label truncate">{label}</span>
     </div>
   );
 }

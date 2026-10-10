@@ -357,6 +357,7 @@ function RowMenu({
       width={184}
       constrainHeight={false}
       role="menu"
+      data-pr-row-menu=""
       aria-label={`Actions for PR ${entry.snapshot.number}`}
       onDismiss={(reason) => onClose(reason === "escape")}
       onKeyDown={onKeyDown}
