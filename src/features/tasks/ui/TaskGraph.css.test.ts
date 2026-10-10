@@ -38,6 +38,8 @@ describe("TaskGraph classes", () => {
       "group-has-[[data-actions]:focus-within]/row:hidden",
       "@max-[300px]:hidden",
       "@max-[340px]:hidden",
+      "@max-[360px]:gap-1",
+      "@min-[300px]:min-w-26",
       "@container",
     ];
     const missing = needed.filter((cls) => !css.includes(`.${escape(cls)}`));

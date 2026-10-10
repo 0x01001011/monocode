@@ -415,6 +415,16 @@ describe("TaskGraph", () => {
     expect(item("a").querySelector("[title='a']")?.className).toContain("min-w-16");
   });
 
+  it("keeps an idle title at 104 px from a 300 px tree, with tighter gaps under 360 px", () => {
+    const rows = [row({ id: "a", shas: ["abc1234"], refs: [{ text: "1 deferred", tone: "warn" }, { text: "review clean", tone: "ok" }] })];
+    render({ graph: { rows, width: 1, counts: { all: 1, left: 1, problems: 1 } } });
+    const title = item("a").querySelector<HTMLElement>("[title='a']")!;
+    // The floor is idle-only: hover and focus inside the actions still drop it to 0.
+    expect(title.className).toContain("@min-[300px]:min-w-26");
+    expect(title.className).toContain("group-hover/row:min-w-0");
+    expect(title.parentElement!.className).toContain("@max-[360px]:gap-1");
+  });
+
   it("draws a review stage hollow and an implement stage solid", () => {
     render({ graph: graphOf(fixture(), ["task-1", "task-2"]) });
     const node = (id: string) => item(id).querySelector("[data-node]")!.getAttribute("class") ?? "";

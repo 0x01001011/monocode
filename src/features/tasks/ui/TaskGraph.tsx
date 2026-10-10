@@ -67,9 +67,14 @@ const ACTIONS =
   "group-has-[[data-actions]:focus-within]/row:max-w-none " +
   "group-has-[[data-actions]:focus-within]/row:opacity-100";
 
-// Under a 300 px tree the row's gaps tighten and the meta keeps only its step count ("2/5", not
-// "2/5 · 30m"), so the NOW pill, refs and meta fit beside a 64 px title with four lanes drawn.
-const NARROW_GAP = "gap-2 @max-[300px]:gap-1";
+// Under a 360 px tree the row's gaps tighten, so a 104 px title still leaves the refs room.
+// Under 300 px the meta keeps only its step count ("2/5", not "2/5 · 30m"), so the NOW pill,
+// refs and meta fit beside a 64 px title with four lanes drawn.
+const NARROW_GAP = "gap-2 @max-[360px]:gap-1";
+// The title's floor while the row is idle: refs and meta truncate before the title goes under it.
+// The title's flex basis is 0, so without a floor the refs keep their full width and the title
+// gets only what is left (64 px beside two refs at 340 px).
+const TITLE_FLOOR = "min-w-16 @min-[300px]:min-w-26";
 // The meta yields last: refs shrink first, and only then does it truncate (never clipped silently).
 const META = "min-w-0 shrink-[0.001] truncate";
 const metaHead = (meta: string) => meta.split(" · ")[0];
@@ -338,9 +343,10 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
               ) : null}
               <span
                 title={row.title}
-                // At least 64 px of title beside the refs; it may give that up only while the actions show.
-                // Ship's title is one word: it keeps only its own width, so the verdict beside it fits.
-                className={`${row.kind === "ship" ? "min-w-max" : "min-w-16"} flex-1 ${actions.length > 0 ? TITLE_YIELDS : ""} ${
+                // At least 104 px of title beside the refs (64 px under a 300 px tree); it may give that
+                // up only while the actions show. Ship's title is one word: it keeps only its own
+                // width, so the verdict beside it fits.
+                className={`${row.kind === "ship" ? "min-w-max" : TITLE_FLOOR} flex-1 ${actions.length > 0 ? TITLE_YIELDS : ""} ${
                   isStep ? "line-clamp-2 leading-4 break-words" : "truncate"
                 } ${titleTone}`}
               >
