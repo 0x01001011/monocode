@@ -17,6 +17,8 @@ const T0 = 1_700_000_000_000;
 const board: TaskBoard = {
   sections: [],
   statusCard: { kind: "idle", headline: "", actions: [] },
+  flow: [],
+  gaps: [],
   workspaces: [],
   selectWorkspace: () => {},
   loading: false,

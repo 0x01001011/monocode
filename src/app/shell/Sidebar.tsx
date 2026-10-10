@@ -58,7 +58,8 @@ import { confirmNative, reportError } from "../../shared/lib/confirm";
 import { useSidebarTasks } from "../../features/tasks/hooks/useSidebarTasks";
 import { useTaskAlerts } from "../../features/tasks/hooks/useTaskAlerts";
 import { tabBadge, type StatusAction, type StatusCard } from "../../features/tasks/model/statusCard";
-import type { BoardNode, BoardSection } from "../../features/tasks/model/taskBoard";
+import type { BoardNode, BoardNote, BoardSection } from "../../features/tasks/model/taskBoard";
+import { planFilePath, planRootFor } from "../../features/tasks/model/planRoot";
 import { TasksPanelLive } from "../../features/tasks/ui/TasksPanelLive";
 import { TasksTabBadge, tasksTabLabel } from "../../features/tasks/ui/TasksTabBadge";
 import { formatInteger } from "../../shared/lib/numbers";
@@ -265,8 +266,9 @@ type Props = {
   /** Every loaded session, so the Tasks card judges activity from their blocks. */
   loadedSessions?: readonly Session[];
   onTasksAction?: (action: StatusAction, card: StatusCard) => void;
-  onOpenTasksTab?: () => void;
   onOpenTaskNode?: (node: BoardNode, section: BoardSection) => void;
+  /** "Change this" on a decision the agent made for the plan. */
+  onChangeTaskDecision?: (note: BoardNote) => void;
   /** Open tabs, including blank ones not yet in history. */
   openSessions?: readonly SessionSummary[];
   status: "idle" | "error";
@@ -379,8 +381,8 @@ function SidebarComponent({
   activeSession,
   loadedSessions,
   onTasksAction,
-  onOpenTasksTab,
   onOpenTaskNode,
+  onChangeTaskDecision,
   openSessions = [],
   status,
   pending,
@@ -2177,7 +2179,13 @@ function SidebarComponent({
               running={tasks.running}
               onAction={onTasksAction}
               onOpenNode={onOpenTaskNode}
-              onOpenAsTab={onOpenTasksTab}
+              onChangeDecision={onChangeTaskDecision}
+              onCopy={copyText}
+              onOpenFile={(path) => {
+                // A ledger path that leaves the plan root is not opened.
+                const file = planFilePath(planRootFor(cwd, activeSession), path);
+                if (file !== undefined) onOpenFile(file, undefined, { exact: true });
+              }}
             />
           </div>
         ) : null}

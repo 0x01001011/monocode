@@ -3,6 +3,8 @@ import { StrictMode, act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block, Session } from "../../sessions/model/session";
+import { CWD, PLAN_PATH, fixtureFs, ledgerUpTo } from "../flow.integration.fixtures";
+import { planOverview } from "../model/overview";
 import type { SddFs } from "../model/sddWorkspace";
 import * as sections from "../model/sections";
 import { clearSnoozes, snoozeSession } from "../model/taskSnooze";
@@ -195,16 +197,6 @@ describe("useTaskBoard", () => {
     expect(latest?.loaded).toBe(false);
     await mount(base(fs, { visible: false }));
     expect(latest?.loaded).toBe(false);
-  });
-
-  it("a board that does not need its status while hidden never polls hidden, even with busy sessions", async () => {
-    const { fs, loads } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
-    const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
-    await mount(base(fs, { visible: false, sessions: busy, needsStatusWhenHidden: false }));
-    await advance(60_000);
-    expect(loads()).toBe(0);
-    await mount(base(fs, { visible: true, sessions: busy, needsStatusWhenHidden: false }));
-    expect(loads()).toBe(1);
   });
 
   it("stops polling when the panel is hidden and nothing is busy", async () => {
@@ -494,6 +486,240 @@ describe("useTaskBoard", () => {
       expect(latest?.statusCard.kind).not.toBe("quiet");
       await mount(quietInput(fs, { now: () => NOW + 10 * MIN + 1 }));
       expect(latest?.statusCard.kind).toBe("quiet");
+    });
+  });
+  describe("flow", () => {
+    const NOW = 1_700_000_000_000;
+    const MIN = 60_000;
+    const FLOW_LEDGER = (task1: string) =>
+      `# SDD ledger — plan: docs/plan.md\nSpec: docs/spec.md (+ prototypes/x.html)\nTask 1: ${task1}\n`;
+    const flowWorkspace = (task1 = "implemented (abc1234); review: spec ✅"): Tree => ({
+      ...workspace("2026-10-05-plan", "A", 9_000),
+      [`${ROOT}/2026-10-05-plan/progress.md`]: { text: FLOW_LEDGER(task1), mtimeMs: 9_000 },
+    });
+    const runningAgent = (id: string, status = "in_progress"): Block => ({
+      id,
+      role: "tool",
+      text: id,
+      tool: { kind: "agent", title: "Agent", status },
+      agentRun: { name: id, steps: [] },
+    });
+    const testRun = (command: string, status = "completed"): Block => ({
+      id: `run-${command}-${status}`,
+      role: "tool",
+      text: "",
+      tool: { kind: "execute", title: command, status },
+      toolStartedAt: NOW - 5 * MIN,
+      ...(status === "completed" || status === "failed" ? { toolEndedAt: NOW - 4 * MIN } : {}),
+    });
+    const flowInput = (fs: SddFs, blocks: Block[] = [], over: Partial<Input> = {}) =>
+      base(fs, { now: () => NOW, activeSession: session("s", blocks), ...over });
+
+    it("is empty without a plan", async () => {
+      const { fs } = fakeFs({});
+      await mount(flowInput(fs));
+      expect(latest?.flow).toEqual([]);
+    });
+
+    it("derives spec, plan, build, check and ship from the ledger", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs));
+      expect(latest?.flow.map((p) => [p.id, p.status, p.detail, p.path])).toEqual([
+        ["spec", "done", undefined, "docs/spec.md"],
+        ["plan", "done", "1 task", "docs/plan.md"],
+        ["build", "running", "0 of 1", undefined],
+        ["check", "pending", undefined, undefined],
+        ["ship", "attention", "3 left", undefined],
+      ]);
+    });
+
+    it("drops a ledger path that climbs out of the plan root", async () => {
+      const { fs } = fakeFs({
+        ...workspace("2026-10-05-plan", "A", 9_000),
+        [`${ROOT}/2026-10-05-plan/progress.md`]: {
+          text: "# SDD ledger — plan: ../../plan.md\nSpec: ../spec.md\nTask 1: implemented (abc1234); review: ok\n",
+          mtimeMs: 9_000,
+        },
+      });
+      await mount(flowInput(fs));
+      expect(latest?.flow.map((p) => [p.id, p.path])).toEqual([
+        ["spec", undefined],
+        ["plan", undefined],
+        ["build", undefined],
+        ["check", undefined],
+        ["ship", undefined],
+      ]);
+    });
+
+    it("has no Spec phase when the ledger names no spec", async () => {
+      const { fs } = fakeFs(workspace("2026-10-05-plan", "A", 9_000));
+      await mount(flowInput(fs));
+      expect(latest?.flow.map((p) => p.id)).toEqual(["plan", "build", "check", "ship"]);
+    });
+
+    it("reads the last test run from the active session", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs, [testRun("npm test", "failed")]));
+      expect(latest?.flow.find((p) => p.id === "check")).toMatchObject({
+        status: "failed",
+        detail: "tests failed 4m ago",
+      });
+    });
+
+    it("counts the transcript's running subagents", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      const blocks = [runningAgent("explorer"), runningAgent("searcher"), runningAgent("finished", "completed")];
+      await mount(flowInput(fs, blocks));
+      expect(latest?.flow.find((p) => p.id === "build")?.detail).toBe("0 of 1, 2 subagents working");
+    });
+
+    it("counts the plan's own running stages, and an agent that is also a stage only once", async () => {
+      const { fs } = fakeFs(flowWorkspace("implemented (abc1234); review pending"));
+      const stageAgent = runningAgent("reviewer");
+      stageAgent.text = "Review .superpowers/sdd/2026-10-05-plan/task-1-brief.md";
+      await mount(flowInput(fs, [stageAgent, runningAgent("explorer")]));
+      expect(latest?.plan?.nodes[0]?.stages?.filter((st) => st.status === "running")).toHaveLength(1);
+      expect(latest?.flow.find((p) => p.id === "build")?.detail).toBe("0 of 1, 2 subagents working");
+    });
+
+    it("does not count the final review's stages: Check already says it is running", async () => {
+      const ledger =
+        "# SDD ledger — plan: docs/plan.md\nTask 1: implemented (abc1234); review pending\nFINAL REVIEW: Ready to merge with fixes\nFinal fix wave: dispatched\n";
+      const { fs } = fakeFs({
+        ...workspace("2026-10-05-plan", "A", 9_000),
+        [`${ROOT}/2026-10-05-plan/progress.md`]: { text: ledger, mtimeMs: 9_000 },
+      });
+      await mount(flowInput(fs));
+      expect(latest?.plan?.finalReview?.stages?.filter((st) => st.status === "running")).toHaveLength(1);
+      const flow = latest?.flow;
+      expect(flow?.find((p) => p.id === "build")?.detail).toBe("0 of 1, 1 subagent working");
+      expect(flow?.find((p) => p.id === "check")).toMatchObject({ status: "running", detail: "final review running" });
+    });
+
+    it("is empty while hidden, and fills in when shown", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      const busy = [{ id: "s", title: "s", busy: true, needsInput: false }];
+      await mount(flowInput(fs, [], { visible: false, sessions: busy }));
+      expect(latest?.flow).toEqual([]);
+      await mount(flowInput(fs, [], { visible: true, sessions: busy }));
+      expect(latest?.flow.length).toBe(5);
+    });
+
+    it("exposes the test run, ship readiness and gaps, and nothing while hidden", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs, [testRun("npm test", "failed")]));
+      expect(latest?.testRun).toMatchObject({ status: "failed", command: "npm test" });
+      expect(latest?.ship?.items.find((i) => i.id === "tests")).toMatchObject({ met: false, text: "tests failed" });
+      expect(latest?.flow.find((p) => p.id === "ship")?.status).toBe("failed");
+      expect(latest?.gaps).toEqual([]);
+      await mount(flowInput(fs, [testRun("npm test", "failed")], { visible: false }));
+      expect(latest?.testRun).toBeUndefined();
+      expect(latest?.ship).toBeUndefined();
+      expect(latest?.gaps).toEqual([]);
+    });
+
+    it("keeps the same flow array while a poll finds nothing new", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs));
+      const first = latest?.flow;
+      expect(first?.length).toBe(5);
+      await advance(3_000);
+      await advance(3_000);
+      expect(latest?.flow).toBe(first);
+    });
+
+    it("updates when a test run lands", async () => {
+      const { fs } = fakeFs(flowWorkspace());
+      await mount(flowInput(fs));
+      const before = latest?.flow;
+      await mount(flowInput(fs, [testRun("cargo test")]));
+      expect(latest?.flow).not.toBe(before);
+      expect(latest?.flow.find((p) => p.id === "check")?.detail).toBe("tests passed 4m ago");
+    });
+  });
+
+  describe("plan file", () => {
+    const planTask = (n: number, ...steps: string[]) => `### Task ${n}: Plan title ${n}\n\n${steps.join("\n")}\n`;
+    /** Ten tasks of three steps; the fixture has briefs for only eight. Task 7 has one step ticked. */
+    const planText = [
+      "# Skills index plan",
+      ...Array.from({ length: 10 }, (_, i) =>
+        planTask(i + 1, `- [${i === 6 ? "x" : " "}] **Step 1: first**`, "- [ ] second", "- [ ] third"),
+      ),
+    ].join("\n");
+    /** The real skills-index workspace, plus the plan file the ledger names at `<root>/<plan>`. */
+    const withPlanFile = (text: string | undefined): SddFs => {
+      const real = fixtureFs({ transform: ledgerUpTo("Task 6: complete") });
+      return {
+        ...real,
+        async readText(path) {
+          if (path === `${CWD}/${PLAN_PATH}`) {
+            if (text === undefined) throw new Error(`ENOENT ${path}`);
+            return text;
+          }
+          return real.readText(path);
+        },
+      };
+    };
+
+    it("lists the plan's tasks beyond the briefs as pending, with their steps and totals", async () => {
+      await mount(base(withPlanFile(planText), { projectCwd: CWD }));
+      const plan = latest?.plan;
+      expect(plan?.total).toBe(10);
+      expect(plan?.done).toBe(6);
+      expect(plan?.nodes).toHaveLength(10);
+      expect(plan?.nodes.slice(6, 8).map((n) => n.status)).toEqual(["running", "pending"]);
+      const extras = plan!.nodes.slice(8);
+      expect(extras.map((n) => [n.id, n.status, n.title])).toEqual([
+        ["task-9", "pending", "Plan title 9"],
+        ["task-10", "pending", "Plan title 10"],
+      ]);
+      for (const extra of extras) {
+        expect(extra.steps).toEqual([
+          { text: "first", done: false, ticked: false },
+          { text: "second", done: false, ticked: false },
+          { text: "third", done: false, ticked: false },
+        ]);
+        expect(extra.stages).toBeUndefined();
+        expect(extra.target).toBeUndefined();
+      }
+      // The running task's own brief title wins; its tick comes from the plan file.
+      expect(plan?.nodes[6]?.steps?.[0]).toEqual({ text: "first", done: true, ticked: true });
+      // 6 done tasks x 3 steps, plus task 7's one tick, over 10 x 3 steps.
+      expect(plan?.steps).toEqual({ done: 19, total: 30 });
+      expect(planOverview(plan!)).toMatchObject({ left: 5, steps: { done: 19, total: 30 }, current: { label: "Task 7" } });
+    });
+
+    it("does not call the plan finished while its later tasks are pending", async () => {
+      const real = fixtureFs({
+        transform: (name, text) =>
+          name === "progress.md" ? `${text}\nTask 8: complete (commits fd0b3b3..abc1234, review clean)\n` : text,
+      });
+      const fs: SddFs = { ...real, readText: async (path) => (path === `${CWD}/${PLAN_PATH}` ? planText : real.readText(path)) };
+      await mount(base(fs, { projectCwd: CWD, sessions: [{ id: "s", title: "s", busy: false, needsInput: false }] }));
+      expect(latest?.plan).toMatchObject({ done: 8, total: 10 });
+      expect(latest?.statusCard.kind).not.toBe("done");
+      expect(latest?.statusCard.headline).not.toMatch(/finished/i);
+      expect(latest?.flow.map((p) => [p.id, p.status, p.detail])).toContainEqual(["build", "running", "8 of 10"]);
+      expect(latest?.flow.find((p) => p.id === "plan")?.detail).toBe("10 tasks");
+    });
+
+    it("shows the briefs' tasks and no step totals when the plan file is missing", async () => {
+      await mount(base(withPlanFile(undefined), { projectCwd: CWD }));
+      expect(latest?.plan?.total).toBe(8);
+      expect(latest?.plan?.nodes).toHaveLength(8);
+      expect(latest?.plan?.steps).toBeUndefined();
+    });
+
+    it("picks up a step ticked between polls", async () => {
+      let text = planText;
+      const real = withPlanFile(planText);
+      const fs: SddFs = { ...real, readText: async (path) => (path === `${CWD}/${PLAN_PATH}` ? text : real.readText(path)) };
+      await mount(base(fs, { projectCwd: CWD }));
+      expect(latest?.plan?.steps).toEqual({ done: 19, total: 30 });
+      text = text.replace(/(### Task 9:.*\n\n)- \[ \]/, "$1- [x]");
+      await advance(3_000);
+      expect(latest?.plan?.steps?.done).toBe(20);
     });
   });
 });

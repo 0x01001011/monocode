@@ -112,7 +112,8 @@ function currentNode(plan?: BoardSection): BoardNode | undefined {
   return final && (final.status === "running" || final.status === "attention") ? final : undefined;
 }
 
-function strugglingNode(plan?: BoardSection): BoardNode | undefined {
+/** The task the reviewer keeps sending back (attention from fix round 3), the worst first. */
+export function strugglingNode(plan?: BoardSection): BoardNode | undefined {
   let worst: BoardNode | undefined;
   for (const n of plan?.nodes ?? []) {
     if (n.status !== "attention" || (n.fixRounds ?? 0) < STRUGGLING_FROM_ROUND) continue;
@@ -262,7 +263,7 @@ function core(input: StatusCardInput): StatusCard {
   return { kind: "idle", headline: "", actions: [] };
 }
 
-/** One card for the sidebar and the full tab, covering every session in the project. */
+/** One card for the sidebar, covering every session in the project. */
 export function deriveStatusCard(input: StatusCardInput): StatusCard {
   const base = core(input);
   const title = input.sessions.find((s) => s.id === base.sessionId)?.title;

@@ -22,9 +22,9 @@ const PRIMARY: ReadonlySet<StatusAction> = new Set(["answer-in-session"]);
 const SOLID: ReadonlySet<StatusAction> = new Set(["see-issues", "open-reviewer"]);
 
 const TONE: Record<StatusKind, string> = {
-  "needs-you": "bg-diff-del/14",
-  struggling: "bg-skill/12",
-  quiet: "bg-skill/12",
+  "needs-you": "bg-danger/14",
+  struggling: "bg-warning/12",
+  quiet: "bg-warning/12",
   running: "bg-selection-subtle",
   done: "bg-selection-subtle",
   idle: "",
@@ -37,8 +37,9 @@ const GLYPH: Partial<Record<StatusKind, GlyphKind>> = {
   done: "done",
 };
 
-const BUTTON =
-  "min-h-6 rounded-[7px] px-2.5 py-1 text-[11.5px] outline-none focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-accent";
+// The ring is chosen per button: the primary one is a solid red fill, where an inset blue ring would
+// vanish (about 1:1), so it draws the ring outside on the card instead.
+const BUTTON = "min-h-6 rounded-[7px] px-2.5 py-1 text-[11.5px]";
 
 export function actionLabel(action: StatusAction, card: StatusCardData): string {
   if (action === "answer-in-session" && card.sessionTitle) return `Answer in ${card.sessionTitle}`;
@@ -47,16 +48,16 @@ export function actionLabel(action: StatusAction, card: StatusCardData): string 
 
 function actionClass(action: StatusAction): string {
   // "Answer in <title>" carries a session title of any length: it wraps inside the card.
-  if (PRIMARY.has(action)) return `${BUTTON} max-w-full text-left break-words bg-diff-del font-semibold text-black/80`;
-  if (SOLID.has(action)) return `${BUTTON} whitespace-nowrap bg-selection text-content`;
-  return `${BUTTON} whitespace-nowrap text-content/66 hover:bg-selection-subtle`;
+  if (PRIMARY.has(action)) return `${BUTTON} max-w-full text-left break-words bg-danger font-semibold text-background-base focus-visible:focus-ring`;
+  if (SOLID.has(action)) return `${BUTTON} whitespace-nowrap bg-selection text-content focus-visible:focus-ring-inset`;
+  return `${BUTTON} whitespace-nowrap text-muted hover:bg-selection-subtle focus-visible:focus-ring-inset`;
 }
 
 // The card's dot is the only moving thing in the panel; reduced motion keeps it still.
 function RunningDot() {
   return (
     <span className="grid size-4 place-items-center rounded-full bg-accent/22">
-      <span className="size-1.5 rounded-full bg-accent motion-safe:animate-pulse" />
+      <span className="size-1.5 rounded-full bg-focus motion-safe:animate-pulse" />
     </span>
   );
 }
@@ -102,14 +103,14 @@ export function StatusCard({ card, onAction }: Props) {
               {card.headline}
             </div>
             {card.detail || (card.kind === "quiet" && card.since !== undefined) ? (
-              <div className="mt-0.5 text-[12.5px] leading-[1.4] text-content/66 tabular-nums">
+              <div className="mt-0.5 text-[12.5px] leading-[1.4] text-muted tabular-nums">
                 {[card.detail, card.kind === "quiet" && card.since !== undefined ? `Last activity at ${clockTime(card.since)}.` : undefined]
                   .filter(Boolean)
                   .join(" ")}
               </div>
             ) : null}
             {card.reassurance ? (
-              <div className="mt-0.5 flex items-center gap-1 text-[12.5px] leading-[1.4] text-diff-add">
+              <div className="mt-0.5 flex items-center gap-1 text-[12.5px] leading-[1.4] text-success">
                 <Check className="size-3" strokeWidth={2.5} aria-hidden="true" />
                 {card.reassurance}
               </div>
@@ -127,7 +128,7 @@ export function StatusCard({ card, onAction }: Props) {
         </div>
       </div>
       {others && othersGlyph ? (
-        <div className="mx-2 mb-1 flex min-h-6.5 items-center gap-2 rounded-md px-2 text-[12.5px] text-content/66">
+        <div className="mx-2 mb-1 flex min-h-6.5 items-center gap-2 rounded-md px-2 text-[12.5px] text-muted">
           <TaskGlyph kind={othersGlyph} small />
           <span className="min-w-0 flex-1 truncate">{others.text}</span>
         </div>

@@ -1,4 +1,7 @@
+import { MAX_PLAN_BYTES } from "./planFile";
+import { planFilePath } from "./planRoot";
 import type { SddSnapshot } from "./sddBoard";
+import { parseLedger } from "./sddLedger";
 
 export type SddFs = {
   listDir(path: string): Promise<{ name: string; path: string; isDir: boolean }[]>;
@@ -47,9 +50,36 @@ async function readOptional(fs: SddFs, path: string): Promise<string | undefined
   }
 }
 
+const WORKSPACE_DIR = /^(.*?)[\\/]\.superpowers[\\/]sdd[\\/][^\\/]+[\\/]*$/;
+
+/** The directory that holds `.superpowers/sdd/<slug>`: what the ledger's relative paths mean. */
+function planRootOf(workspaceDir: string): string | undefined {
+  const root = WORKSPACE_DIR.exec(workspaceDir)?.[1];
+  return root === undefined ? undefined : root || "/";
+}
+
 /**
- * Reads one workspace: `progress.md`, the briefs and reports, and the mtimes of
- * those files plus the review packages (whose contents are never read).
+ * The plan file the ledger names, read once. Undefined without a plan path, for a path
+ * outside the plan root, and on any failure or a file over 512 KB: the plan file only adds
+ * detail, so the board never depends on it.
+ */
+async function readPlanText(fs: SddFs, dir: string, ledgerText: string | undefined): Promise<string | undefined> {
+  try {
+    const planPath = parseLedger(ledgerText ?? "").planPath;
+    const root = planRootOf(dir);
+    if (!planPath || root === undefined) return undefined;
+    const path = planFilePath(root, planPath);
+    if (path === undefined) return undefined;
+    const text = await fs.readText(path);
+    return typeof text === "string" && text.length <= MAX_PLAN_BYTES ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Reads one workspace: `progress.md`, the briefs and reports, the plan file the ledger
+ * names, and the mtimes of those files plus the review packages (whose contents are never read).
  */
 export async function loadSddSnapshot(fs: SddFs, ref: SddWorkspaceRef): Promise<SddSnapshot> {
   const entries = (await fs.listDir(ref.dir)).filter((e) => !e.isDir);
@@ -59,8 +89,10 @@ export async function loadSddSnapshot(fs: SddFs, ref: SddWorkspaceRef): Promise<
   const ledgerFile = entries.find((e) => e.name === LEDGER);
   const statted = [...(ledgerFile ? [ledgerFile] : []), ...briefFiles, ...reportFiles, ...reviewFiles];
 
-  const [ledgerText, briefTexts, reportTexts, stats] = await Promise.all([
-    ledgerFile ? readOptional(fs, ledgerFile.path) : undefined,
+  const ledgerRead = ledgerFile ? readOptional(fs, ledgerFile.path) : Promise.resolve(undefined);
+  const [ledgerText, planText, briefTexts, reportTexts, stats] = await Promise.all([
+    ledgerRead,
+    ledgerRead.then((text) => readPlanText(fs, ref.dir, text)),
     Promise.all(briefFiles.map((f) => readOptional(fs, f.path))),
     Promise.all(reportFiles.map((f) => readOptional(fs, f.path))),
     statted.length ? fs.statMtimes(statted.map((f) => f.path)) : [],
@@ -86,6 +118,7 @@ export async function loadSddSnapshot(fs: SddFs, ref: SddWorkspaceRef): Promise<
     slug: ref.slug,
     dir: ref.dir,
     ledgerText: ledgerText ?? "",
+    ...(planText !== undefined ? { planText } : {}),
     briefs: collect(briefFiles, briefTexts, BRIEF),
     reports: collect(reportFiles, reportTexts, REPORT),
     mtimes,

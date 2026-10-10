@@ -55,6 +55,8 @@ function board(statusCard: StatusCard): TaskBoard {
   return {
     sections: [],
     statusCard,
+    flow: [],
+    gaps: [],
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,
@@ -123,6 +125,50 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+function boardWithFlow(flow: TaskBoard["flow"]): TaskBoard {
+  const plan = {
+    source: "sdd" as const,
+    id: "sdd:p",
+    title: "Plan P",
+    done: 0,
+    total: 1,
+    nodes: [{ id: "task-1", title: "Step", index: 1, status: "running" as const }],
+  };
+  return { ...board(RUNNING), sections: [plan], plan, flow };
+}
+
+describe("Sidebar Tasks tab flow strip", () => {
+  const strip = () => container.querySelector("ol[aria-label='Superpowers flow']")!;
+  const open = (name: string) =>
+    act(() => Array.from(strip().querySelectorAll("button")).find((b) => b.textContent?.trim() === name)!.click());
+
+  it("opens the spec and the plan inside the plan root as exact files", () => {
+    vi.mocked(useTaskBoard).mockReturnValue(
+      boardWithFlow([
+        { id: "spec", label: "Spec", status: "done", path: "docs/s.md" },
+        { id: "plan", label: "Plan", status: "done", path: "/workspace/project/docs/p.md" },
+      ]),
+    );
+    props = { ...props, tab: "tasks" };
+    render();
+    open("Spec");
+    open("Plan");
+    expect(props.onOpenFile).toHaveBeenNthCalledWith(1, "/workspace/project/docs/s.md", undefined, { exact: true });
+    expect(props.onOpenFile).toHaveBeenNthCalledWith(2, "/workspace/project/docs/p.md", undefined, { exact: true });
+  });
+
+  it.each(["../outside.md", "/etc/passwd.md", "https://example.com/s.md", "~/s.md"])(
+    "does not open %s",
+    (path) => {
+      vi.mocked(useTaskBoard).mockReturnValue(boardWithFlow([{ id: "spec", label: "Spec", status: "done", path }]));
+      props = { ...props, tab: "tasks" };
+      render();
+      open("Spec");
+      expect(props.onOpenFile).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("Sidebar Tasks tab", () => {

@@ -1,0 +1,433 @@
+import { useRef, useState, type KeyboardEvent, type MouseEvent, type ReactElement } from "react";
+import { Copy, ExternalLink } from "../../../shared/ui/icons";
+import type { Graph, GraphRow, RefTone } from "../model/graph";
+import type { BoardTarget } from "../model/taskBoard";
+import { GraphGutter } from "./GraphGutter";
+import { TaskGlyph, glyphForStatus, glyphLabel, type GlyphKind } from "./TaskGlyph";
+import { glyphFor } from "./TaskTree";
+import { useFocusKeptInTree, useTreeReveal, type TreeReveal } from "./treeFocus";
+
+type Props = {
+  graph: Graph;
+  label: string;
+  /** Asks the parent to open or close a row; the parent rebuilds the graph. */
+  onToggle: (id: string) => void;
+  onOpen: (row: GraphRow) => void;
+  onOpenCommit: (row: GraphRow, sha: string) => void;
+  onCopySha: (sha: string) => void;
+  /** Enter or a click on the Ship row: its checklist lives outside the tree, so the parent takes focus there. */
+  onShip?: () => void;
+  /** Enter or a click on an "N hidden" row: the parent shows every row again. */
+  onShowHidden?: (row: GraphRow) => void;
+  /** Panel-side request: a new `token` opens the way to row `id`, scrolls it into view and focuses it. */
+  reveal?: TreeReveal;
+  /** The rows the parent holds open. Without it a row reads open while its children show. */
+  expandedIds?: ReadonlySet<string>;
+};
+
+const MAX_REFS = 2;
+
+// Measured in the browser fixture (tests/browser/tasks-panel.spec.ts) over the tinted rows they sit
+// on: a /12 tint left light-theme warning text at 4.18:1 on a struggling row, and the NOW pill's
+// focus text on accent/22 at 3.74:1 on the running row. The solid accent pill (git `HEAD` style)
+// reads 5.79:1 on any row.
+const REF_TONE: Record<RefTone, string> = {
+  warn: "bg-warning/8 text-warning",
+  danger: "bg-danger/8 text-danger",
+  ok: "bg-success/8 text-success",
+  muted: "bg-content/8 text-muted",
+  now: "bg-accent text-accent-foreground",
+};
+const PILL = "rounded-full px-1.5 text-[11px] leading-4 whitespace-nowrap";
+const ICON_BUTTON =
+  "grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content focus-visible:focus-ring-inset";
+
+const TARGET_LABEL: Record<BoardTarget["kind"], string> = {
+  report: "Open report",
+  brief: "Open brief",
+  review: "Open review",
+  transcript: "Open transcript",
+  session: "Open session",
+  commit: "Open commit",
+};
+
+/** A child row id the graph is not showing yet: `<task>:stage:N`, `<task>:step:N` or `<task>:merge`. */
+const CHILD_ID = /^(.+):(?:stage:\d+|step:\d+|merge)$/;
+const STAGE_ID = /:stage:(\d+)$/;
+
+/**
+ * While the row is hovered or focus is inside its actions, the actions take the place of the
+ * meta, refs and NOW pill, so the title truncates instead of being covered. A focused row alone
+ * keeps its normal look (keyboard users have `o` and `c`).
+ */
+// Tailwind only builds class names it finds spelled out whole, so every variant below stays a
+// complete literal; never assemble a variant prefix with a template string.
+const GIVES_WAY = "group-hover/row:hidden group-has-[[data-actions]:focus-within]/row:hidden";
+const ACTIONS =
+  "pointer-events-none flex max-w-0 shrink-0 items-center gap-px overflow-hidden opacity-0 " +
+  "group-hover/row:pointer-events-auto group-hover/row:max-w-none group-hover/row:opacity-100 " +
+  "group-has-[[data-actions]:focus-within]/row:pointer-events-auto " +
+  "group-has-[[data-actions]:focus-within]/row:max-w-none " +
+  "group-has-[[data-actions]:focus-within]/row:opacity-100";
+
+// Narrow rows, idle (hover and focus inside the actions replace the pills and meta with the
+// actions). Refs and the NOW pill never truncate: a ref is the row's key state (fix round,
+// failed, no commit), so what does not fit is hidden whole, and every hidden part stays in the
+// row's accessible name. Measured in the browser fixture:
+// - Under 400 px only the first ref shows (the model orders them): at 400, two lanes, the widest
+//   pair ("2 deferred" + "fixed in 1 round") leaves a 106 px title.
+// - Under 360 px the row's gaps tighten.
+// - Under 300 px a row with a ref shows that ref alone: its NOW pill and meta hide. Glyph,
+//   number, 64 px of title, NOW and "fix 3 of 5" need 207 px; a 240 px tree with two lanes has
+//   190. The current task stays marked by its node and the `n` key. A row without refs keeps NOW
+//   and the meta's step count ("2/5", not "2/5 · 30m").
+// The meta never truncates mid-text either: it is its step count and its time ("3/4 · 32m"),
+// each shown whole or hidden whole, and the time goes first. Under 300 px every row drops the
+// time; under 400 px a row with a ref does too: NOW, "fix 3 of 5" and "3/4 · 32m" beside the
+// title's 104 px need a 385 px tree, while "3/4" alone leaves the title 122 px at 340.
+const NARROW_GAP = "gap-2 @max-[360px]:gap-1";
+// The title asks for 104 px (64 px under a 300 px tree) as its flex basis, not as a floor: once
+// the meta's time is gone the title truncates, so the shown pills and step count always fit
+// (four lanes at 240 px leave "fixed in 1 round" a 30 px title rather than pushing the ref out
+// of the row).
+const TITLE_ROOM = "min-w-0 grow basis-16 @min-[300px]:basis-26";
+// The meta and each of its parts keep their whole width.
+const WHOLE = "shrink-0 whitespace-nowrap";
+const metaHead = (meta: string) => meta.split(" · ")[0];
+const metaTail = (meta: string) => {
+  const rest = meta.split(" · ").slice(1);
+  return rest.length > 0 ? rest.join(" · ") : undefined;
+};
+
+const levelOf = (row: GraphRow) => (row.kind === "stage" || row.kind === "step" ? 2 : 1);
+
+function glyphOf(row: GraphRow): GlyphKind {
+  return row.node ? glyphFor(row.node) : glyphForStatus(row.status);
+}
+
+/** Ship reads as ready or not; "review found issues" is the wrong words for it. */
+function glyphText(row: GraphRow): string | undefined {
+  if (row.kind === "ship") return row.status === "done" ? "ready" : row.status === "pending" ? "not started" : "not ready";
+  if (row.kind === "step" && row.status === "pending") return "not ticked";
+  return undefined;
+}
+
+/** "Task 3, done, fixed in 1 round, 8m": title (with its number when the title lacks it), status, refs, meta. */
+function accessibleName(row: GraphRow, status: string | undefined): string {
+  const numbered = row.index !== undefined && !new RegExp(`^Task ${row.index}\\b`).test(row.title);
+  const parts = [numbered ? `Task ${row.index}, ${row.title}` : row.title];
+  if (status !== undefined) parts.push(status);
+  if (row.now) parts.push("now");
+  for (const ref of row.refs.slice(0, MAX_REFS)) parts.push(ref.text);
+  if (row.meta !== undefined) parts.push(row.meta);
+  return parts.join(", ");
+}
+
+const stop = (event: MouseEvent, run: () => void) => {
+  event.stopPropagation();
+  run();
+};
+
+export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopySha, onShip, onShowHidden, reveal, expandedIds }: Props) {
+  const { rows } = graph;
+  const [active, setActive] = useState<{ id: string; parentId?: string }>();
+  const items = useRef(new Map<string, HTMLElement>());
+
+  // One pass per render: lookups by id and each row's place among its siblings.
+  const byId = new Map<string, GraphRow>();
+  for (const row of rows) byId.set(row.id, row);
+  const hasChildren = new Set<string>();
+  const siblings = new Map<string | undefined, number>();
+  const position = new Map<string, number>();
+  for (const row of rows) {
+    const parent = row.parentId !== undefined && byId.has(row.parentId) ? row.parentId : undefined;
+    if (parent !== undefined) hasChildren.add(parent);
+    const n = (siblings.get(parent) ?? 0) + 1;
+    siblings.set(parent, n);
+    position.set(row.id, n);
+  }
+  const isOpen = (row: GraphRow) => row.expandable && (expandedIds ? expandedIds.has(row.id) : hasChildren.has(row.id));
+
+  let tabId = active?.id;
+  if (tabId !== undefined && !byId.has(tabId)) tabId = active?.parentId !== undefined && byId.has(active.parentId) ? active.parentId : undefined;
+  tabId ??= rows[0]?.id;
+
+  const setActiveId = (id: string) => setActive({ id, parentId: byId.get(id)?.parentId });
+  const focusRow = (row: GraphRow | undefined) => {
+    if (!row) return;
+    setActiveId(row.id);
+    items.current.get(row.id)?.focus();
+  };
+
+  const treeRef = useRef<HTMLUListElement>(null);
+  const keepFocus = useFocusKeptInTree(treeRef, items, tabId);
+  useTreeReveal({
+    reveal,
+    items,
+    setActiveId,
+    closedAncestors: (id) => {
+      if (byId.has(id)) return [];
+      const parent = byId.get(CHILD_ID.exec(id)?.[1] ?? "");
+      return parent?.expandable && !isOpen(parent) ? [parent.id] : undefined;
+    },
+    toggle: onToggle,
+  });
+
+  const onKeyDown = (event: KeyboardEvent<HTMLLIElement>, row: GraphRow, index: number) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    switch (event.key) {
+      case "ArrowDown":
+        focusRow(rows[Math.min(index + 1, rows.length - 1)]);
+        break;
+      case "ArrowUp":
+        focusRow(rows[Math.max(index - 1, 0)]);
+        break;
+      case "Home":
+        focusRow(rows[0]);
+        break;
+      case "End":
+        focusRow(rows[rows.length - 1]);
+        break;
+      case "ArrowRight":
+        if (!row.expandable) break;
+        if (!isOpen(row)) onToggle(row.id);
+        else focusRow(rows[index + 1]?.parentId === row.id ? rows[index + 1] : undefined);
+        break;
+      case "ArrowLeft":
+        if (row.expandable && isOpen(row)) onToggle(row.id);
+        else focusRow(row.parentId === undefined ? undefined : byId.get(row.parentId));
+        break;
+      case "Enter":
+        if (row.kind === "ship") onShip?.();
+        else if (row.kind === "hidden") onShowHidden?.(row);
+        else if (row.node?.target) onOpen(row);
+        else if (row.expandable) onToggle(row.id);
+        break;
+      // The letter keys only claim the event when they do something.
+      case "o":
+        if (!row.node?.target) return;
+        onOpen(row);
+        break;
+      case "c": {
+        const sha = row.shas[row.shas.length - 1];
+        if (sha === undefined) return;
+        onCopySha(sha);
+        break;
+      }
+      case "n": {
+        const now = rows.find((r) => r.now);
+        if (!now) return;
+        focusRow(now);
+        break;
+      }
+      default:
+        return;
+    }
+    event.preventDefault();
+  };
+
+  const shaLink = (row: GraphRow, sha: string, tabIndex: number, extra = "") => (
+    <button
+      key={`open-${sha}`}
+      type="button"
+      data-sha={sha}
+      tabIndex={tabIndex}
+      aria-label={`Open commit ${sha}`}
+      onClick={(e) => stop(e, () => onOpenCommit(row, sha))}
+      className={`min-h-6 shrink-0 rounded-md px-1 font-mono text-[11px] text-focus hover:underline focus-visible:focus-ring-inset ${extra}`}
+    >
+      {sha}
+    </button>
+  );
+  const copyButton = (sha: string, tabIndex: number, extra = "") => (
+    <button
+      key={`copy-${sha}`}
+      type="button"
+      tabIndex={tabIndex}
+      aria-label={`Copy ${sha}`}
+      title={`Copy ${sha}`}
+      onClick={(e) => stop(e, () => onCopySha(sha))}
+      className={`${ICON_BUTTON} ${extra}`}
+    >
+      <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+    </button>
+  );
+
+  const renderRow = (row: GraphRow, index: number): ReactElement => {
+    const hidden = row.kind === "hidden";
+    const isStep = row.kind === "step";
+    const isStage = row.kind === "stage";
+    const open = isOpen(row);
+    const glyph = glyphOf(row);
+    const statusText = hidden ? undefined : (glyphText(row) ?? glyphLabel(glyph));
+    const running = row.status === "running" && !isStep;
+    const titleTone = hidden
+      ? "text-muted"
+      : running
+        ? "font-semibold text-content"
+        : row.status === "pending"
+          ? "text-muted"
+          : "text-content/85";
+    // Ship's own actions arrive with its node; every other row offers its target and commits.
+    const target = row.kind === "ship" ? undefined : row.node?.target;
+    const actionTab = row.id === tabId ? 0 : -1;
+    const actions: ReactElement[] = [];
+    if (target) {
+      const name = TARGET_LABEL[target.kind];
+      actions.push(
+        <button
+          key="open"
+          type="button"
+          tabIndex={actionTab}
+          aria-label={name}
+          title={name}
+          onClick={(e) => stop(e, () => onOpen(row))}
+          className={ICON_BUTTON}
+        >
+          <ExternalLink className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+        </button>,
+      );
+    }
+    row.shas.forEach((sha, i) => {
+      // Below 340 px a range offers only its last commit, so the actions fit beside the title.
+      const narrow = i < row.shas.length - 1 ? "@max-[340px]:hidden" : "";
+      // A stage shows its commit links on the row itself; only the copy buttons wait for hover.
+      if (!isStage) actions.push(shaLink(row, sha, actionTab, narrow));
+      actions.push(copyButton(sha, actionTab, narrow));
+    });
+    const givesWay = actions.length > 0 ? GIVES_WAY : "";
+    const stageKind =
+      isStage && row.parentId !== undefined
+        ? byId.get(row.parentId)?.node?.stages?.[Number(STAGE_ID.exec(row.id)?.[1] ?? -1)]?.kind
+        : undefined;
+    const hollow = stageKind === "review" || stageKind === "final-review";
+    const above = rows[index - 1]?.cells;
+    const below = rows[index + 1]?.cells;
+    const onRowClick = () => {
+      if (row.kind === "ship") onShip?.();
+      else if (hidden) onShowHidden?.(row);
+      else if (row.expandable) onToggle(row.id);
+      else if (row.node) onOpen(row);
+    };
+    const pressable = row.expandable || row.node !== undefined || (row.kind === "ship" && onShip) || (hidden && onShowHidden);
+    const level = levelOf(row);
+    const parent = level === 2 && row.parentId !== undefined && byId.has(row.parentId) ? row.parentId : undefined;
+    return (
+      <li
+        key={row.id}
+        ref={(el) => {
+          if (el) items.current.set(row.id, el);
+          else items.current.delete(row.id);
+        }}
+        data-row-id={row.id}
+        role="treeitem"
+        aria-level={level}
+        aria-posinset={position.get(row.id)}
+        aria-setsize={siblings.get(parent)}
+        aria-expanded={row.expandable ? open : undefined}
+        aria-label={hidden ? row.title : accessibleName(row, statusText)}
+        tabIndex={row.id === tabId ? 0 : -1}
+        onKeyDown={(e) => onKeyDown(e, row, index)}
+        onFocus={(e) => {
+          if (e.target === e.currentTarget) setActiveId(row.id);
+        }}
+        // The li draws no ring itself; its row does, inset so the tab's scroll frame cannot clip it.
+        // A named group: an outer `group` (the sidebar has some) must not open every row's actions.
+        className="group/row list-none outline-none [&:focus-visible>[data-row]]:focus-ring-inset"
+      >
+        <div
+          data-row
+          onClick={onRowClick}
+          className={`mx-1 grid grid-rows-[1fr] rounded-md hover:bg-selection-subtle ${
+            level === 2 ? "motion-safe:transition-[grid-template-rows] motion-safe:duration-150 motion-safe:ease-out motion-safe:starting:grid-rows-[0fr]" : ""
+          } ${pressable ? "cursor-pointer" : ""} ${running ? "bg-accent/11" : glyph === "struggling" ? "bg-warning/4" : ""} ${
+            hidden ? "text-muted" : ""
+          }`}
+        >
+          <div className={`flex min-h-0 overflow-hidden pr-2 pl-1.5 text-[12.5px] ${NARROW_GAP}`}>
+            <GraphGutter
+              cells={row.cells}
+              status={row.status}
+              kind={row.kind}
+              now={row.now}
+              hollow={hollow}
+              above={above}
+              below={below}
+            />
+            <div className={`flex min-w-0 flex-1 ${NARROW_GAP} ${isStep ? "min-h-6 items-start py-1" : `items-center py-0.5 ${level === 2 ? "min-h-6" : "min-h-6.5"}`}`}>
+              {hidden ? null : (
+                <TaskGlyph kind={glyph} small={level === 2} label={glyphText(row)} />
+              )}
+              {row.index !== undefined ? (
+                <span className="w-3 shrink-0 text-right text-[11.5px] text-muted tabular-nums">{row.index}</span>
+              ) : null}
+              <span
+                title={row.title}
+                // Room for 104 px of title (64 px under a 300 px tree) before the meta, see TITLE_ROOM.
+                // Ship's title is one word: it keeps only its own width, so the verdict beside it fits.
+                className={`${row.kind === "ship" ? "min-w-max flex-1" : TITLE_ROOM} ${
+                  isStep ? "line-clamp-2 leading-4 break-words" : "truncate"
+                } ${titleTone}`}
+              >
+                {row.title}
+              </span>
+              {row.now ? (
+                <span data-now-pill className={`${PILL} shrink-0 font-semibold ${REF_TONE.now} ${row.refs.length > 0 ? "@max-[300px]:hidden" : ""} ${givesWay}`}>
+                  NOW
+                </span>
+              ) : null}
+              {row.refs.slice(0, MAX_REFS).map((ref, i) => (
+                <span
+                  key={`${ref.tone}:${ref.text}:${i}`}
+                  data-ref
+                  title={ref.text}
+                  // Never truncates: the title yields instead, and a narrow tab drops the second (see NARROW_GAP).
+                  className={`${PILL} shrink-0 ${REF_TONE[ref.tone]} ${i > 0 ? "@max-[400px]:hidden" : ""} ${givesWay}`}
+                >
+                  {ref.text}
+                </span>
+              ))}
+              {/* -my-0.5: the 24 px link overlaps the row's padding, so the stage row stays 24 px tall. */}
+              {isStage
+                ? row.shas.map((sha, i) => shaLink(row, sha, actionTab, `-my-0.5 ${i < row.shas.length - 1 ? "@max-[340px]:hidden" : ""}`))
+                : null}
+              {row.meta !== undefined ? (
+                <span
+                  data-meta
+                  title={row.meta}
+                  className={`${WHOLE} text-[11.5px] tabular-nums ${running ? "text-content" : "text-muted"} ${row.refs.length > 0 ? "@max-[300px]:hidden" : ""} ${givesWay}`}
+                >
+                  <span data-meta-steps className={WHOLE}>{metaHead(row.meta)}</span>
+                  {metaTail(row.meta) !== undefined ? (
+                    <span data-meta-time className={`${WHOLE} ${row.refs.length > 0 ? "@max-[400px]:hidden" : "@max-[300px]:hidden"}`}>
+                      {" · "}
+                      {metaTail(row.meta)}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+              {actions.length > 0 ? (
+                // In flow and zero-width until shown; the buttons stay focusable, so Tab from the
+                // focused row walks into them and focus inside opens them.
+                // A stage row is 24 px tall: its 24 px buttons overlap the row's padding (-my-0.5).
+                <span
+                  data-actions
+                  className={isStage ? `-my-0.5 ${ACTIONS}` : ACTIONS}
+                >
+                  {actions}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </li>
+    );
+  };
+
+  return (
+    <ul ref={treeRef} role="tree" aria-label={label} className="@container m-0 list-none p-0" {...keepFocus}>
+      {rows.map(renderRow)}
+    </ul>
+  );
+}

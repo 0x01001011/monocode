@@ -9,6 +9,7 @@ const ROOTS = [
   "src/features/workspace",
   "src/features/projects",
   "src/features/quick-composer",
+  "src/features/tasks",
 ];
 
 // The Windows close button keeps the platform's red.
@@ -35,7 +36,7 @@ function offenders(pattern: RegExp): string[] {
     );
 }
 
-describe("shared color tokens in shell, settings, workspace, projects and quick composer", () => {
+describe("shared color tokens in shell, settings, workspace, projects, quick composer and tasks", () => {
   it("uses text-muted instead of ink at 35-55% for informational text", () => {
     expect(offenders(/text-content\/(3[5-9]|4\d|5[0-5])(?![\d.])/)).toEqual([]);
   });

@@ -15,7 +15,6 @@ import {
   newEditorWorkspaceTab,
   newReleaseNotesWorkspaceTab,
   newSessionChangesTab,
-  newTaskBoardTab,
   newTab,
   newTerminalFile,
   splitPane,
@@ -330,38 +329,23 @@ describe("collectWorkspaceSnapshot", () => {
     expect(restored?.path).toBe("/tmp/a/src/lib.rs");
   });
 
-  it("task board tabs round-trip the snapshot", () => {
-    const file = newTaskBoardTab("/tmp/a", "session-a", "/tmp/project");
-    const tab = {
-      ...newTab("s1"),
-      id: "t1",
-      editorPanes: [{ id: "e1", files: [file], activeFileId: file.id }],
-    };
-    const snapshot = collectWorkspaceSnapshot(
-      [tab],
-      [],
-      "t1",
-      "/tmp/a",
-      new Map(),
-    );
-    const restored = hydrateWorkspaceSnapshot(snapshot, new Map())?.tabs[0]
-      ?.editorPanes[0]?.files[0];
-    expect(restored?.taskBoard).toEqual({ sessionId: "session-a" });
-    expect(restored?.review).toBeUndefined();
-    expect(restored?.path).toBe("/tmp/a");
-    expect(restored?.projectCwd).toBe("/tmp/project");
-  });
-
-  it("drops a task board tab with a malformed taskBoard", () => {
-    const file = newTaskBoardTab("/tmp/a", "session-a");
+  it("drops saved board tabs", () => {
+    const before = newFileTab("/tmp/a/before.ts", "/tmp/a");
+    const after = newFileTab("/tmp/a/after.ts", "/tmp/a");
+    // The full-pane Tasks board tab no longer exists, but older snapshots hold it.
+    const board = {
+      ...newFileTab("/tmp/a", "/tmp/a"),
+      id: "board",
+      taskBoard: { sessionId: "s1" },
+    } as typeof before;
     const tab = {
       ...newTab("s1"),
       id: "t1",
       editorPanes: [
         {
           id: "e1",
-          files: [{ ...file, taskBoard: { sessionId: "  " } }],
-          activeFileId: file.id,
+          files: [before, board, after],
+          activeFileId: board.id,
         },
       ],
     };
@@ -372,16 +356,22 @@ describe("collectWorkspaceSnapshot", () => {
       "/tmp/a",
       new Map(),
     );
-    const restored = hydrateWorkspaceSnapshot(snapshot, new Map())?.tabs[0];
-    expect(restored?.editorPanes ?? []).toEqual([]);
+    const pane = hydrateWorkspaceSnapshot(snapshot, new Map())?.tabs[0]
+      ?.editorPanes[0];
+    expect(pane?.files.map((file) => file.id)).toEqual([before.id, after.id]);
+    expect(pane?.activeFileId).toBe(before.id);
   });
 
-  it("a snapshot with taskBoard and terminal is dropped", () => {
-    const file = { ...newTaskBoardTab("/tmp/a", "session-a"), terminal: true };
+  it("drops a pane that held only a saved board tab", () => {
+    const board = {
+      ...newFileTab("/tmp/a", "/tmp/a"),
+      id: "board",
+      taskBoard: { sessionId: "s1" },
+    };
     const tab = {
       ...newTab("s1"),
       id: "t1",
-      editorPanes: [{ id: "e1", files: [file], activeFileId: file.id }],
+      editorPanes: [{ id: "e1", files: [board], activeFileId: board.id }],
     };
     const snapshot = collectWorkspaceSnapshot(
       [tab],
@@ -392,9 +382,6 @@ describe("collectWorkspaceSnapshot", () => {
     );
     const restored = hydrateWorkspaceSnapshot(snapshot, new Map())?.tabs[0];
     expect(restored?.editorPanes ?? []).toEqual([]);
-    expect(
-      (restored?.terminalPanes ?? []).flatMap((pane) => pane.files),
-    ).toEqual([]);
   });
 
   it("preserves a worktree editor's execution directory and owning project", () => {

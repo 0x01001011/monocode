@@ -1,0 +1,162 @@
+import type { ReactElement } from "react";
+import type { GraphRow, LaneCell } from "../model/graph";
+import type { BoardStatus } from "../model/taskBoard";
+
+/**
+ * One row of the commit graph, drawn from its lane cells (see the top of model/graph.ts for
+ * what each cell means). Lines are neutral strokes from the muted wrapper; only the node carries
+ * status colour, and the row beside it always says the status in words.
+ */
+type Props = {
+  cells: LaneCell[];
+  status: BoardStatus;
+  kind: GraphRow["kind"];
+  now: boolean;
+  /** A review stage: drawn as a hollow circle, its outline still coloured by status. */
+  hollow?: boolean;
+  /** The previous and next rows' cells; a node only draws half lines toward lanes that go on. */
+  above?: LaneCell[];
+  below?: LaneCell[];
+};
+
+const LANE = 12;
+const STROKE = 1.5;
+const center = (column: number) => column * LANE + LANE / 2;
+
+/** The wrapper's width per lane count, spelled out whole so Tailwind builds each class. */
+const WRAPPER_WIDTH: Record<number, string> = { 1: "w-3", 2: "w-6", 3: "w-9", 4: "w-12" };
+
+const lineProps = { stroke: "currentColor", strokeWidth: STROKE } as const;
+
+const HOLLOW_STROKE: Record<BoardStatus, string | undefined> = {
+  done: "stroke-success",
+  running: "stroke-focus",
+  attention: "stroke-warning",
+  failed: "stroke-danger",
+  blocked: "stroke-danger",
+  pending: undefined,
+  cancelled: undefined,
+};
+
+/** Solid dot = done, ring = not started, ringed dot = running, hollow = review, diamond = Ship. */
+function NodeShape({ status, kind, hollow }: { status: BoardStatus; kind: GraphRow["kind"]; hollow: boolean }): ReactElement {
+  if (hollow) {
+    const tone = HOLLOW_STROKE[status];
+    return (
+      <circle
+        data-node
+        r={3.5}
+        className={`fill-background-base ${tone ?? ""}`}
+        stroke={tone ? undefined : "currentColor"}
+        strokeWidth={2}
+      />
+    );
+  }
+  if (kind === "ship") {
+    const points = "0,-4.5 4.5,0 0,4.5 -4.5,0";
+    if (status === "done") return <polygon data-node points={points} className="fill-success" />;
+    if (status === "attention") return <polygon data-node points={points} className="fill-warning" />;
+    const tone = status === "pending" ? undefined : "stroke-warning";
+    return (
+      <polygon
+        data-node
+        points={points}
+        className={`fill-background-base ${tone ?? ""}`}
+        stroke={tone ? undefined : "currentColor"}
+        strokeWidth={STROKE}
+      />
+    );
+  }
+  switch (status) {
+    case "done":
+      return <circle data-node r={3.5} className="fill-success" />;
+    case "running":
+      return (
+        <g data-node>
+          <circle r={4.5} className="fill-background-base stroke-focus" strokeWidth={STROKE} />
+          <circle r={2} className="fill-focus" />
+        </g>
+      );
+    case "attention":
+      // Only review stages are hollow; a task in a fix loop is a filled warning dot.
+      return <circle data-node r={3.5} className="fill-warning" />;
+    case "failed":
+      return <circle data-node r={3.5} className="fill-danger" />;
+    case "blocked":
+      return <circle data-node r={3.5} className="fill-background-base stroke-danger" strokeWidth={2} />;
+    case "cancelled":
+      return <circle data-node r={3} className="fill-current" />;
+    default:
+      return <circle data-node r={3.5} className="fill-background-base" stroke="currentColor" strokeWidth={STROKE} />;
+  }
+}
+
+/** A quarter curve in the top half of the row, from the top edge at `from` into mid-height at `to`. */
+function Curve({ from, to, width }: { from: number; to: number; width: number }) {
+  return (
+    <svg x={0} y={0} width={width} height="50%" viewBox={`0 0 ${width} 10`} preserveAspectRatio="none" overflow="visible">
+      <path
+        data-curve
+        d={`M ${center(from)} 0 Q ${center(from)} 10 ${center(to)} 10`}
+        fill="none"
+        vectorEffect="non-scaling-stroke"
+        {...lineProps}
+      />
+    </svg>
+  );
+}
+
+export function GraphGutter({ cells, status, kind, now, hollow = false, above, below }: Props) {
+  const width = cells.length * LANE;
+  const parts: ReactElement[] = [];
+  cells.forEach((cell, c) => {
+    const x = center(c);
+    const key = (part: string) => `${part}-${c}`;
+    switch (cell) {
+      case "line":
+        parts.push(<line key={key("line")} data-line="full" x1={x} x2={x} y1="0" y2="100%" {...lineProps} />);
+        break;
+      case "dashed":
+        parts.push(
+          <line key={key("dashed")} data-line="full" x1={x} x2={x} y1="0" y2="100%" strokeDasharray="3 3" {...lineProps} />,
+        );
+        break;
+      case "merge":
+        parts.push(<Curve key={key("merge")} from={c} to={0} width={width} />);
+        break;
+      case "node":
+      case "fork": {
+        if (cell === "fork") parts.push(<Curve key={key("fork")} from={0} to={c} width={width} />);
+        else if (above !== undefined && (above[c] ?? "none") !== "none") {
+          parts.push(<line key={key("above")} data-line="above" x1={x} x2={x} y1="0" y2="50%" {...lineProps} />);
+        }
+        const next = below?.[c] ?? "none";
+        if (next !== "none" && next !== "fork") {
+          parts.push(<line key={key("below")} data-line="below" x1={x} x2={x} y1="50%" y2="100%" {...lineProps} />);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  });
+  // Nodes go last so they sit on top of the lines through them.
+  const nodeColumn = kind === "step" || kind === "hidden" ? -1 : cells.findIndex((cell) => cell === "node" || cell === "fork");
+  if (nodeColumn >= 0) {
+    const shape = <NodeShape status={status} kind={kind} hollow={hollow} />;
+    parts.push(
+      <svg key="node" x={center(nodeColumn)} y="50%" overflow="visible">
+        {now ? <g className="motion-safe:animate-pulse">{shape}</g> : shape}
+      </svg>,
+    );
+  }
+  // The svg fills the wrapper absolutely: an in-flow svg with `height="100%"` in an auto-height row
+  // falls back to its 150 px default and stretches every row to that height.
+  return (
+    <span className={`relative shrink-0 self-stretch text-muted ${WRAPPER_WIDTH[cells.length] ?? "w-12"}`}>
+      <svg data-gutter aria-hidden="true" focusable="false" width={width} height="100%" overflow="visible" className="absolute inset-y-0 left-0 block h-full">
+        {parts}
+      </svg>
+    </span>
+  );
+}

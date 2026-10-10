@@ -23,6 +23,8 @@ export type LedgerNote = { taskIndex?: number; text: string };
 
 export type ParsedLedger = {
   planPath?: string;
+  /** The first repo-style file path (.md, .mdx, .txt) of the first `Spec:` line that has one (the design the plan implements). */
+  specPath?: string;
   tasks: LedgerTask[];
   rulings: LedgerNote[];
   minors: LedgerNote[];
@@ -36,6 +38,7 @@ export type ReportStatus =
   "DONE" | "DONE_WITH_CONCERNS" | "NEEDS_CONTEXT" | "BLOCKED";
 
 const HEADER = /^#\s*SDD ledger\s*[—–-]+\s*plan:\s*(.+?)\s*$/;
+const SPEC_LINE = /^Spec:\s*(.*)$/;
 const TASK_LINE = /^Task\s+(\d+):\s*(.*)$/;
 const RULING = /\bRuling\b[^:]*:\s*(.*)$/;
 const LEADING_RULING = /^Ruling\b/;
@@ -56,6 +59,55 @@ const COMPLETE = /^complete\b\s*(.*)$/;
 const COMMITS = /commits\s+([^\s,;)]+)/;
 const FINAL_REVIEW = /^FINAL REVIEW\b\s*(.*)$/;
 const FINAL_WAVE = /^Final fix wave:\s*(complete|dispatched)\b/i;
+
+const SPEC_EXT = /\.(?:md|mdx|txt)$/i;
+const DRIVE_PATH = /^[A-Za-z]:[\\/]/;
+const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+
+/**
+ * A repo-style file path from one token: surrounding punctuation, backticks and quotes, a
+ * `#fragment` and a `:line` suffix are dropped; what is left must end in .md, .mdx or .txt.
+ * A URL is not a repo path, and a Windows drive path counts only when it is a .md file.
+ */
+function specFileOf(raw: string): string | undefined {
+  let token = raw.trim().replace(/^[`'"*_<[({]+/, "").replace(/[`'"*_>\])},.;:]+$/, "");
+  if (URL_SCHEME.test(token)) return undefined;
+  for (let i = 0; i < 2; i++) {
+    token = token.replace(/#[^#]*$/, "").replace(/(?::\d+){1,2}$/, "");
+  }
+  token = token.replace(/[`'"*_>\])},.;:]+$/, "");
+  if (!SPEC_EXT.test(token)) return undefined;
+  if (DRIVE_PATH.test(token) && !/\.md$/i.test(token)) return undefined;
+  return token;
+}
+
+/**
+ * The path in a `Spec:` value. A markdown link is read as its target, a trailing
+ * parenthetical (`(+ prototypes/…)`) is dropped, and the first token that is a repo-style
+ * file path wins (see `specFileOf`). A path with spaces (`docs/my spec.md`) is taken whole
+ * when the value is exactly that one path: it starts like a path (holds a slash), ends in a
+ * document extension and has no other document name, list separator or conjunction in it.
+ * Undefined when nothing path-like is there (`n/a`, `TBD / pending`, `and/or`, `1/2`).
+ */
+function specPathOf(value: string): string | undefined {
+  const head = value
+    .replace(/\[[^\]]*\]\(([^)\s]+)\)/g, "$1")
+    .replace(/(?:^|\s+)\(.*$/, "")
+    .trim();
+  const tokens = head.split(/\s+/).filter(Boolean);
+  if (tokens.length > 1 && /[\\/]/.test(tokens[0]) && !/[,;+&]|\b(?:and|or)\b/i.test(head)) {
+    const others = tokens.slice(0, -1);
+    if (!others.some((t) => specFileOf(t) !== undefined)) {
+      const whole = specFileOf(head);
+      if (whole !== undefined) return whole;
+    }
+  }
+  for (const token of tokens) {
+    const file = specFileOf(token);
+    if (file !== undefined) return file;
+  }
+  return undefined;
+}
 
 function note(taskIndex: number | undefined, text: string): LedgerNote {
   const trimmed = text.replace(/\s*\|\s*$/, "").trim();
@@ -152,6 +204,13 @@ export function parseLedger(text: string): ParsedLedger {
     const header = HEADER.exec(line);
     if (header) {
       ledger.planPath = header[1];
+      continue;
+    }
+
+    const spec = SPEC_LINE.exec(line);
+    if (spec) {
+      // Only the first usable `Spec:` line counts.
+      ledger.specPath ??= specPathOf(spec[1]);
       continue;
     }
 

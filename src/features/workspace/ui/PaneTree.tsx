@@ -474,7 +474,6 @@ function PaneTreeComponent({
                   pane={editorPane}
                   focused={focusedId === editorPane.id}
                   showTabs={inSplit || editorPane.files.length > 1}
-                  visible={visible}
                   dirtyFileIds={dirtyFileIds}
                   fileErrorCounts={fileErrorCounts}
                   sessions={sessions}

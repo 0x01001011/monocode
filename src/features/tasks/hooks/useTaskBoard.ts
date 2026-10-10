@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { orchestrator } from "../../orchestration/model/orchestration";
 import { sameProjectPath } from "../../projects/model/recents";
 import type { Block, Session } from "../../sessions/model/session";
+import { deriveFlow, type FlowPhase } from "../model/flow";
+import { gapsFor, type Gap } from "../model/gaps";
+import { shipReadiness, type Ship } from "../model/ship";
 import { buildSddSection } from "../model/sddBoard";
 import {
   findSddWorkspaces,
@@ -20,11 +23,20 @@ import { deriveStatusCard, type StatusCard, type StatusSessionInput } from "../m
 import type { BoardSection } from "../model/taskBoard";
 import { applySnoozes, snoozeVersion, subscribeSnoozes } from "../model/taskSnooze";
 import { tauriSddFs } from "../model/tauriSddFs";
+import { lastTestRun, type TestRun } from "../model/testRuns";
 
 export type TaskBoard = {
   sections: BoardSection[];
   plan?: BoardSection;
   statusCard: StatusCard;
+  /** Spec, plan, build, check: empty without a plan or while the panel is hidden. */
+  flow: FlowPhase[];
+  /** The newest test run in the session; absent when none ran (or while the panel is hidden). */
+  testRun?: TestRun;
+  /** Whether the branch can ship; absent without a plan or while the panel is hidden. */
+  ship?: Ship;
+  /** What the plan is missing (no commit, parked at close, unticked steps, no final review). */
+  gaps: Gap[];
   workspaces: SddWorkspaceRef[];
   selectedWorkspace?: string;
   selectWorkspace(slug: string): void;
@@ -50,11 +62,6 @@ type Input = {
   now?: () => number;
   fs?: SddFs;
   pollMs?: { visible: number; hiddenBusy: number };
-  /**
-   * The status card is read while hidden (the sidebar's tab badge and alerts), so busy
-   * sessions keep the slow hidden poll going. Default true; a board tab passes false.
-   */
-  needsStatusWhenHidden?: boolean;
   /** False when the plan files are out of reach (a remote project): no fs reads at all. */
   readPlan?: boolean;
 };
@@ -65,6 +72,8 @@ const DEFAULT_POLL = { visible: 3000, hiddenBusy: 15000 };
 export const DEFAULT_QUIET_AFTER_MS = 5 * 60_000;
 /** What a closed panel exposes: only the status card and tab badge are read then. */
 const NO_SECTIONS: BoardSection[] = [];
+const NO_FLOW: FlowPhase[] = [];
+const NO_GAPS: Gap[] = [];
 
 /** Keeps the previous reference while the serialized content is unchanged. */
 function useStable<T>(value: T): T {
@@ -77,6 +86,21 @@ function completedTools(blocks: readonly Block[] | undefined): number {
   let count = 0;
   for (const block of blocks ?? []) if (block.role === "tool" && block.toolEndedAt !== undefined) count++;
   return count;
+}
+
+/**
+ * Subagents working right now: the transcript's own running agents, plus the plan's
+ * running implementer and reviewer stages (the plan section leaves those agents out of
+ * the agents section, so nothing is counted twice). The final review's stages are not
+ * counted: they show in Check as "final review running".
+ */
+function countSubagentsRunning(sections: readonly BoardSection[], plan: BoardSection): number {
+  const agents = sections.find((s) => s.source === "agents")?.nodes.filter((n) => n.status === "running").length ?? 0;
+  const stages = plan.nodes.reduce(
+    (sum, node) => sum + (node.stages?.filter((stage) => stage.status === "running").length ?? 0),
+    0,
+  );
+  return agents + stages;
 }
 
 /** One load: workspace list, then the selected (else newest) workspace. Never rejects. */
@@ -113,7 +137,7 @@ export function useTaskBoard(input: Input): TaskBoard {
   const toolsDone = visible ? completedTools(blocks) : 0;
   const anyBusy = sessions.some((s) => s.busy);
   const readPlan = input.readPlan ?? true;
-  const polling = readPlan && (visible || (anyBusy && (input.needsStatusWhenHidden ?? true)));
+  const polling = readPlan && (visible || anyBusy);
   const interval = visible ? pollVisible : pollHidden;
   const intervalRef = useRef(interval);
   intervalRef.current = interval;
@@ -248,10 +272,37 @@ export function useTaskBoard(input: Input): TaskBoard {
 
   const workspaces = useStable(data?.workspaces ?? []);
   const planSection = sections.find((s) => s.source === "sdd");
+  // The last test run feeds both Check and Ship; `clock` keeps its age current as polls complete.
+  const testRun = useStable(useMemo(() => (visible ? lastTestRun(blocks) : undefined), [visible, blocks, clock]));
+  const gaps = useStable(useMemo(() => (visible && planSection ? gapsFor(planSection) : NO_GAPS), [visible, planSection]));
+  const ship = useStable(
+    useMemo(() => (visible && planSection ? shipReadiness(planSection, testRun) : undefined), [visible, planSection, testRun]),
+  );
+  const flow = useStable(
+    useMemo(
+      () =>
+        visible && planSection
+          ? deriveFlow({
+              plan: planSection,
+              ...(ship ? { ship } : {}),
+              ...(testRun ? { testRun } : {}),
+              subagentsRunning: countSubagentsRunning(sections, planSection),
+              now: nowRef.current(),
+              planRoot: planCwd,
+            })
+          : NO_FLOW,
+      // `clock` re-derives the age of the last test run as polls complete.
+      [visible, planSection, sections, testRun, clock, planCwd, ship],
+    ),
+  );
   return {
     sections,
     ...(planSection ? { plan: planSection } : {}),
     statusCard,
+    flow,
+    ...(testRun ? { testRun } : {}),
+    ...(ship ? { ship } : {}),
+    gaps,
     workspaces,
     ...(data?.selected ? { selectedWorkspace: data.selected } : {}),
     selectWorkspace,
