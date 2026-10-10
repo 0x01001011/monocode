@@ -699,6 +699,40 @@ describe("TasksPanel menu", () => {
     expect(container.querySelector("[aria-live=polite]")?.textContent).toBe("Copied");
   });
 
+  it("shows a visible, non-shifting chip for the copy result and hides it from screen readers", () => {
+    vi.useFakeTimers();
+    try {
+      render({ board: board({ plan: plan() }), onCopy: vi.fn() });
+      const chip = () => container.querySelector<HTMLElement>("[data-copy-chip]");
+      expect(chip()).toBeNull();
+      click(trigger() ?? undefined);
+      click(container.querySelector("[role=menuitem]") ?? undefined);
+      expect(chip()?.textContent).toBe("Copied");
+      // Heard once, from the live region; the chip only draws it, over the rows and out of the flow.
+      expect(chip()?.getAttribute("aria-hidden")).toBe("true");
+      expect(chip()?.className).toContain("h-0");
+      expect(chip()?.className).toContain("sticky");
+      expect(chip()?.firstElementChild?.className).toContain("absolute");
+      expect(chip()?.firstElementChild?.className).toContain("text-content");
+      act(() => vi.advanceTimersByTime(2000));
+      expect(chip()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("draws a failed copy in the danger colour", async () => {
+    render({ board: board({ plan: plan() }), onCopy: () => Promise.reject(new Error("denied")) });
+    click(trigger() ?? undefined);
+    await act(async () => {
+      container.querySelector("[role=menuitem]")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const chip = container.querySelector("[data-copy-chip]");
+    expect(chip?.textContent).toBe("Could not copy");
+    expect(chip?.firstElementChild?.className).toContain("text-danger");
+    expect(container.querySelector("[aria-live=polite]")?.textContent).toBe("Could not copy");
+  });
+
   it("Escape closes the menu and returns focus to its button", () => {
     render({ board: board({ plan: plan() }) });
     click(trigger() ?? undefined);

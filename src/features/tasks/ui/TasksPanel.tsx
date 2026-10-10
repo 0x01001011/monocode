@@ -237,6 +237,19 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
 
   return (
     <>
+      {notice ? (
+        // A zero-height sticky anchor: the chip floats over the rows, so it shows at any scroll depth and moves nothing.
+        // aria-hidden: the live region below already says it.
+        <div data-copy-chip aria-hidden="true" className="pointer-events-none sticky top-0 z-[2] h-0">
+          <span
+            className={`absolute top-9 right-2 rounded-full bg-selection px-2 py-0.5 text-[11.5px] ${
+              notice === COPIED ? "text-content" : "text-danger"
+            }`}
+          >
+            {notice}
+          </span>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-2 pr-2 pl-3">
         {board.workspaces.length > 1 ? (
           <select
@@ -309,7 +322,7 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
           </button>
         </div>
       ) : null}
-      {/* Said, not drawn: a line appearing here would push the whole tab down for two seconds. */}
+      {/* Said here; drawn by the floating chip above, because a line here would push the tab down for two seconds. */}
       <div aria-live="polite" className="sr-only">
         {notice}
       </div>
