@@ -71,6 +71,7 @@ export function usePrHoverCard({
   const close = useCallback(
     (returnFocus: boolean) => {
       clearTimers();
+      focusOnPin.current = false;
       if (modeRef.current === "closed") return;
       // Move focus before the card unmounts so it never falls to the body.
       if (returnFocus) triggerRef.current?.focus({ preventScroll: true });
@@ -101,23 +102,34 @@ export function usePrHoverCard({
 
   // Pinned from the trigger: focus the roving row (else the first control).
   // Popover measures itself hidden first, and a hidden element cannot take
-  // focus, so retry on the next frame when the first try does not land.
+  // focus, so retry on the next frame when the first try does not land. A
+  // card still loading has nothing to focus yet: the request stays pending
+  // until `retryPinFocus` finds rows.
+  const focusIntoCard = useCallback(() => {
+    if (!focusOnPin.current || modeRef.current !== "pinned") return true;
+    const surface = surfaceRef.current;
+    if (!surface) return false;
+    const target =
+      surface.querySelector<HTMLElement>(`${ROW}[tabindex="0"]`) ??
+      focusables(surface)[0];
+    target?.focus({ preventScroll: true });
+    const landed = !!target && document.activeElement === target;
+    if (landed) focusOnPin.current = false;
+    return landed;
+  }, []);
+
   useEffect(() => {
     if (!pinned || !focusOnPin.current) return;
-    focusOnPin.current = false;
-    const attempt = () => {
-      const surface = surfaceRef.current;
-      if (!surface) return false;
-      const target =
-        surface.querySelector<HTMLElement>(`${ROW}[tabindex="0"]`) ??
-        focusables(surface)[0];
-      target?.focus({ preventScroll: true });
-      return !!target && document.activeElement === target;
-    };
-    if (attempt()) return;
-    const frame = requestAnimationFrame(attempt);
+    if (focusIntoCard()) return;
+    const frame = requestAnimationFrame(focusIntoCard);
     return () => cancelAnimationFrame(frame);
-  }, [pinned]);
+  }, [pinned, focusIntoCard]);
+
+  /** Call when the card's content arrives; finishes a pending pin focus. */
+  const retryPinFocus = useCallback(() => {
+    if (focusIntoCard()) return;
+    requestAnimationFrame(() => void focusIntoCard());
+  }, [focusIntoCard]);
 
   useEffect(() => {
     if (!open) return;
@@ -199,6 +211,7 @@ export function usePrHoverCard({
     triggerProps,
     surfaceProps,
     close,
+    retryPinFocus,
   };
 }
 

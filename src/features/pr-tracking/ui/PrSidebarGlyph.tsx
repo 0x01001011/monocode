@@ -2,12 +2,12 @@ import { useEffect, type ReactNode, type SyntheticEvent } from "react";
 import { GitPullRequest } from "../../../shared/ui/icons";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 import {
+  ensurePrSet,
   getPrSet,
-  useLinkedPrInSet,
   usePrSet,
   usePrSummary,
 } from "../data/prTracking";
-import { primaryEntry } from "../model/prSetModel";
+import { linkedPrInSummary, primaryEntry } from "../model/prSetModel";
 import type { PrSummary } from "../model/types";
 import { PrSetPopover, usePrClock } from "./PrSetPopover";
 import { PrStatusIcon } from "./PrStatusIcon";
@@ -52,19 +52,38 @@ export type PrSidebarGlyphProps = {
  * = needs action). Stale status draws a dashed outline at full contrast.
  * Hovering 400ms previews the same card as the composer chip, to the right;
  * click / Enter pins it. At rest it reads only the chat's summary; the full
- * set is fetched once the pointer or focus arrives. It never sets tracking
- * interest: only the composer chip does.
+ * set is warmed when the pointer or focus arrives and read once the card
+ * opens. It never sets tracking interest: only the composer chip does.
  */
 export function PrSidebarGlyph({ sessionId, onOpenInbox }: PrSidebarGlyphProps) {
   const summary = usePrSummary(sessionId);
   const card = usePrHoverCard({ openDelay: PR_SIDEBAR_OPEN_DELAY });
   const view = usePrSet(card.open ? sessionId : undefined);
   const now = usePrClock(card.open);
-  const { open: cardOpen, close } = card;
+  const { open: cardOpen, pinned, close, retryPinFocus } = card;
+  const loaded = !!view;
 
   useEffect(() => {
     if (!summary && cardOpen) close(false);
   }, [summary, cardOpen, close]);
+
+  // A card opened on a cold cache shows "Loading pull requests" until the
+  // set arrives, and closes if it cannot be loaded.
+  useEffect(() => {
+    if (!cardOpen || loaded) return;
+    let live = true;
+    void ensurePrSet(sessionId).then((next) => {
+      if (live && !next) close(false);
+    });
+    return () => {
+      live = false;
+    };
+  }, [cardOpen, loaded, sessionId, close]);
+
+  // A pin made while loading moves focus in once the rows exist.
+  useEffect(() => {
+    if (pinned && loaded) retryPinFocus();
+  }, [pinned, loaded, retryPinFocus]);
 
   if (!summary) return null;
 
@@ -130,7 +149,7 @@ export function PrSidebarGlyph({ sessionId, onOpenInbox }: PrSidebarGlyphProps) 
           <span className="pr-att" data-kind={attention} aria-hidden="true" />
         ) : null}
       </button>
-      {cardOpen && view ? (
+      {cardOpen ? (
         <PrSetPopover
           sessionId={sessionId}
           view={view}
@@ -166,16 +185,13 @@ export function PrSidebarSlot({
   badge,
   onOpenInbox,
 }: PrSidebarSlotProps) {
-  const hasPrs = !!usePrSummary(sessionId);
-  const linkedPr = linkedWorkItem?.kind === "pr" ? linkedWorkItem : undefined;
-  // Only chats with both a linked PR and PRs of their own load their set.
-  const linkedInSet = useLinkedPrInSet(
-    hasPrs && linkedPr ? sessionId : undefined,
-    linkedPr,
-  );
+  const summary = usePrSummary(sessionId);
+  const hasPrs = !!summary;
+  // Answered from the summary's members: no set fetch at rest.
+  const linkedInSet = linkedPrInSummary(summary, linkedWorkItem);
   return (
     <>
-      {hasPrs && linkedInSet ? null : badge}
+      {linkedInSet ? null : badge}
       {hasPrs ? (
         <PrSidebarGlyph sessionId={sessionId} onOpenInbox={onOpenInbox} />
       ) : null}

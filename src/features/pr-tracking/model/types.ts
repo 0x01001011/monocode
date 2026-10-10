@@ -89,6 +89,8 @@ export type PrSummary = {
   primaryIsDraft: boolean;
   attention: Attention;
   stale: boolean;
+  /** `"owner/repo#N"` (repo lowercased) for each PR counted in `count`. */
+  members: string[];
 };
 
 export type PrInterestLevel = "hot" | "fleet" | "off";

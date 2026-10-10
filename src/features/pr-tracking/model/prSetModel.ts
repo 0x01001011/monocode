@@ -4,6 +4,7 @@ import {
   type PrSetView,
   type PrStackGroup,
   type PrState,
+  type PrSummary,
   type TrackerStatus,
 } from "./types";
 
@@ -235,4 +236,21 @@ export function trackerNotice(
     default:
       return null;
   }
+}
+
+/** A summary member key, as Rust writes it: `"owner/repo#N"`, repo lowercased. */
+export function prMemberKey(repo: string, number: number): string {
+  return `${repo.toLowerCase()}#${number}`;
+}
+
+/**
+ * Whether a linked work item is one of the PRs counted in the chat's summary
+ * (its own, visible PRs). Answers from the summary alone, without the set.
+ */
+export function linkedPrInSummary(
+  summary: Pick<PrSummary, "members"> | undefined,
+  item: { kind: "issue" | "pr"; repo: string; number: number } | undefined,
+): boolean {
+  if (!summary || !item || item.kind !== "pr") return false;
+  return (summary.members ?? []).includes(prMemberKey(item.repo, item.number));
 }

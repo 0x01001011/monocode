@@ -91,41 +91,114 @@ function block(over: Partial<Block>): Block {
 }
 
 describe("findTurnPrUrls", () => {
-  it("marks URLs printed by a gh pr create tool call as created", () => {
-    const found = findTurnPrUrls([
-      block({ role: "user", text: "open a PR" }),
-      block({
-        role: "tool",
-        tool: {
-          kind: "execute",
-          title: "gh pr create --title 'Fix' --body 'x'",
-          preview: {
-            kind: "shell",
-            output: "\nhttps://github.com/acme/web/pull/482\n",
-          },
-        },
-      }),
-      block({
-        text: "Done: https://github.com/acme/web/pull/482. Related to https://github.com/acme/web/pull/470.",
-      }),
-    ]);
-    expect(found).toEqual([
-      { url: "https://github.com/acme/web/pull/482", created: true },
+  const user = () => block({ role: "user", text: "go" });
+  const shell = (command: string, output: string, over: Partial<Block> = {}) =>
+    block({
+      role: "tool",
+      tool: {
+        kind: "execute",
+        title: command,
+        preview: { kind: "shell", title: command, output },
+      },
+      ...over,
+    });
+
+  it("marks the URL printed by gh pr create as created", () => {
+    expect(
+      findTurnPrUrls([
+        user(),
+        shell(
+          "gh pr create --title 'Fix' --body 'x'",
+          "\nhttps://github.com/acme/web/pull/482\n",
+        ),
+        block({ text: "Done: https://github.com/acme/web/pull/482." }),
+      ]),
+    ).toEqual([{ url: "https://github.com/acme/web/pull/482", created: true }]);
+  });
+
+  it("never treats a URL in the command text (--body) as created", () => {
+    expect(
+      findTurnPrUrls([
+        user(),
+        shell(
+          'gh pr create --title "Child" --body "Stacked on https://github.com/acme/web/pull/470"',
+          "https://github.com/acme/web/pull/482",
+        ),
+      ]),
+    ).toEqual([
       { url: "https://github.com/acme/web/pull/470", created: false },
+      { url: "https://github.com/acme/web/pull/482", created: true },
+    ]);
+    // A pending call whose detail still holds the command creates nothing.
+    expect(
+      findTurnPrUrls([
+        user(),
+        block({
+          role: "tool",
+          tool: {
+            title: "gh pr create --body 'see https://github.com/acme/web/pull/470'",
+            detail:
+              "Bash: gh pr create --body 'see https://github.com/acme/web/pull/470'",
+          },
+        }),
+      ]),
+    ).toEqual([{ url: "https://github.com/acme/web/pull/470", created: false }]);
+  });
+
+  it("counts only the last PR URL a create prints", () => {
+    expect(
+      findTurnPrUrls([
+        user(),
+        shell(
+          "gh pr create --fill",
+          "Warning: see https://github.com/acme/web/pull/12 for the template\nhttps://github.com/acme/web/pull/482",
+        ),
+      ]),
+    ).toEqual([
+      { url: "https://github.com/acme/web/pull/12", created: false },
+      { url: "https://github.com/acme/web/pull/482", created: true },
     ]);
   });
 
-  it("treats a 'Created pull request' line as created", () => {
+  it("creates nothing when gh says the PR already exists (URL on the next line)", () => {
     expect(
       findTurnPrUrls([
-        block({ role: "user", text: "go" }),
+        user(),
+        shell(
+          "gh pr create --fill",
+          'a pull request for branch "mc/x" into branch "main" already exists:\nhttps://github.com/acme/web/pull/470',
+        ),
+      ]),
+    ).toEqual([{ url: "https://github.com/acme/web/pull/470", created: false }]);
+  });
+
+  it("records nothing at all from gh pr view or gh pr list", () => {
+    expect(
+      findTurnPrUrls([
+        user(),
+        shell(
+          "gh pr view https://github.com/acme/web/pull/2",
+          "title: Thing\nurl: https://github.com/acme/web/pull/2",
+        ),
+        shell(
+          "gh pr list --author @me",
+          "#5 Fix https://github.com/acme/web/pull/5\n#6 Feat https://github.com/acme/web/pull/6",
+        ),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("treats assistant prose as hints, even 'Created a PR'", () => {
+    expect(
+      findTurnPrUrls([
+        user(),
         block({
-          text: "Created pull request [#9](https://github.com/acme/web/pull/9).\nSee also https://github.com/acme/web/pull/3",
+          text: "Created a PR: [#9](https://github.com/acme/web/pull/9).\nCreated pull request https://github.com/acme/web/pull/10",
         }),
       ]),
     ).toEqual([
-      { url: "https://github.com/acme/web/pull/9", created: true },
-      { url: "https://github.com/acme/web/pull/3", created: false },
+      { url: "https://github.com/acme/web/pull/9", created: false },
+      { url: "https://github.com/acme/web/pull/10", created: false },
     ]);
   });
 
@@ -143,11 +216,11 @@ describe("findTurnPrUrls", () => {
   it("reads tool output and subagent steps but not reasoning or user text", () => {
     expect(
       findTurnPrUrls([
-        block({ role: "user", text: "go" }),
+        user(),
         block({ role: "reasoning", text: "https://github.com/acme/web/pull/1" }),
         block({
           role: "tool",
-          tool: { title: "gh pr view", detail: "https://github.com/acme/web/pull/2" },
+          tool: { title: "gh api repos/acme/web/pulls", detail: "https://github.com/acme/web/pull/2" },
         }),
         block({
           role: "tool",
@@ -159,6 +232,12 @@ describe("findTurnPrUrls", () => {
                 kind: "tool",
                 text: "gh pr create --fill",
                 preview: { kind: "shell", output: "https://github.com/acme/web/pull/4" },
+              },
+              {
+                id: "b",
+                kind: "tool",
+                text: "gh pr view 7",
+                detail: "https://github.com/acme/web/pull/7",
               },
             ],
           },

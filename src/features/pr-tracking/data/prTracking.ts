@@ -114,6 +114,8 @@ type Source<T> = {
   value: T;
   listeners: Set<() => void>;
   inFlight: boolean;
+  /** Settles when the running fetch loop ends. */
+  pending: Promise<void> | null;
   /** An invalidation arrived while a fetch was running. */
   dirty: boolean;
   /** The cache reflects a fetch made since the last invalidation. */
@@ -128,6 +130,7 @@ function makeSource<T>(initial: T, fetchNow: () => Promise<T | null>): Source<T>
     value: initial,
     listeners: new Set(),
     inFlight: false,
+    pending: null,
     dirty: false,
     fresh: false,
     fetchNow,
@@ -149,32 +152,37 @@ function setSource(sessionId: string): Source<PrSetView | null> {
   return source;
 }
 
-async function load<T>(source: Source<T>): Promise<void> {
+function load<T>(source: Source<T>): Promise<void> {
   source.fresh = true;
   if (source.inFlight) {
     source.dirty = true;
-    return;
+    return source.pending ?? Promise.resolve();
   }
   source.inFlight = true;
-  try {
-    do {
-      source.dirty = false;
-      const next = await source.fetchNow();
-      if (next == null) {
-        // Nothing was learned, so the next subscriber should try again.
-        source.fresh = false;
-        continue;
-      }
-      // A queued refetch that succeeds after a failed one makes the cache
-      // current again.
-      source.fresh = true;
-      if (JSON.stringify(next) === JSON.stringify(source.value)) continue;
-      source.value = next;
-      for (const listener of [...source.listeners]) listener();
-    } while (source.dirty);
-  } finally {
-    source.inFlight = false;
-  }
+  const run = (async () => {
+    try {
+      do {
+        source.dirty = false;
+        const next = await source.fetchNow();
+        if (next == null) {
+          // Nothing was learned, so the next subscriber should try again.
+          source.fresh = false;
+          continue;
+        }
+        // A queued refetch that succeeds after a failed one makes the cache
+        // current again.
+        source.fresh = true;
+        if (JSON.stringify(next) === JSON.stringify(source.value)) continue;
+        source.value = next;
+        for (const listener of [...source.listeners]) listener();
+      } while (source.dirty);
+    } finally {
+      source.inFlight = false;
+      source.pending = null;
+    }
+  })();
+  source.pending = run;
+  return run;
 }
 
 /** Refetch now if somebody is watching, else remember to refetch on next use. */
@@ -251,6 +259,19 @@ export function getPrSet(sessionId: string): PrSetView | null {
   return source.value;
 }
 
+/**
+ * The chat's PRs, loading them if nothing is cached (joining a fetch already
+ * running). Resolves to null when they could not be loaded.
+ */
+export async function ensurePrSet(
+  sessionId: string,
+): Promise<PrSetView | null> {
+  const source = setSource(sessionId);
+  if (source.value) return source.value;
+  await (source.inFlight && source.pending ? source.pending : load(source));
+  return source.value;
+}
+
 /** The chat's PRs. Synchronous from cache; null until the first answer. */
 export function usePrSet(sessionId?: string): PrSetView | null {
   const subscribe = useCallback(
@@ -284,7 +305,8 @@ const sameSummary = (a: PrSummary, b: PrSummary) =>
   a.primaryState === b.primaryState &&
   a.primaryIsDraft === b.primaryIsDraft &&
   a.attention === b.attention &&
-  a.stale === b.stale;
+  a.stale === b.stale &&
+  (a.members ?? []).join(" ") === (b.members ?? []).join(" ");
 
 function summaryFor(sessionId: string): PrSummary | undefined {
   const next = summaries.value[sessionId];
@@ -313,36 +335,5 @@ export function usePrSummary(sessionId?: string): PrSummary | undefined {
     () => (sessionId ? summaryFor(sessionId) : undefined),
     [sessionId],
   );
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-}
-
-/**
- * Whether the linked PR is one of the chat's own visible PRs (not dismissed,
- * not someone else's). Fetches the chat's set, so only pass `sessionId` for
- * a chat that has a linked PR and PRs of its own. False until it loads.
- */
-export function useLinkedPrInSet(
-  sessionId: string | undefined,
-  item: { repo: string; number: number } | undefined,
-): boolean {
-  const repo = item?.repo.toLowerCase();
-  const number = item?.number;
-  const active = !!sessionId && !!repo && number != null;
-  const subscribe = useCallback(
-    (listener: () => void) =>
-      active ? subscribeTo(setSource(sessionId!), listener) : NO_UNSUBSCRIBE,
-    [active, sessionId],
-  );
-  const getSnapshot = useCallback(() => {
-    if (!active) return false;
-    const view = setSource(sessionId!).value;
-    return !!view?.entries.some(
-      (e) =>
-        !e.dismissed &&
-        e.relation !== "other" &&
-        e.snapshot.number === number &&
-        e.snapshot.repo.toLowerCase() === repo,
-    );
-  }, [active, sessionId, repo, number]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

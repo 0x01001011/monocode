@@ -424,6 +424,7 @@ describe("usePrSummaries", () => {
         primaryIsDraft: false,
         attention: "block",
         stale: false,
+        members: ["acme/web#7", "acme/web#6"],
       },
     };
     const m = await loadModule();
@@ -462,6 +463,7 @@ describe("usePrSummary", () => {
     primaryIsDraft: false,
     attention: "none",
     stale: false,
+    members: [`acme/web#${primaryNumber}`],
   });
 
   it("re-renders a row only when its own chat's summary changes", async () => {
@@ -503,6 +505,13 @@ describe("usePrSummary", () => {
     expect(latest.s3?.primaryNumber).toBe(3);
     expect(renders.s1).toBe(settled.s1);
     expect(renders.s2).toBe(settled.s2 + 1);
+
+    // A members-only change is a change too (it decides the linked badge).
+    summaries = { ...summaries, s1: { ...summary(7), members: ["acme/web#7", "acme/web#8"] } };
+    emit(["s1"]);
+    await flush();
+    expect(renders.s1).toBe(settled.s1 + 1);
+    expect(latest.s1?.members).toEqual(["acme/web#7", "acme/web#8"]);
     act(() => a.root.unmount());
   });
 
@@ -521,53 +530,28 @@ describe("usePrSummary", () => {
   });
 });
 
-describe("useLinkedPrInSet", () => {
-  it("is true only when the linked PR is one of the chat's own visible PRs", async () => {
-    const entry = (
-      repo: string,
-      number: number,
-      over: Record<string, unknown> = {},
-    ) => ({
-      snapshot: { repo, number },
-      relation: "owned",
-      dismissed: false,
-      ...over,
-    });
-    sets.s1 = {
-      ...setView("s1", 1),
-      entries: [
-        entry("acme/web", 482),
-        entry("acme/web", 470, { dismissed: true }),
-        entry("acme/web", 460, { relation: "other" }),
-      ] as never,
-    };
+describe("ensurePrSet", () => {
+  it("resolves the cached view, or loads it once, or null when loading fails", async () => {
     const m = await loadModule();
-    const seen: Record<string, boolean> = {};
-    function Probe({ name, item }: { name: string; item?: { repo: string; number: number } }) {
-      seen[name] = m.useLinkedPrInSet(item ? "s1" : undefined, item);
-      return null;
-    }
-    const a = mount(() =>
-      createElement(
-        "div",
-        null,
-        createElement(Probe, { name: "match", item: { repo: "Acme/Web", number: 482 } }),
-        createElement(Probe, { name: "otherRepo", item: { repo: "acme/api", number: 482 } }),
-        createElement(Probe, { name: "dismissed", item: { repo: "acme/web", number: 470 } }),
-        createElement(Probe, { name: "notOwn", item: { repo: "acme/web", number: 460 } }),
-        createElement(Probe, { name: "none" }),
-      ),
-    );
-    await a.render();
-    await flush();
-    expect(seen).toEqual({
-      match: true,
-      otherRepo: false,
-      dismissed: false,
-      notOwn: false,
-      none: false,
-    });
-    act(() => a.root.unmount());
+    const first = m.ensurePrSet("s1");
+    // A concurrent caller shares the same fetch.
+    const second = m.ensurePrSet("s1");
+    expect((await first)?.sessionId).toBe("s1");
+    expect((await second)?.sessionId).toBe("s1");
+    expect(calls("pr_session_set", "s1")).toHaveLength(1);
+    expect((await m.ensurePrSet("s1"))?.sessionId).toBe("s1");
+    expect(calls("pr_session_set", "s1")).toHaveLength(1);
+
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("boom"));
+    expect(await m.ensurePrSet("s2")).toBeNull();
+  });
+
+  it("joins a fetch already started by getPrSet", async () => {
+    const m = await loadModule();
+    expect(m.getPrSet("s1")).toBeNull();
+    expect((await m.ensurePrSet("s1"))?.sessionId).toBe("s1");
+    expect(calls("pr_session_set", "s1")).toHaveLength(1);
   });
 });
 

@@ -33,7 +33,8 @@ export function usePrClock(ticking: boolean): number {
 
 export type PrSetPopoverProps = {
   sessionId: string;
-  view: PrSetView;
+  /** Null while the set loads: the card shows a loading line instead. */
+  view: PrSetView | null;
   /** The owner's `usePrHoverCard()`; render this only while `card.open`. */
   card: ReturnType<typeof usePrHoverCard>;
   now: number;
@@ -48,7 +49,8 @@ export type PrSetPopoverProps = {
  * The PrSetCard in its non-modal dialog frame, with the row actions (open,
  * copy link, dismiss with undo, refresh). Shared by the composer chip and the
  * sidebar glyph so both open the same card. Mounted only while the card is
- * open, so its status line belongs to one look at the card.
+ * open, so its status line belongs to one look at the card. Without a view
+ * yet it shows "Loading pull requests" as the dialog's title and status.
  */
 export function PrSetPopover({
   sessionId,
@@ -133,19 +135,29 @@ export function PrSetPopover({
         if (reason === "outside") close(false);
       }}
     >
-      <PrSetCard
-        view={view}
-        titleId={card.titleId}
-        now={now}
-        status={status}
-        hiddenOnly={hiddenOnly}
-        onFocusLost={() => triggerRef.current?.focus({ preventScroll: true })}
-        onRefresh={() => void refreshPrSet(sessionId)}
-        onOpenInbox={openInbox}
-        onOpenGithub={openGithub}
-        onCopyLink={copyLink}
-        onDismiss={dismiss}
-      />
+      {view ? (
+        <PrSetCard
+          view={view}
+          titleId={card.titleId}
+          now={now}
+          status={status}
+          hiddenOnly={hiddenOnly}
+          onFocusLost={() => triggerRef.current?.focus({ preventScroll: true })}
+          onRefresh={() => void refreshPrSet(sessionId)}
+          onOpenInbox={openInbox}
+          onOpenGithub={openGithub}
+          onCopyLink={copyLink}
+          onDismiss={dismiss}
+        />
+      ) : (
+        <p
+          id={card.titleId}
+          role="status"
+          className="px-3 py-3 text-[12px] text-ink-muted"
+        >
+          Loading pull requests
+        </p>
+      )}
     </Popover>
   );
 }

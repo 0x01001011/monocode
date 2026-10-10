@@ -9,11 +9,12 @@ import type { PrEntry, PrSetView, PrSummary } from "../model/types";
 const h = vi.hoisted(() => ({
   summary: undefined as PrSummary | undefined,
   view: null as PrSetView | null,
-  linkedInSet: false,
+  /** Re-renders every usePrSet consumer, like the real store does. */
+  refreshers: new Set<() => void>(),
   usePrSet: vi.fn(),
   usePrSummary: vi.fn(),
-  useLinkedPrInSet: vi.fn(),
   getPrSet: vi.fn(),
+  ensurePrSet: vi.fn(),
   setPrInterest: vi.fn(async () => undefined),
   refreshPrSet: vi.fn(async () => undefined),
   dismissPr: vi.fn(async () => undefined),
@@ -21,15 +22,25 @@ const h = vi.hoisted(() => ({
   copyText: vi.fn(async () => undefined),
 }));
 
-vi.mock("../data/prTracking", () => ({
-  usePrSummary: h.usePrSummary,
-  usePrSet: h.usePrSet,
-  useLinkedPrInSet: h.useLinkedPrInSet,
-  getPrSet: h.getPrSet,
-  setPrInterest: h.setPrInterest,
-  refreshPrSet: h.refreshPrSet,
-  dismissPr: h.dismissPr,
-}));
+vi.mock("../data/prTracking", async () => {
+  const React = await import("react");
+  return {
+    usePrSummary: h.usePrSummary,
+    usePrSet: (id?: string) => {
+      const [, force] = React.useReducer((n: number) => n + 1, 0);
+      React.useEffect(() => {
+        h.refreshers.add(force);
+        return () => void h.refreshers.delete(force);
+      }, []);
+      return h.usePrSet(id);
+    },
+    getPrSet: h.getPrSet,
+    ensurePrSet: h.ensurePrSet,
+    setPrInterest: h.setPrInterest,
+    refreshPrSet: h.refreshPrSet,
+    dismissPr: h.dismissPr,
+  };
+});
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: h.openUrl }));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: h.copyText }));
 
@@ -55,6 +66,7 @@ function summary(over: Partial<PrSummary> = {}): PrSummary {
     primaryIsDraft: false,
     attention: "none",
     stale: false,
+    members: [`${REPO}#482`],
     ...over,
   };
 }
@@ -144,15 +156,13 @@ function pointer(element: Element, type: "pointerover" | "pointerout") {
 beforeEach(() => {
   h.summary = undefined;
   h.view = view();
-  h.linkedInSet = false;
+  h.refreshers.clear();
   h.usePrSummary.mockReset().mockImplementation(() => h.summary);
   h.usePrSet
     .mockReset()
     .mockImplementation((id?: string) => (id ? h.view : null));
-  h.useLinkedPrInSet
-    .mockReset()
-    .mockImplementation((id?: string) => (id ? h.linkedInSet : false));
   h.getPrSet.mockReset().mockImplementation(() => h.view);
+  h.ensurePrSet.mockReset().mockImplementation(async () => h.view);
   h.setPrInterest.mockClear();
   h.refreshPrSet.mockClear();
   h.dismissPr.mockClear();
@@ -169,45 +179,49 @@ afterEach(() => {
 });
 
 describe("PrSidebarSlot", () => {
+  const noSetFetch = () => {
+    expect(h.usePrSet.mock.calls.every(([id]) => id === undefined)).toBe(true);
+    expect(h.getPrSet).not.toHaveBeenCalled();
+    expect(h.ensurePrSet).not.toHaveBeenCalled();
+  };
+
   it("leaves the linked badge exactly as before and shows no glyph for a chat with zero PRs", () => {
     const container = slot(linkedPr);
     expect(container.innerHTML).toBe(
       '<button type="button" data-badge="">#482</button>',
     );
     expect(glyph()).toBeNull();
-    // Without PRs there is nothing to compare against, so no set fetch.
-    expect(h.useLinkedPrInSet).toHaveBeenLastCalledWith(undefined, linkedPr);
+    noSetFetch();
   });
 
   it("renders nothing for a chat with neither PRs nor a linked item", () => {
     expect(slot().innerHTML).toBe("");
   });
 
-  it("replaces the badge with the glyph when the linked PR is in the chat's set", () => {
-    h.summary = summary();
-    h.linkedInSet = true;
-    slot(linkedPr);
+  it("replaces the badge with the glyph when the linked PR is in the summary's members", () => {
+    h.summary = summary({ members: ["acme/web#482", "acme/web#470"], count: 2 });
+    slot({ ...linkedPr, repo: "Acme/Web" });
     expect(document.querySelector("[data-badge]")).toBeNull();
     expect(glyph()).not.toBeNull();
-    expect(h.useLinkedPrInSet).toHaveBeenLastCalledWith("s1", linkedPr);
+    // Decided from the summary alone: the set is not fetched at rest.
+    noSetFetch();
   });
 
-  it("keeps the badge and adds the glyph when the linked PR is not in the set", () => {
-    h.summary = summary({ count: 2 });
-    h.linkedInSet = false;
+  it("keeps the badge and adds the glyph when the linked PR is not a member", () => {
+    h.summary = summary({ count: 2, members: ["acme/web#470", "acme/web#471"] });
     slot(linkedPr);
     expect(document.querySelector("[data-badge]")).not.toBeNull();
     expect(glyph()).not.toBeNull();
+    noSetFetch();
   });
 
-  it("keeps an issue badge and adds the glyph, without looking up the set", () => {
+  it("keeps an issue badge and adds the glyph, even when the number matches", () => {
     h.summary = summary();
-    h.linkedInSet = true;
     const issue: LinkedWorkItem = { ...linkedPr, kind: "issue" };
     slot(issue);
     expect(document.querySelector("[data-badge]")).not.toBeNull();
     expect(glyph()).not.toBeNull();
-    expect(h.useLinkedPrInSet).toHaveBeenLastCalledWith(undefined, undefined);
+    noSetFetch();
   });
 
   it("shows only the glyph for a chat with PRs and no linked item", () => {
@@ -380,6 +394,53 @@ describe("PrSidebarGlyph card", () => {
     expect(onRowClick).not.toHaveBeenCalled();
     act(() => glyph()!.click());
     expect(dialog()).toBeNull();
+  });
+
+  it("pinned on a cold cache, shows a loading card at once, then focuses the first row when the set arrives", async () => {
+    h.summary = summary();
+    h.view = null;
+    let resolve!: (v: PrSetView | null) => void;
+    h.ensurePrSet.mockImplementation(
+      () => new Promise<PrSetView | null>((r) => (resolve = r)),
+    );
+    render();
+    act(() => glyph()!.focus());
+    act(() => glyph()!.click());
+    // Never aria-expanded without a dialog.
+    expect(glyph()!.getAttribute("aria-expanded")).toBe("true");
+    const card = dialog()!;
+    expect(card).not.toBeNull();
+    const status = card.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe("Loading pull requests");
+    expect(card.getAttribute("aria-labelledby")).toBe(status.id);
+    expect(h.ensurePrSet).toHaveBeenCalledWith("s1");
+    expect(document.activeElement).toBe(glyph());
+
+    // The set arrives: rows render and the pending pin focus lands.
+    h.view = view();
+    await act(async () => {
+      resolve(h.view);
+      for (const refresh of h.refreshers) refresh();
+    });
+    const row = dialog()!.querySelector<HTMLElement>("[data-pr-row]")!;
+    expect(row).not.toBeNull();
+    expect(document.activeElement).toBe(row);
+    expect(dialog()!.querySelector('[role="status"]')?.textContent ?? "").not.toBe(
+      "Loading pull requests",
+    );
+  });
+
+  it("closes the loading card when the set cannot be loaded", async () => {
+    h.summary = summary();
+    h.view = null;
+    h.ensurePrSet.mockImplementation(async () => null);
+    render();
+    await act(async () => {
+      glyph()!.click();
+    });
+    await act(async () => {});
+    expect(dialog()).toBeNull();
+    expect(glyph()!.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("closes the card when the chat loses its PRs", () => {

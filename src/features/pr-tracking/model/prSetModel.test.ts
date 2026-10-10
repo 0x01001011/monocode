@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   ariaLabel,
   freshnessLabel,
+  linkedPrInSummary,
+  prMemberKey,
   isSnapshotStale,
   primaryEntry,
   sections,
@@ -358,5 +360,34 @@ describe("trackerNotice", () => {
     for (const s of ["signedOut", "offline", "ghMissing"] as const) {
       expect(trackerNotice(s, now)?.text).not.toContain("—");
     }
+  });
+});
+
+describe("summary members", () => {
+  const summary = (members: string[]) => ({
+    count: members.length,
+    primaryNumber: 1,
+    primaryState: "open" as const,
+    primaryIsDraft: false,
+    attention: "none" as const,
+    stale: false,
+    members,
+  });
+
+  it("keys a PR as lowercased owner/repo#N, as Rust does", () => {
+    expect(prMemberKey("Acme/Web", 482)).toBe("acme/web#482");
+  });
+
+  it("matches a linked PR against the summary without the full set", () => {
+    const s = summary(["acme/web#482", "acme/api#7"]);
+    expect(linkedPrInSummary(s, { kind: "pr", repo: "Acme/Web", number: 482 })).toBe(true);
+    expect(linkedPrInSummary(s, { kind: "pr", repo: "acme/web", number: 7 })).toBe(false);
+    expect(linkedPrInSummary(s, { kind: "issue", repo: "acme/web", number: 482 })).toBe(false);
+    expect(linkedPrInSummary(undefined, { kind: "pr", repo: "acme/web", number: 482 })).toBe(false);
+    expect(linkedPrInSummary(s, undefined)).toBe(false);
+    // Tolerates a summary from an older backend without members.
+    expect(
+      linkedPrInSummary({ ...s, members: undefined as never }, { kind: "pr", repo: "acme/web", number: 482 }),
+    ).toBe(false);
   });
 });
