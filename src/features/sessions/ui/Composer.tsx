@@ -228,8 +228,6 @@ type Props = {
   hideTopBar?: boolean;
   /** Keeps local file mentions, skills, and app modes off for host sessions. */
   remoteSession?: boolean;
-  /** The chat's display name, for PR copy such as the restack prompt. */
-  sessionTitle?: string;
   /** Opens one of the chat's PRs in the Inbox panel. */
   onOpenPrInInbox?: (item: LinkedWorkItem) => void;
   remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean };
@@ -357,7 +355,6 @@ export function Composer({
   hideBranchPicker = false,
   hideTopBar = false,
   remoteSession = false,
-  sessionTitle,
   onOpenPrInInbox,
   remoteFeatures,
   context,
@@ -2028,7 +2025,6 @@ export function Composer({
                   {sessionId && !remoteSession ? (
                     <PrChip
                       sessionId={sessionId}
-                      sessionTitle={sessionTitle}
                       active={enabled}
                       onOpenInbox={onOpenPrInInbox}
                     />

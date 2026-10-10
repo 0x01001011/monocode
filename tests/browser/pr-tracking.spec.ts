@@ -688,6 +688,14 @@ test.describe("layout", () => {
     await expect(page.locator("#panel .pr-section")).toHaveCount(0);
     // The neighbor chat still shows its own glyph.
     await expect(page.locator("#sb-row-neighbor .sb-glyph")).toHaveCount(1);
+    // Without a chip the branch button keeps its own sizing: no floor.
+    const floor = () =>
+      page
+        .locator("#composer [data-branch-trigger]")
+        .evaluate((el) => getComputedStyle(el).minWidth);
+    expect(await floor()).toBe("0px");
+    await load(page, { fixture: "stack" });
+    expect(await floor()).not.toBe("0px");
   });
 
   test("all hidden shows the hidden chip and only the Hidden section", async ({

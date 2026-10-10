@@ -72,7 +72,6 @@ describe("composer PR chip", () => {
     const onOpenPrInInbox = vi.fn();
     await render({
       sessionId: "s1",
-      sessionTitle: "Tasks panel audit",
       enabled: true,
       onOpenPrInInbox,
     });
@@ -81,10 +80,14 @@ describe("composer PR chip", () => {
     expect(branch.parentElement!.classList).toContain("composer-head");
     expect(chipProps.at(-1)).toMatchObject({
       sessionId: "s1",
-      sessionTitle: "Tasks panel audit",
       active: true,
       onOpenInbox: onOpenPrInInbox,
     });
+    expect(Object.keys(chipProps.at(-1)!).sort()).toEqual([
+      "active",
+      "onOpenInbox",
+      "sessionId",
+    ]);
   });
 
   it("renders nothing for a remote session or without a session id", async () => {

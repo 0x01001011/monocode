@@ -138,7 +138,7 @@ function Composer({ width }: { width: number }) {
         <CwdPicker cwd={CWD} recents={[]} enabled onCwdChange={noop} />
         <WorkspaceIdentity worktree />
         <BranchPicker cwd={CWD} branch={BRANCH} enabled onChange={noop} />
-        <PrChip sessionId={SESSION} sessionTitle={SESSION_TITLE} active />
+        <PrChip sessionId={SESSION} active />
         <div className="ml-auto flex shrink-0 items-center" data-audit-skip="">
           <ContextMeter usage={{ used: 84_000, window: 200_000 }} />
         </div>

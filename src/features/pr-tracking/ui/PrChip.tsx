@@ -17,24 +17,40 @@ import { usePrHoverCard } from "./usePrHoverCard";
 
 export type PrChipProps = {
   sessionId: string;
-  /** The chat's display name, for the restack prompt copy. */
-  sessionTitle?: string;
   /** The pane is visible; only then is this chat's tracking hot. */
   active?: boolean;
   /** Opens the PR in the Inbox panel; without it rows open GitHub. */
   onOpenInbox?: (item: LinkedWorkItem) => void;
 };
 
+/**
+ * How often a focused chip re-asserts "hot". The tracker treats a "hot" not
+ * re-asserted for ten minutes as "fleet" (pr_tracker.rs `HOT_TTL_MS`), so a
+ * crash cannot leave a chat hot forever.
+ */
+const HOT_REASSERT_MS = 5 * 60_000;
+
 /** Hot while the pane is visible and the window focused, fleet otherwise. */
 function usePrInterest(sessionId: string, active: boolean) {
   useEffect(() => {
     if (!active) return;
-    const hot = () => void setPrInterest(sessionId, "hot");
-    const fleet = () => void setPrInterest(sessionId, "fleet");
+    let focused = true;
+    const hot = () => {
+      focused = true;
+      void setPrInterest(sessionId, "hot");
+    };
+    const fleet = () => {
+      focused = false;
+      void setPrInterest(sessionId, "fleet");
+    };
     hot();
+    const timer = window.setInterval(() => {
+      if (focused) void setPrInterest(sessionId, "hot");
+    }, HOT_REASSERT_MS);
     window.addEventListener("focus", hot);
     window.addEventListener("blur", fleet);
     return () => {
+      window.clearInterval(timer);
       window.removeEventListener("focus", hot);
       window.removeEventListener("blur", fleet);
       fleet();

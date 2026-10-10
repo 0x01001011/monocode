@@ -630,7 +630,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       key={session.id}
       disabled={workspaceSwitchingSessionId === session.id}
       remoteSession={remoteSession}
-      sessionTitle={title}
       onOpenPrInInbox={
         onOpenLinkedWorkItem
           ? (item) => onOpenLinkedWorkItem(item, session.id)

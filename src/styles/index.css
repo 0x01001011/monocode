@@ -4392,10 +4392,10 @@ html.theme-light .btw-burst {
   }
 }
 
-/* Composer header row (`composer-head`): the branch button keeps at least
-   min(14ch, 45%); under 400px the PR chip drops its strip and +N, under
-   320px the "Worktree" label collapses to its icon. Queried on the row, not
-   the window, so split panes degrade too. */
+/* Composer header row (`composer-head`): next to a PR chip the branch
+   button keeps at least min(14ch, 45%); under 400px the PR chip drops its
+   strip and +N, under 320px the "Worktree" label collapses to its icon.
+   Queried on the row, not the window, so split panes degrade too. */
 .composer-head {
   container: composer-head / inline-size;
 }
@@ -4403,12 +4403,13 @@ html.theme-light .btw-burst {
    against the row), so it still shrinks to the floor and no further. The
    button fills it, so a short name leaves no dead gap, and truncates. The
    wrapper takes the label's 12px so `14ch` is 14 label characters, not
-   the inherited 16px (which pushed the row past its edge at 360px). */
-.composer-head > [data-branch-trigger] {
+   the inherited 16px (which pushed the row past its edge at 360px). Only
+   rows holding a chip need it; with zero PRs the button is unchanged. */
+.composer-head:has(.pr-chip) > [data-branch-trigger] {
   font-size: 12px;
   min-width: min(14ch, 45cqi);
 }
-.composer-head > [data-branch-trigger] > button {
+.composer-head:has(.pr-chip) > [data-branch-trigger] > button {
   flex: 1 1 auto;
 }
 .pr-chip-num {

@@ -120,7 +120,6 @@ let mounted: { root: Root; container: HTMLElement }[] = [];
 function render(over: Partial<PrChipProps> = {}) {
   const props: PrChipProps = {
     sessionId: "s1",
-    sessionTitle: "Tasks panel audit",
     onOpenInbox: vi.fn(),
     ...over,
   };
@@ -315,13 +314,15 @@ describe("PrChip narrow composers", () => {
     );
     // The floor sits on the wrapper (the row's flex item), sized against the
     // row through container units; the button fills it and truncates. `ch`
-    // resolves at the label's 12px, not the inherited 16px.
+    // resolves at the label's 12px, not the inherited 16px. Only rows that
+    // hold a chip get it: with zero PRs the branch button is unchanged.
     expect(css).toContain(
-      ".composer-head > [data-branch-trigger] { font-size: 12px; min-width: min(14ch, 45cqi); }",
+      ".composer-head:has(.pr-chip) > [data-branch-trigger] { font-size: 12px; min-width: min(14ch, 45cqi); }",
     );
     expect(css).toContain(
-      ".composer-head > [data-branch-trigger] > button { flex: 1 1 auto; }",
+      ".composer-head:has(.pr-chip) > [data-branch-trigger] > button { flex: 1 1 auto; }",
     );
+    expect(css).not.toContain(".composer-head > [data-branch-trigger]");
     expect(css).not.toContain("min-width: auto");
     expect(css).toContain(
       "@container composer-head (max-width: 400px) { .pr-chip .pr-strip, .pr-chip .pr-chip-more { display: none; } }",
@@ -351,6 +352,27 @@ describe("PrChip interest", () => {
     act(() => root.unmount());
     expect(h.setPrInterest).toHaveBeenLastCalledWith("s1", "fleet");
     mounted = [];
+  });
+
+  it("re-asserts hot every five minutes while focused, so the tracker's ten-minute expiry never lapses", () => {
+    vi.useFakeTimers();
+    render();
+    h.setPrInterest.mockClear();
+    act(() => vi.advanceTimersByTime(5 * 60_000));
+    expect(h.setPrInterest).toHaveBeenCalledTimes(1);
+    expect(h.setPrInterest).toHaveBeenLastCalledWith("s1", "hot");
+    act(() => {
+      window.dispatchEvent(new Event("blur"));
+    });
+    h.setPrInterest.mockClear();
+    act(() => vi.advanceTimersByTime(15 * 60_000));
+    expect(h.setPrInterest).not.toHaveBeenCalled();
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    act(() => vi.advanceTimersByTime(5 * 60_000));
+    expect(h.setPrInterest).toHaveBeenCalledTimes(2);
+    expect(h.setPrInterest).toHaveBeenLastCalledWith("s1", "hot");
   });
 
   it("stays hot even before the first PR shows up", () => {
