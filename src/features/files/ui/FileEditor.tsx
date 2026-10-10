@@ -152,8 +152,10 @@ export function FileEditor({
   const previewKind = filePreviewKind(path);
   const markdown = previewKind === "markdown";
   const svg = previewKind === "svg";
-  // Remote files have no local folder for the preview scheme to serve.
-  const html = previewKind === "html" && !isRemoteProjectPath(path);
+  const html = previewKind === "html";
+  // A remote file has no local folder for the preview scheme to serve, so its
+  // markup is handed over as read; files next to it are not reachable.
+  const remote = isRemoteProjectPath(path);
   // Diff tabs open as source: the git gutter only renders in the editor.
   const [mode, setMode] = useMarkdownMode(
     showDiff ? `review:${path}` : path,
@@ -516,7 +518,11 @@ export function FileEditor({
               // Shows the saved file; the folder watcher reloads it on save.
               mode === "preview" ? (
                 <HtmlFrame
-                  source={{ kind: "file", path }}
+                  source={
+                    remote
+                      ? { kind: "page", path, html: loadState.content }
+                      : { kind: "file", path }
+                  }
                   title={basename(path)}
                 />
               ) : null

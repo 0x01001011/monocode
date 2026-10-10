@@ -120,6 +120,9 @@ const BOOTSTRAP: &str = concat!(
 pub enum PreviewRoot {
     Dir(PathBuf),
     Artifact(String),
+    /// One page held in memory, e.g. a file read from a connected machine,
+    /// which has no local folder to serve. `update_page` swaps its markup.
+    Page(String),
 }
 
 #[derive(Default)]
@@ -141,11 +144,22 @@ impl PreviewRegistry {
                 }
                 PreviewRoot::Dir(dir)
             }
-            artifact => artifact,
+            other => other,
         };
         let token = uuid::Uuid::new_v4().simple().to_string();
         self.lock().insert(token.clone(), root);
         Ok(token)
+    }
+
+    /// Replace the markup of an in-memory page; false for any other root.
+    pub fn update_page(&self, token: &str, html: String) -> bool {
+        match self.lock().get_mut(token) {
+            Some(PreviewRoot::Page(current)) => {
+                *current = html;
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn remove(&self, token: &str) {
@@ -210,6 +224,14 @@ pub fn serve_with_file(
                 None => (not_found(), None),
             }
         }
+        Some(PreviewRoot::Page(html)) if rel.is_empty() || rel == "index.html" => (
+            respond(
+                200,
+                "text/html; charset=utf-8",
+                with_bootstrap(&html).into_bytes(),
+            ),
+            None,
+        ),
         _ => (not_found(), None),
     }
 }
@@ -529,6 +551,18 @@ impl WatchShared {
 pub enum PreviewSource {
     Dir { path: String },
     Artifact { id: String },
+    /// A page the app already holds, such as a file on a connected machine.
+    Html { html: String },
+}
+
+/// Larger than any file the app opens as text, so a read page always fits.
+const MAX_PAGE_BYTES: usize = 4 * 1024 * 1024;
+
+fn checked_page(html: String) -> Result<String, String> {
+    if html.len() > MAX_PAGE_BYTES {
+        return Err("This page is too large to preview".into());
+    }
+    Ok(html)
 }
 
 pub struct PreviewState {
@@ -571,6 +605,23 @@ pub fn preview_open(
             validate_id(&id, "artifact")?;
             state.registry.register(PreviewRoot::Artifact(id))
         }
+        PreviewSource::Html { html } => state
+            .registry
+            .register(PreviewRoot::Page(checked_page(html)?)),
+    }
+}
+
+/// Show new markup in an open `Html` preview; its frame then reloads.
+#[tauri::command(async)]
+pub fn preview_update(
+    state: State<'_, PreviewState>,
+    token: String,
+    html: String,
+) -> Result<(), String> {
+    if state.registry.update_page(&token, checked_page(html)?) {
+        Ok(())
+    } else {
+        Err("Preview is not open".into())
     }
 }
 
@@ -613,3 +664,48 @@ fn artifact_html(app: &AppHandle, id: &str) -> Option<String> {
 #[cfg(test)]
 #[path = "html_preview_spec.rs"]
 mod spec;
+
+#[cfg(test)]
+mod page_tests {
+    use super::*;
+
+    fn no_artifacts(_: &str) -> Option<String> {
+        None
+    }
+
+    #[test]
+    fn a_page_is_served_with_the_bootstrap_and_can_be_updated() {
+        let registry = PreviewRegistry::default();
+        let token = registry
+            .register(PreviewRoot::Page("<html><head></head><h1>One</h1></html>".into()))
+            .unwrap();
+        for rel in ["", "index.html"] {
+            let response = serve(&registry, &format!("/{token}/{rel}"), no_artifacts);
+            assert_eq!(response.status(), 200);
+            let body = String::from_utf8(response.body().clone()).unwrap();
+            assert!(body.contains("<h1>One</h1>") && body.contains(BOOTSTRAP_MARKER));
+        }
+        assert!(registry.update_page(&token, "<h1>Two</h1>".into()));
+        let body = serve(&registry, &format!("/{token}/"), no_artifacts).into_body();
+        assert!(String::from_utf8(body).unwrap().contains("<h1>Two</h1>"));
+    }
+
+    #[test]
+    fn a_page_serves_nothing_else_and_only_pages_update() {
+        let registry = PreviewRegistry::default();
+        let token = registry.register(PreviewRoot::Page("<p>x</p>".into())).unwrap();
+        assert_eq!(
+            serve(&registry, &format!("/{token}/secret.txt"), no_artifacts).status(),
+            404
+        );
+        let artifact = registry.register(PreviewRoot::Artifact("a".into())).unwrap();
+        assert!(!registry.update_page(&artifact, "<p>y</p>".into()));
+        assert!(!registry.update_page("missing", "<p>y</p>".into()));
+    }
+
+    #[test]
+    fn an_oversized_page_is_refused() {
+        assert!(checked_page("x".repeat(MAX_PAGE_BYTES + 1)).is_err());
+        assert!(checked_page("x".repeat(MAX_PAGE_BYTES)).is_ok());
+    }
+}

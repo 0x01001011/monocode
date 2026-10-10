@@ -16,11 +16,14 @@ import {
   openPreview,
   PREVIEW_CHANGED_EVENT,
   previewUrl,
+  updatePreview,
 } from "../htmlPreview";
 
 export type HtmlFrameSource =
   | { kind: "file"; path: string }
-  | { kind: "artifact"; id: string };
+  | { kind: "artifact"; id: string }
+  /** Markup the app read itself, for a file with no folder on this computer. */
+  | { kind: "page"; path: string; html: string };
 
 /**
  * Scripts run, but without `allow-same-origin` the page gets an opaque origin:
@@ -74,6 +77,10 @@ export function HtmlFrame({
   const elements = useRef(new Map<number, HTMLIFrameElement>());
   const onHeightRef = useRef(onHeight);
   onHeightRef.current = onHeight;
+  // The markup a page preview opens with; later edits arrive through updatePreview.
+  const pageHtml = useRef("");
+  pageHtml.current = source.kind === "page" ? source.html : "";
+  const sentHtml = useRef<string | undefined>(undefined);
   const lastOpen = useRef(0);
   const lastCopy = useRef(0);
   // Where the page on screen is scrolled, to hand to the page that replaces it.
@@ -91,10 +98,13 @@ export function HtmlFrame({
     scrollPos.current = null;
     readyCounts.current.clear();
     setError(false);
+    sentHtml.current = source.kind === "page" ? pageHtml.current : undefined;
     void openPreview(
       source.kind === "file"
         ? { kind: "dir", path: parentPath(source.path) }
-        : { kind: "artifact", id: source.id },
+        : source.kind === "page"
+          ? { kind: "html", html: pageHtml.current }
+          : { kind: "artifact", id: source.id },
     ).then(
       (next) => {
         opened = next;
@@ -116,6 +126,25 @@ export function HtmlFrame({
     };
     // sourceKey captures every field of `source` that matters.
   }, [sourceKey, attempt]);
+
+  const pageSource = source.kind === "page" ? source.html : undefined;
+  useEffect(() => {
+    if (!token || pageSource === undefined || sentHtml.current === pageSource)
+      return;
+    sentHtml.current = pageSource;
+    let live = true;
+    void updatePreview(token, pageSource).then(
+      () => {
+        if (live) setReload((n) => n + 1);
+      },
+      () => {
+        if (live) setError(true);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [token, pageSource]);
 
   const markLoaded = (id: number) =>
     setFrames((current) =>
