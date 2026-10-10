@@ -308,7 +308,8 @@ pub fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
 
 /// Upsert: keeps `first_seen`, bumps `last_seen`. A `trace2` sighting upgrades
 /// the row's source so "git activity is observed for this chat" stays visible
-/// even when a save recorded the branch first.
+/// even when a save recorded the branch first. True when the row is new or
+/// its source changed.
 pub fn record_branch(
     conn: &Connection,
     session_id: &str,
@@ -316,7 +317,15 @@ pub fn record_branch(
     branch: &str,
     source: &str,
     now: i64,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<bool> {
+    let before: Option<String> = conn
+        .query_row(
+            "SELECT source FROM session_branches
+             WHERE session_id = ?1 AND repo = ?2 AND branch = ?3",
+            params![session_id, repo, branch],
+            |row| row.get(0),
+        )
+        .optional()?;
     conn.execute(
         "INSERT INTO session_branches (session_id, repo, branch, source, first_seen, last_seen)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5)
@@ -325,7 +334,8 @@ pub fn record_branch(
                        source = CASE WHEN excluded.source = 'trace2' THEN 'trace2' ELSE source END",
         params![session_id, repo, branch, source, now],
     )?;
-    Ok(())
+    // `last_seen` alone changes nothing a PR set shows.
+    Ok(before.is_none_or(|old| old != "trace2" && source == "trace2"))
 }
 
 /// `(repo, branch)` pairs, oldest first.
@@ -342,6 +352,7 @@ pub fn session_branches(
 }
 
 /// Never downgrades `Owned` to a weaker relation and never clears `dismissed`.
+/// True when the row is new or its relation changed.
 pub fn record_pr(
     conn: &Connection,
     session_id: &str,
@@ -350,7 +361,15 @@ pub fn record_pr(
     relation: Relation,
     source: &str,
     now: i64,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<bool> {
+    let before: Option<String> = conn
+        .query_row(
+            "SELECT relation FROM session_prs
+             WHERE session_id = ?1 AND repo = ?2 AND number = ?3",
+            params![session_id, repo, number],
+            |row| row.get(0),
+        )
+        .optional()?;
     conn.execute(
         "INSERT INTO session_prs (session_id, repo, number, relation, source, dismissed, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)
@@ -360,7 +379,7 @@ pub fn record_pr(
            ELSE excluded.relation END",
         params![session_id, repo, number, relation.as_str(), source, now],
     )?;
-    Ok(())
+    Ok(before.is_none_or(|old| old != "owned" && old != relation.as_str()))
 }
 
 /// `(repo, number, relation, dismissed)`, in the order the chat first saw them.
@@ -940,11 +959,13 @@ mod tests {
             conn.query_row("SELECT source FROM session_branches", [], |r| r.get(0))
                 .unwrap()
         };
-        record_branch(&conn, "s1", "o/r", "feat/a", "save", 1).unwrap();
+        assert!(record_branch(&conn, "s1", "o/r", "feat/a", "save", 1).unwrap());
         assert_eq!(source(&conn), "save");
-        record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 2).unwrap();
+        assert!(!record_branch(&conn, "s1", "o/r", "feat/a", "save", 2).unwrap());
+        assert!(record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 2).unwrap());
         assert_eq!(source(&conn), "trace2");
-        record_branch(&conn, "s1", "o/r", "feat/a", "save", 3).unwrap();
+        assert!(!record_branch(&conn, "s1", "o/r", "feat/a", "save", 3).unwrap());
+        assert!(!record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 4).unwrap());
         assert_eq!(source(&conn), "trace2");
     }
 
@@ -985,15 +1006,17 @@ mod tests {
     fn record_pr_never_downgrades_owned() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
-        record_pr(&conn, "s1", "o/r", 7, Relation::Owned, "url", 1).unwrap();
-        record_pr(&conn, "s1", "o/r", 7, Relation::Existing, "branch", 2).unwrap();
+        assert!(record_pr(&conn, "s1", "o/r", 7, Relation::Owned, "url", 1).unwrap());
+        assert!(!record_pr(&conn, "s1", "o/r", 7, Relation::Existing, "branch", 2).unwrap());
+        assert!(!record_pr(&conn, "s1", "o/r", 7, Relation::Owned, "url", 3).unwrap());
         assert_eq!(
             session_pr_keys(&conn, "s1").unwrap(),
             vec![("o/r".to_string(), 7, Relation::Owned, false)]
         );
         // Upgrading is allowed.
-        record_pr(&conn, "s1", "o/r", 8, Relation::Existing, "branch", 3).unwrap();
-        record_pr(&conn, "s1", "o/r", 8, Relation::Owned, "url", 4).unwrap();
+        assert!(record_pr(&conn, "s1", "o/r", 8, Relation::Existing, "branch", 3).unwrap());
+        assert!(!record_pr(&conn, "s1", "o/r", 8, Relation::Existing, "hint", 3).unwrap());
+        assert!(record_pr(&conn, "s1", "o/r", 8, Relation::Owned, "url", 4).unwrap());
         let keys = session_pr_keys(&conn, "s1").unwrap();
         assert!(keys.contains(&("o/r".to_string(), 8, Relation::Owned, false)));
     }

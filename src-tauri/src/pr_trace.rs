@@ -44,7 +44,7 @@ mod unix {
     use std::time::{Duration, Instant};
 
     use serde::Deserialize;
-    use tauri::{AppHandle, Emitter, Manager};
+    use tauri::{AppHandle, Manager};
 
     use crate::session_store::{validate_id, SessionStore};
 
@@ -350,22 +350,24 @@ mod unix {
         }
     }
 
+    /// Records the branch git ran on; the UI hears about it only when that
+    /// added or changed a branch row (a repeat sighting changes nothing).
     fn attribute(app: &AppHandle, action: &Action) {
         let branch = crate::fs::git_head_branch(Path::new(&action.worktree));
-        if let Some(store) = app.try_state::<SessionStore>() {
-            if let Ok(conn) = store.lock_conn() {
-                crate::pr_attribution::note_branch_trace(
-                    &conn,
-                    &action.session_id,
-                    &action.worktree,
-                    branch.as_deref(),
-                );
-            }
+        let Some(store) = app.try_state::<SessionStore>() else {
+            return;
+        };
+        let changed = store.lock_conn().is_ok_and(|conn| {
+            crate::pr_attribution::note_branch_trace(
+                &conn,
+                &action.session_id,
+                &action.worktree,
+                branch.as_deref(),
+            )
+        });
+        if changed {
+            crate::pr_tracker::notify_session_changed(app, &action.session_id);
         }
-        let _ = app.emit(
-            "pr-set-changed",
-            serde_json::json!({ "sessionIds": [action.session_id] }),
-        );
     }
 
     fn bind_socket() -> Option<(UnixDatagram, PathBuf)> {

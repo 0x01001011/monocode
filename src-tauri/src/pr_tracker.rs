@@ -44,6 +44,10 @@ const GH_DEADLINE: Duration = Duration::from_secs(45);
 const REFRESH_THROTTLE_MS: i64 = 5_000;
 /// Error text for a killed `gh` child; `classify_gh_error` reads it as offline.
 const GH_TIMED_OUT: &str = "GitHub request timed out";
+/// A refresh that changed nothing but `fetched_at` still notifies the UI
+/// once its last notice for that PR is this old, so the UI's copy never
+/// ages past `pr_store`'s ten-minute stale mark while polling works.
+const FRESHNESS_NOTICE_MS: i64 = 5 * 60_000;
 
 const PR_FIELDS: &str = "fragment PrFields on PullRequest { number url title state isDraft \
 isCrossRepository headRepositoryOwner { login } headRefName baseRefName headRefOid \
@@ -588,6 +592,8 @@ struct Timers {
     base_oids: HashMap<(String, u32), String>,
     /// Last compare attempt per PR: `(head_oid, base_oid, at)`.
     compare_tried: HashMap<(String, u32), (String, String, i64)>,
+    /// When the UI was last told about each PR.
+    notified: HashMap<(String, u32), i64>,
 }
 
 pub struct Tracker {
@@ -651,18 +657,17 @@ impl Tracker {
         true
     }
 
-    fn set_error(&self, repo: &str, number: u32, error: Option<&str>) {
-        if let Ok(mut errors) = self.errors.lock() {
-            let key = (repo.to_string(), number);
-            match error {
-                Some(message) => {
-                    errors.insert(key, message.to_string());
-                }
-                None => {
-                    errors.remove(&key);
-                }
-            }
-        }
+    /// True when the PR's error changed.
+    fn set_error(&self, repo: &str, number: u32, error: Option<&str>) -> bool {
+        let Ok(mut errors) = self.errors.lock() else {
+            return false;
+        };
+        let key = (repo.to_string(), number);
+        let before = match error {
+            Some(message) => errors.insert(key, message.to_string()),
+            None => errors.remove(&key),
+        };
+        before.as_deref() != error
     }
 
     fn error(&self, repo: &str, number: u32) -> Option<String> {
@@ -958,21 +963,38 @@ fn mark_attempted(tracker: &Tracker, request: &RepoRequest, now: i64) {
     }
 }
 
+/// What `write_pr` did to the stored snapshot.
+struct Written {
+    /// New snapshot, a field other than `fetched_at` changed, or a base
+    /// change was recorded.
+    changed: bool,
+    /// `fetched_at` of the snapshot it replaced.
+    previous_fetched_at: Option<i64>,
+}
+
 /// Writes one fetched PR under the request's repo key. With a known base tip,
 /// `behind_by` is the cached count for the current (head, base) tips, or
 /// unknown until compared. Without one it is kept while head and base are
 /// unchanged. Appends unseen base changes.
-fn write_pr(conn: &Connection, repo: &str, pr: &ParsedPr, now: i64) -> rusqlite::Result<()> {
+fn write_pr(conn: &Connection, repo: &str, pr: &ParsedPr, now: i64) -> rusqlite::Result<Written> {
     let mut snapshot = pr.snapshot.clone();
     snapshot.repo = repo.to_string();
     snapshot.fetched_at = now;
+    let old = pr_store::load_snapshot(conn, repo, snapshot.number);
     if let Some(base_oid) = pr.base_oid.as_deref() {
         snapshot.behind_by = pr_store::load_compare(conn, repo, &snapshot.head_oid, base_oid);
-    } else if let Some(old) = pr_store::load_snapshot(conn, repo, snapshot.number) {
+    } else if let Some(old) = &old {
         if old.head_oid == snapshot.head_oid && old.base_ref == snapshot.base_ref {
             snapshot.behind_by = old.behind_by;
         }
     }
+    let mut changed = old.as_ref().is_none_or(|old| {
+        let restamped = PrSnapshot {
+            fetched_at: now,
+            ..old.clone()
+        };
+        restamped != snapshot
+    });
     pr_store::upsert_snapshot(conn, &snapshot)?;
     let history = pr_store::base_history(conn, repo, snapshot.number)?;
     for change in &pr.base_changes {
@@ -981,12 +1003,18 @@ fn write_pr(conn: &Connection, repo: &str, pr: &ParsedPr, now: i64) -> rusqlite:
             .any(|(name, at)| *name == change.current && *at == change.at);
         if !known {
             pr_store::record_base_change(conn, repo, snapshot.number, &change.current, change.at)?;
+            changed = true;
         }
     }
-    Ok(())
+    Ok(Written {
+        changed,
+        previous_fetched_at: old.map(|old| old.fetched_at),
+    })
 }
 
 /// Applies one repo's response; returns the sessions whose PR set changed.
+/// A PR whose refresh changed only `fetched_at` counts once its last notice
+/// is `FRESHNESS_NOTICE_MS` old.
 fn apply_batch(
     conn: &Connection,
     tracker: &Tracker,
@@ -997,6 +1025,15 @@ fn apply_batch(
 ) -> rusqlite::Result<BTreeSet<String>> {
     let repo = request.repo.as_str();
     let mut touched: BTreeSet<u32> = BTreeSet::new();
+    // Refreshed PRs that changed nothing visible: `(number, previous fetch)`.
+    let mut unchanged: Vec<(u32, Option<i64>)> = Vec::new();
+    let mut note = |number: u32, changed: bool, previous: Option<i64>| {
+        if changed {
+            touched.insert(number);
+        } else {
+            unchanged.push((number, previous));
+        }
+    };
     // Base-branch tips of open PRs, for the next compare decision.
     let mut base_oids: Vec<(u32, String)> = Vec::new();
     let open_base = |pr: &ParsedPr| match (pr.snapshot.state, &pr.base_oid) {
@@ -1007,13 +1044,20 @@ fn apply_batch(
         let found = batch.prs.get(target.alias());
         match target {
             Target::Pr { alias, number, .. } => {
+                let mut changed = false;
+                let mut previous = None;
                 for pr in found.into_iter().flatten() {
-                    write_pr(conn, repo, pr, now)?;
+                    let written = write_pr(conn, repo, pr, now)?;
+                    changed |= written.changed;
+                    previous = written.previous_fetched_at;
                     base_oids.extend(open_base(pr));
                 }
                 let error = batch.errors.get(alias).map(String::as_str);
-                tracker.set_error(repo, *number, error);
-                touched.insert(*number);
+                changed |= tracker.set_error(repo, *number, error);
+                // A failed lookup with an unchanged error leaves nothing new.
+                if changed || found.is_some_and(|prs| !prs.is_empty()) {
+                    note(*number, changed, previous);
+                }
             }
             Target::Branch { branch, .. } => {
                 let sessions = plan
@@ -1036,8 +1080,9 @@ fn apply_batch(
                     // Only a URL the chat itself recorded makes a PR Owned;
                     // record_pr never downgrades it, so everything found on a
                     // branch, by the viewer or anyone else, is Existing.
+                    let mut changed = false;
                     for session in sessions {
-                        pr_store::record_pr(
+                        changed |= pr_store::record_pr(
                             conn,
                             session,
                             repo,
@@ -1047,10 +1092,11 @@ fn apply_batch(
                             now,
                         )?;
                     }
-                    write_pr(conn, repo, pr, now)?;
+                    let written = write_pr(conn, repo, pr, now)?;
+                    changed |= written.changed;
                     base_oids.extend(open_base(pr));
-                    tracker.set_error(repo, pr.snapshot.number, None);
-                    touched.insert(pr.snapshot.number);
+                    changed |= tracker.set_error(repo, pr.snapshot.number, None);
+                    note(pr.snapshot.number, changed, written.previous_fetched_at);
                 }
             }
             Target::Compare {
@@ -1085,7 +1131,7 @@ fn apply_batch(
                 {
                     snapshot.behind_by = Some(compare.behind_by);
                     pr_store::upsert_snapshot(conn, &snapshot)?;
-                    touched.insert(*number);
+                    note(*number, true, None);
                 }
             }
         }
@@ -1093,6 +1139,19 @@ fn apply_batch(
     if let Ok(mut timers) = tracker.timers.lock() {
         for (number, oid) in base_oids {
             timers.base_oids.insert((repo.to_string(), number), oid);
+        }
+        for (number, previous) in unchanged {
+            let last = timers
+                .notified
+                .get(&(repo.to_string(), number))
+                .copied()
+                .or(previous);
+            if last.is_none_or(|at| now - at >= FRESHNESS_NOTICE_MS) {
+                touched.insert(number);
+            }
+        }
+        for &number in &touched {
+            timers.notified.insert((repo.to_string(), number), now);
         }
     }
     let mut changed = BTreeSet::new();
@@ -1450,9 +1509,10 @@ pub fn start(app: &AppHandle) {
     }
 }
 
+/// Interest only changes how often PRs are polled, never what a set holds,
+/// so no `pr-set-changed` follows.
 #[tauri::command(async)]
 pub fn pr_set_interest(
-    app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
     level: String,
@@ -1467,7 +1527,6 @@ pub fn pr_set_interest(
             .map_err(|e| e.to_string())?;
     }
     TRACKER.wake();
-    notify_session_changed(&app, &session_id);
     Ok(())
 }
 
@@ -2263,6 +2322,48 @@ mod tests {
             changed_payload(&[]),
             serde_json::json!({ "sessionIds": [] })
         );
+    }
+
+    #[test]
+    fn unchanged_refresh_does_not_notify_but_a_change_does() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_pr(&conn, "s1", "cli/cli", 14148, Relation::Owned, "create", 1)
+                .unwrap();
+        }
+        let retitled = OPEN_FAILING_PARTIAL.replace("Update glamour to v2", "Update glamour");
+        let runner = FakeRunner::new(vec![
+            Ok(OPEN_FAILING_PARTIAL),
+            Ok(OPEN_FAILING_PARTIAL),
+            Ok(&retitled),
+            Ok(&retitled),
+            Ok(&retitled),
+        ]);
+        let tracker = Tracker::new();
+        let fetched_at = |store: &SessionStore| {
+            let conn = store.lock_conn().unwrap();
+            pr_store::load_snapshot(&conn, "cli/cli", 14148)
+                .unwrap()
+                .fetched_at
+        };
+        let cycle = |at: i64| {
+            assert!(tracker.force("s1", at));
+            run_cycle(&store, &runner, &tracker, "t", at).changed
+        };
+        // A new snapshot is a change.
+        assert!(cycle(NOW).contains("s1"));
+        // Same content: the new fetched_at is saved, nobody is told.
+        assert!(cycle(NOW + 5_000).is_empty());
+        assert_eq!(fetched_at(&store), NOW + 5_000);
+        // A field other than fetched_at changed.
+        assert!(cycle(NOW + 10_000).contains("s1"));
+        // Unchanged again, but the UI's copy would soon read as stale: tell
+        // it once the last notice is FRESHNESS_NOTICE_MS old.
+        assert!(cycle(NOW + 15_000).is_empty());
+        assert!(cycle(NOW + 10_000 + FRESHNESS_NOTICE_MS).contains("s1"));
+        assert_eq!(runner.queries().len(), 5);
     }
 
     #[test]

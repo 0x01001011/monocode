@@ -118,9 +118,15 @@ pub fn note_branch(conn: &Connection, session_id: &str, cwd: &str, branch: Optio
     note_branch_as(conn, session_id, cwd, branch, "save");
 }
 
-/// `note_branch` for a branch seen through git trace2 events.
-pub fn note_branch_trace(conn: &Connection, session_id: &str, cwd: &str, branch: Option<&str>) {
-    note_branch_as(conn, session_id, cwd, branch, "trace2");
+/// `note_branch` for a branch seen through git trace2 events. True when a
+/// branch row was added or changed.
+pub fn note_branch_trace(
+    conn: &Connection,
+    session_id: &str,
+    cwd: &str,
+    branch: Option<&str>,
+) -> bool {
+    note_branch_as(conn, session_id, cwd, branch, "trace2")
 }
 
 fn note_branch_as(
@@ -129,19 +135,19 @@ fn note_branch_as(
     cwd: &str,
     branch: Option<&str>,
     source: &str,
-) {
+) -> bool {
     let Some(name) = usable_branch(branch) else {
-        return;
+        return false;
     };
     let root = crate::fs::expand_home(cwd);
     // `git_info_for` reports a short commit id when HEAD is detached.
     if looks_like_commit_id(name) && crate::fs::git_head_branch(&root).is_none() {
-        return;
+        return false;
     }
     if repo_facts_for(&root).default_branch.as_deref() == Some(name) {
-        return;
+        return false;
     }
-    note_branch_with_source(conn, session_id, cwd, branch, source, repo_slug_for);
+    note_branch_with_source(conn, session_id, cwd, branch, source, repo_slug_for)
 }
 
 /// `note_branch` with the repo lookup injected so tests need no git.
@@ -156,7 +162,8 @@ pub fn note_branch_with(
     note_branch_with_source(conn, session_id, cwd, branch, "save", resolve);
 }
 
-/// `note_branch_with` that also names the signal (`save`, `trace2`) behind it.
+/// `note_branch_with` that also names the signal (`save`, `trace2`) behind
+/// it. True when a branch row was added or changed.
 pub fn note_branch_with_source(
     conn: &Connection,
     session_id: &str,
@@ -164,15 +171,19 @@ pub fn note_branch_with_source(
     branch: Option<&str>,
     source: &str,
     resolve: impl Fn(&Path) -> Option<String>,
-) {
+) -> bool {
     let Some(name) = usable_branch(branch) else {
-        return;
+        return false;
     };
     let Some(repo) = resolve(&crate::fs::expand_home(cwd)) else {
-        return;
+        return false;
     };
-    if let Err(err) = pr_store::record_branch(conn, session_id, &repo, name, source, now_millis()) {
-        eprintln!("[pr_attribution] could not record branch {name} for {session_id}: {err}");
+    match pr_store::record_branch(conn, session_id, &repo, name, source, now_millis()) {
+        Ok(changed) => changed,
+        Err(err) => {
+            eprintln!("[pr_attribution] could not record branch {name} for {session_id}: {err}");
+            false
+        }
     }
 }
 
@@ -201,6 +212,7 @@ fn record_url(conn: &Connection, session_id: &str, url: &str) -> Result<(), Stri
         "create",
         now_millis(),
     )
+    .map(|_| ())
     .map_err(|e| e.to_string())
 }
 
@@ -421,11 +433,43 @@ mod tests {
     #[test]
     fn note_branch_with_source_records_the_given_source() {
         let conn = conn();
-        note_branch_with_source(&conn, "s1", "/work", Some("feat/a"), "trace2", repo);
+        assert!(note_branch_with_source(
+            &conn,
+            "s1",
+            "/work",
+            Some("feat/a"),
+            "trace2",
+            repo
+        ));
         let source: String = conn
             .query_row("SELECT source FROM session_branches", [], |r| r.get(0))
             .unwrap();
         assert_eq!(source, "trace2");
+        // Seeing the same branch again changes nothing a PR set shows.
+        assert!(!note_branch_with_source(
+            &conn,
+            "s1",
+            "/work",
+            Some("feat/a"),
+            "trace2",
+            repo
+        ));
+        assert!(!note_branch_with_source(
+            &conn,
+            "s1",
+            "/work",
+            Some("main"),
+            "trace2",
+            repo
+        ));
+        assert!(!note_branch_with_source(
+            &conn,
+            "s1",
+            "/work",
+            Some("feat/b"),
+            "trace2",
+            |_| None
+        ));
     }
 
     #[test]
