@@ -7,9 +7,11 @@ import {
   type ReactElement,
 } from "react";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
-import { formatDuration } from "../model/duration";
+import { durationLabel } from "../model/nodeLabels";
 import type { BoardNode, BoardStage, BoardStep } from "../model/taskBoard";
 import { TaskGlyph, glyphForStatus, type GlyphKind } from "./TaskGlyph";
+
+export { durationLabel };
 
 type Props = {
   nodes: BoardNode[];
@@ -24,7 +26,6 @@ type Props = {
 
 const STRUGGLING_FROM_ROUND = 3;
 const MAX_FIX_ROUNDS = 5;
-const NO_DURATION = "—";
 
 // Only tasks open; stage and step rows are read-only leaves.
 type RowKind = "task" | "stage" | "step";
@@ -90,16 +91,6 @@ function parentIndex(
 export function glyphFor(node: BoardNode): GlyphKind {
   if (node.status === "attention" && (node.fixRounds ?? 0) >= STRUGGLING_FROM_ROUND) return "struggling";
   return glyphForStatus(node.status);
-}
-
-export function durationLabel(node: BoardNode, now: number): string | undefined {
-  if (node.status === "pending") return undefined;
-  if (node.startedAt === undefined) return NO_DURATION;
-  // An attention task is still being worked on until it has an end; blocked has no clock.
-  if (node.status === "running" || (node.status === "attention" && node.endedAt === undefined)) {
-    return formatDuration(now - node.startedAt, true);
-  }
-  return formatDuration(node.endedAt === undefined ? undefined : node.endedAt - node.startedAt, false);
 }
 
 function flatten(
