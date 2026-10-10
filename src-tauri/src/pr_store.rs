@@ -606,10 +606,85 @@ fn is_attributed(relation: Relation, snapshot: &PrSnapshot, branches: &[(String,
             .any(|(repo, branch)| *repo == snapshot.repo && *branch == snapshot.head_ref)
 }
 
+/// Every stored snapshot of one repo and its stack edges, read and derived
+/// once per `build_set_view`/`build_summaries` call however many chats use it.
+struct RepoPool {
+    repo: String,
+    snapshots: Vec<PrSnapshot>,
+    by_number: HashMap<u32, usize>,
+    parents: HashMap<(String, u32), u32>,
+    children: HashMap<u32, Vec<u32>>,
+}
+
+impl RepoPool {
+    fn load(conn: &Connection, repo: &str) -> Self {
+        let snapshots = repo_snapshots(conn, repo);
+        let by_number = snapshots
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.number, i))
+            .collect();
+        let parents = pr_stack::derive_parents(&snapshots);
+        let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+        for ((parent_repo, child), parent) in &parents {
+            if parent_repo == repo {
+                children.entry(*parent).or_default().push(*child);
+            }
+        }
+        Self {
+            repo: repo.to_string(),
+            snapshots,
+            by_number,
+            parents,
+            children,
+        }
+    }
+
+    fn get(&self, number: u32) -> Option<&PrSnapshot> {
+        self.by_number.get(&number).map(|&i| &self.snapshots[i])
+    }
+
+    /// PR numbers connected to `seeds` by walking stack edges up and down.
+    fn neighbors(&self, seeds: &[u32]) -> std::collections::BTreeSet<u32> {
+        let mut wanted = std::collections::BTreeSet::new();
+        for &seed in seeds {
+            let mut seen = std::collections::HashSet::from([seed]);
+            let mut current = seed;
+            while let Some(&parent) = self.parents.get(&(self.repo.clone(), current)) {
+                if !seen.insert(parent) {
+                    break;
+                }
+                wanted.insert(parent);
+                current = parent;
+            }
+            let mut pending = vec![seed];
+            while let Some(number) = pending.pop() {
+                for &child in self.children.get(&number).into_iter().flatten() {
+                    if seen.insert(child) {
+                        wanted.insert(child);
+                        pending.push(child);
+                    }
+                }
+            }
+        }
+        wanted
+    }
+}
+
+/// Repo pools loaded so far in one call, keyed by repo.
+type Pools = HashMap<String, RepoPool>;
+
+fn pool<'p>(pools: &'p mut Pools, conn: &Connection, repo: &str) -> &'p RepoPool {
+    pools
+        .entry(repo.to_string())
+        .or_insert_with(|| RepoPool::load(conn, repo))
+}
+
 /// The chat's own rows with a snapshot, filtered by `is_attributed`. Both
-/// `build_set_view` and (through it) `build_summaries` read only these.
+/// `build_set_view` and `build_summaries` read only these.
 fn own_entries(
     conn: &Connection,
+    pools: &mut Pools,
     session_id: &str,
     live_branch: Option<(&str, &str)>,
 ) -> Vec<PrEntry> {
@@ -618,48 +693,11 @@ fn own_entries(
         .unwrap_or_default()
         .into_iter()
         .filter_map(|(repo, number, relation, dismissed)| {
-            let snapshot = load_snapshot(conn, &repo, number)?;
+            let snapshot = pool(pools, conn, &repo).get(number)?.clone();
             is_attributed(relation, &snapshot, &branches)
                 .then(|| make_entry(snapshot, relation, None, dismissed, live_branch))
         })
         .collect()
-}
-
-/// PR numbers connected to `seeds` by walking stack edges up and down.
-fn stack_neighbors(
-    pool: &[PrSnapshot],
-    repo: &str,
-    seeds: &[u32],
-) -> std::collections::BTreeSet<u32> {
-    let parents = pr_stack::derive_parents(pool);
-    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
-    for ((parent_repo, child), parent) in &parents {
-        if parent_repo == repo {
-            children.entry(*parent).or_default().push(*child);
-        }
-    }
-    let mut wanted = std::collections::BTreeSet::new();
-    for &seed in seeds {
-        let mut seen = std::collections::HashSet::from([seed]);
-        let mut current = seed;
-        while let Some(&parent) = parents.get(&(repo.to_string(), current)) {
-            if !seen.insert(parent) {
-                break;
-            }
-            wanted.insert(parent);
-            current = parent;
-        }
-        let mut pending = vec![seed];
-        while let Some(number) = pending.pop() {
-            for &child in children.get(&number).into_iter().flatten() {
-                if seen.insert(child) {
-                    wanted.insert(child);
-                    pending.push(child);
-                }
-            }
-        }
-    }
-    wanted
 }
 
 /// The PRs of one chat plus their stack neighbors. `live_branch` is
@@ -673,7 +711,18 @@ pub fn build_set_view(
     status: TrackerStatus,
     _now: i64,
 ) -> PrSetView {
-    let mut entries = own_entries(conn, session_id, live_branch);
+    set_view_with(conn, &mut Pools::new(), session_id, live_branch, status)
+}
+
+/// `build_set_view` reading repo pools through `pools`.
+fn set_view_with(
+    conn: &Connection,
+    pools: &mut Pools,
+    session_id: &str,
+    live_branch: Option<(&str, &str)>,
+    status: TrackerStatus,
+) -> PrSetView {
+    let mut entries = own_entries(conn, pools, session_id, live_branch);
 
     let own: std::collections::HashSet<(String, u32)> = entries
         .iter()
@@ -682,17 +731,17 @@ pub fn build_set_view(
     let repos: std::collections::BTreeSet<String> =
         entries.iter().map(|e| e.snapshot.repo.clone()).collect();
     for repo in repos {
-        let pool = repo_snapshots(conn, &repo);
+        let pool = pool(pools, conn, &repo);
         let seeds: Vec<u32> = own
             .iter()
             .filter(|(r, _)| *r == repo)
             .map(|(_, n)| *n)
             .collect();
-        for number in stack_neighbors(&pool, &repo, &seeds) {
+        for number in pool.neighbors(&seeds) {
             if own.contains(&(repo.clone(), number)) {
                 continue;
             }
-            let Some(snapshot) = pool.iter().find(|s| s.number == number).cloned() else {
+            let Some(snapshot) = pool.get(number).cloned() else {
                 continue;
             };
             let owner = owners_of(conn, &repo, number)
@@ -790,10 +839,11 @@ pub fn build_summaries(conn: &Connection, now: i64) -> HashMap<String, PrSummary
         })
         .unwrap_or_default();
     let mut summaries = HashMap::new();
+    let mut pools = Pools::new();
     for (id, branch) in chats {
         // Status is not part of a summary; the view is only used for its
         // entries, which carry stack-aware attention.
-        let view = build_set_view(conn, &id, None, TrackerStatus::Idle, now);
+        let view = set_view_with(conn, &mut pools, &id, None, TrackerStatus::Idle);
         let entries: Vec<PrEntry> = view
             .entries
             .into_iter()
@@ -1625,6 +1675,37 @@ mod tests {
         assert_eq!(summaries.len(), 1, "{summaries:?}");
         assert_eq!(summaries["s1"].primary_number, 2);
         assert_eq!(summaries["s1"].count, 2);
+    }
+
+    #[test]
+    fn summaries_read_each_repo_pool_once_for_many_chats() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let now = 10_000_000;
+        // 1500 snapshots in one repo; 80 chats each own one PR there.
+        for n in 1..=1500u32 {
+            let head = format!("h{n}");
+            upsert_snapshot(
+                &conn,
+                &pr_snap("o/r", n, &head, "main", "main", PrState::Open, now),
+            )
+            .unwrap();
+        }
+        for chat in 1..=80u32 {
+            let id = format!("s{chat}");
+            add_session(&conn, &id, None, false);
+            record_pr(&conn, &id, "o/r", chat, Relation::Owned, "url", 1).unwrap();
+        }
+        let started = std::time::Instant::now();
+        let summaries = build_summaries(&conn, now);
+        let took = started.elapsed();
+        assert_eq!(summaries.len(), 80);
+        assert_eq!(summaries["s7"].primary_number, 7);
+        // Re-reading the pool per chat parses 120,000 snapshots here.
+        assert!(
+            took < std::time::Duration::from_millis(400),
+            "took {took:?}"
+        );
     }
 
     #[test]

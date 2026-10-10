@@ -1514,8 +1514,8 @@ pub fn pr_session_set(
 }
 
 /// The stack holding `repo#number` across every stored snapshot of the repo.
-/// Rows are read under the lock; the quadratic stack derivation runs after
-/// it is released.
+/// Rows are read under the lock; the stack derivation runs after it is
+/// released.
 pub fn stack_for(
     store: &SessionStore,
     repo: &str,

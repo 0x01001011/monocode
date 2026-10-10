@@ -16,21 +16,32 @@ use crate::pr_store::{
 /// head branch name, the most recently fetched one wins (highest number on a
 /// tie). A merged parent still parents its children.
 pub fn derive_parents(prs: &[PrSnapshot]) -> HashMap<(String, u32), u32> {
+    // Candidates per (repo, head branch), best first. A child skips entries
+    // with its own number, so usually only the first one or two are read.
+    let mut by_head: HashMap<(&str, &str), Vec<(i64, u32)>> = HashMap::new();
+    for pr in prs {
+        by_head
+            .entry((pr.repo.as_str(), pr.head_ref.as_str()))
+            .or_default()
+            .push((pr.fetched_at, pr.number));
+    }
+    for candidates in by_head.values_mut() {
+        candidates.sort_unstable_by(|a, b| b.cmp(a));
+    }
     let mut parents = HashMap::new();
     for child in prs {
         if child.original_base_ref.is_empty() {
             continue;
         }
-        let parent = prs
-            .iter()
-            .filter(|candidate| {
-                candidate.repo == child.repo
-                    && candidate.number != child.number
-                    && candidate.head_ref == child.original_base_ref
-            })
-            .max_by_key(|candidate| (candidate.fetched_at, candidate.number));
-        if let Some(parent) = parent {
-            parents.insert((child.repo.clone(), child.number), parent.number);
+        let parent = by_head
+            .get(&(child.repo.as_str(), child.original_base_ref.as_str()))
+            .and_then(|candidates| {
+                candidates
+                    .iter()
+                    .find(|(_, number)| *number != child.number)
+            });
+        if let Some(&(_, parent)) = parent {
+            parents.insert((child.repo.clone(), child.number), parent);
         }
     }
     parents
@@ -400,6 +411,69 @@ mod tests {
             groups.iter().map(|g| g.members.clone()).collect::<Vec<_>>(),
             vec![vec![1, 2], vec![7, 8]]
         );
+    }
+
+    #[test]
+    fn parents_of_a_large_pool_derive_quickly() {
+        // 10,000 PRs: chains of four, every head duplicated by an older
+        // closed PR so each lookup has two candidates. Pairwise comparison
+        // takes seconds here; an index takes milliseconds.
+        let mut prs = Vec::new();
+        for chain in 0..1250u32 {
+            for step in 0..4u32 {
+                let n = chain * 8 + step * 2 + 1;
+                let head = format!("c{chain}/s{step}");
+                let base = if step == 0 {
+                    "main".to_string()
+                } else {
+                    format!("c{chain}/s{}", step - 1)
+                };
+                prs.push(pr("o/r", n, &head, &base, &base, PrState::Open, 200));
+                prs.push(pr(
+                    "o/r",
+                    n + 1,
+                    &head,
+                    "main",
+                    "main",
+                    PrState::Closed,
+                    100,
+                ));
+            }
+        }
+        assert_eq!(prs.len(), 10_000);
+        let started = std::time::Instant::now();
+        let parents = derive_parents(&prs);
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(250),
+            "took {:?}",
+            started.elapsed()
+        );
+        // Each non-base open PR picks the newer (open) same-head candidate.
+        assert_eq!(parents.len(), 1250 * 3);
+        assert_eq!(parents.get(&("o/r".to_string(), 3)), Some(&1));
+        assert_eq!(parents.get(&("o/r".to_string(), 7)), Some(&5));
+    }
+
+    #[test]
+    fn parent_tie_breaks_on_number_and_never_picks_itself() {
+        // Same fetched_at: the higher number wins.
+        let prs = vec![
+            pr("o/r", 1, "feat/a", "main", "main", PrState::Open, 10),
+            pr("o/r", 4, "feat/a", "main", "main", PrState::Open, 10),
+            pr("o/r", 3, "feat/b", "feat/a", "feat/a", PrState::Open, 10),
+        ];
+        assert_eq!(derive_parents(&prs).get(&("o/r".to_string(), 3)), Some(&4));
+        // A PR based on its own head skips itself and falls back to the
+        // next candidate, even when it is the newest one.
+        let prs = vec![
+            pr("o/r", 1, "feat/a", "main", "main", PrState::Open, 10),
+            pr("o/r", 2, "feat/a", "feat/a", "feat/a", PrState::Open, 99),
+        ];
+        let parents = derive_parents(&prs);
+        assert_eq!(parents.get(&("o/r".to_string(), 2)), Some(&1));
+        assert_eq!(parents.get(&("o/r".to_string(), 1)), None);
+        let alone = vec![pr("o/r", 2, "feat/a", "feat/a", "feat/a", PrState::Open, 1)];
+        assert!(derive_parents(&alone).is_empty());
     }
 
     #[test]
