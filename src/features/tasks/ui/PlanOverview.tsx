@@ -103,6 +103,8 @@ function Problems({
   );
 }
 
+const DENSE_STRIP = 40;
+
 /**
  * The plan at a glance: a segment strip, counts, time and the tasks in trouble. It replaces the
  * old "3 of 6 done" line. The strip is a summary only; the counts line and the tree say the same
@@ -111,23 +113,28 @@ function Problems({
 export function PlanOverview({ section, now, onReveal }: Props) {
   const overview = planOverview(section);
   const time = timeLine(section, now);
+  // Past this many segments the 2 px gaps alone would overflow a narrow panel, so drop them.
+  const dense = overview.segments.length > DENSE_STRIP;
   return (
     <div className="flex flex-col gap-2">
-      {/* Strip and counts share a row from 340 px (the panel is the container) and stack below it. */}
-      <div className="flex flex-col gap-1.5 @min-[340px]:flex-row @min-[340px]:items-center @min-[340px]:gap-3">
+      {/* Strip and counts share a row from 340 px (the panel is the container) and stack below it.
+          The row wraps, so wide counts text drops under the strip instead of squeezing it. */}
+      <div className="flex flex-col gap-1.5 @min-[340px]:flex-row @min-[340px]:flex-wrap @min-[340px]:items-center @min-[340px]:gap-x-3">
         {overview.segments.length > 0 ? (
           <div
             data-strip
             role="img"
             aria-label={stripLabel(overview)}
-            className="flex h-1.5 gap-0.5 @min-[340px]:min-w-16 @min-[340px]:flex-1"
+            // 10 px per segment keeps each one over 8 px; the cap keeps a long plan inside the row.
+            style={{ minWidth: `min(${overview.segments.length * 10}px, 100%)`, ...(dense ? { gap: 0 } : {}) }}
+            className="flex h-1.5 gap-0.5 @min-[340px]:flex-1"
           >
             {overview.segments.map((segment) => (
               <span
                 key={segment.id}
                 data-status={segment.status}
                 {...(segment.status === "pending" ? { "data-track": "" } : {})}
-                className={`min-w-px flex-1 rounded-full transition-colors duration-150 ease-out motion-reduce:transition-none ${SEGMENT_CLASS[segment.status]}`}
+                className={`flex-1 rounded-full transition-colors duration-150 ease-out motion-reduce:transition-none ${dense ? "min-w-0" : "min-w-px"} ${SEGMENT_CLASS[segment.status]}`}
               />
             ))}
           </div>
