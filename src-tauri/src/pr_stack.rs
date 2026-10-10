@@ -166,16 +166,25 @@ pub fn attention_for(inputs: &PrEntryInputs) -> (Attention, Option<String>) {
 }
 
 /// The stack holding `number` among every stored snapshot of one repo, or
-/// `None` when the PR has no snapshot or sits in no stack of two or more.
+/// `None` when the PR has no snapshot. A PR that stacks with nothing gets a
+/// single-member group (unlike `PrSetView::stacks`, which keeps only groups
+/// of two or more), so its health still shows.
 /// A chat owns a PR when it created it or worked on its head branch, the same
 /// rule `build_set_view` uses; a transcript mention alone does not count.
 pub fn stack_view_for(inputs: &RepoStackInputs, number: u32) -> Option<PrStackView> {
     let prs = &inputs.snapshots;
+    let find = |n: u32| prs.iter().find(|pr| pr.number == n);
+    let viewed = find(number)?;
     let parents = derive_parents(prs);
     let group = group_stacks(prs, &parents)
         .into_iter()
-        .find(|group| group.members.contains(&number))?;
-    let find = |n: u32| prs.iter().find(|pr| pr.number == n);
+        .find(|group| group.members.contains(&number))
+        .unwrap_or_else(|| PrStackGroup {
+            repo: viewed.repo.clone(),
+            base_ref: viewed.original_base_ref.clone(),
+            members: vec![number],
+            merged_count: u32::from(viewed.state == PrState::Merged),
+        });
     let owners = |pr: &PrSnapshot| -> Vec<String> {
         let mut ids: Vec<String> = inputs
             .claims
@@ -194,7 +203,7 @@ pub fn stack_view_for(inputs: &RepoStackInputs, number: u32) -> Option<PrStackVi
         ids.dedup();
         ids
     };
-    let viewed_owners = owners(find(number)?);
+    let viewed_owners = owners(viewed);
     let entries = group
         .members
         .iter()
@@ -209,7 +218,9 @@ pub fn stack_view_for(inputs: &RepoStackInputs, number: u32) -> Option<PrStackVi
                 base_ref_label: pr.base_ref.clone(),
             });
             let owner_session_ids = owners(pr);
+            // Another chat's PR: owned, but by no chat that owns the viewed one.
             let is_neighbor = n != number
+                && !owner_session_ids.is_empty()
                 && !owner_session_ids
                     .iter()
                     .any(|id| viewed_owners.contains(id));

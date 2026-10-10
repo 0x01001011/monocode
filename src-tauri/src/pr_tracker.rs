@@ -2698,16 +2698,20 @@ mod tests {
         assert_eq!(middle.owner_session_ids, vec!["s2".to_string()]);
         assert!(middle.is_neighbor, "owned by another chat than #482's");
 
-        // A mention alone is not ownership.
+        // A mention alone is not ownership, and an unowned member belongs to
+        // no other chat, so it is not a neighbor either.
         let base = &view.entries[0];
         assert!(base.owner_session_ids.is_empty());
-        assert!(base.is_neighbor);
+        assert!(!base.is_neighbor);
         assert_eq!(base.checks, Checks::Passing);
         assert_eq!(base.url, "https://github.com/acme/app/pull/478");
 
-        // Any member resolves the same group.
+        // Any member resolves the same group. Viewed from the unowned base,
+        // every owned member belongs to another chat.
         let from_base = stack_for(&store, "acme/app", 478).unwrap().unwrap();
         assert_eq!(from_base.group, view.group);
+        let neighbors: Vec<bool> = from_base.entries.iter().map(|e| e.is_neighbor).collect();
+        assert_eq!(neighbors, vec![false, true, true]);
     }
 
     #[test]
@@ -2738,10 +2742,32 @@ mod tests {
     }
 
     #[test]
-    fn stack_for_is_none_outside_a_stack_or_without_snapshot() {
+    fn stack_for_gives_a_standalone_pr_a_single_member_view() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            seed_stack(&conn);
+            let mut failing = stack_snap(490, "mc/z", "main", PrState::Open);
+            failing.checks = Checks::Failing;
+            pr_store::upsert_snapshot(&conn, &failing).unwrap();
+        }
+        let view = stack_for(&store, "acme/app", 490).unwrap().expect("view");
+        assert_eq!(view.group.members, vec![490]);
+        assert_eq!(view.group.base_ref, "main");
+        assert_eq!(view.group.merged_count, 0);
+        assert_eq!(view.entries.len(), 1);
+        assert_eq!(view.entries[0].attention, pr_store::Attention::Block);
+        assert_eq!(
+            view.entries[0].attention_reason.as_deref(),
+            Some("Checks failing")
+        );
+        assert!(!view.entries[0].is_neighbor);
+    }
+
+    #[test]
+    fn stack_for_is_none_without_snapshot() {
         let store = SessionStore::open_in_memory().unwrap();
         seed_stack(&store.lock_conn().unwrap());
-        assert_eq!(stack_for(&store, "acme/app", 490).unwrap(), None);
         assert_eq!(stack_for(&store, "acme/app", 9999).unwrap(), None);
         assert_eq!(stack_for(&store, "acme/none", 482).unwrap(), None);
         assert_eq!(stack_for(&store, "", 482).unwrap(), None);

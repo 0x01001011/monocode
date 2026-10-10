@@ -196,11 +196,14 @@ pub struct PrEntryLite {
     pub attention_reason: Option<String>,
     /// Chats this PR is attributed to (created it, or worked on its head).
     pub owner_session_ids: Vec<String>,
-    /// Not the viewed PR and shares no chat with it.
+    /// Another chat's PR: not the viewed one, owned by at least one chat, and
+    /// by none of the chats that own the viewed PR.
     pub is_neighbor: bool,
 }
 
-/// The stack holding one PR, with an entry per member in `group.members` order.
+/// The stack holding one PR, with an entry per member in `group.members`
+/// order. A PR that stacks with nothing has a single-member `group`; only
+/// `PrSetView::stacks` guarantees two or more members.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PrStackView {
