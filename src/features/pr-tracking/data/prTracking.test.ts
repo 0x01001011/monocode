@@ -454,6 +454,123 @@ describe("usePrSummaries", () => {
   });
 });
 
+describe("usePrSummary", () => {
+  const summary = (primaryNumber: number): PrSummary => ({
+    count: 1,
+    primaryNumber,
+    primaryState: "open",
+    primaryIsDraft: false,
+    attention: "none",
+    stale: false,
+  });
+
+  it("re-renders a row only when its own chat's summary changes", async () => {
+    summaries = { s1: summary(7), s2: summary(8) };
+    const m = await loadModule();
+    const renders: Record<string, number> = { s1: 0, s2: 0, s3: 0 };
+    const latest: Record<string, PrSummary | undefined> = {};
+    function Row({ id }: { id: string }) {
+      renders[id] += 1;
+      latest[id] = m.usePrSummary(id);
+      return null;
+    }
+    const a = mount(() =>
+      createElement(
+        "div",
+        null,
+        ["s1", "s2", "s3"].map((id) => createElement(Row, { key: id, id })),
+      ),
+    );
+    await a.render();
+    await flush();
+    expect(latest.s1?.primaryNumber).toBe(7);
+    expect(latest.s3).toBeUndefined();
+    const settled = { ...renders };
+
+    // Only s2 changes: s1 and s3 keep their render counts.
+    summaries = { s1: summary(7), s2: summary(9) };
+    emit(["s2"]);
+    await flush();
+    expect(latest.s2?.primaryNumber).toBe(9);
+    expect(renders.s2).toBe(settled.s2 + 1);
+    expect(renders.s1).toBe(settled.s1);
+    expect(renders.s3).toBe(settled.s3);
+
+    // A new chat gaining PRs re-renders only that row.
+    summaries = { ...summaries, s3: summary(3) };
+    emit([]);
+    await flush();
+    expect(latest.s3?.primaryNumber).toBe(3);
+    expect(renders.s1).toBe(settled.s1);
+    expect(renders.s2).toBe(settled.s2 + 1);
+    act(() => a.root.unmount());
+  });
+
+  it("never subscribes without a session id", async () => {
+    const m = await loadModule();
+    const a = mount(() =>
+      createElement(function P() {
+        m.usePrSummary(undefined);
+        return null;
+      }),
+    );
+    await a.render();
+    await flush();
+    expect(calls("pr_summaries")).toHaveLength(0);
+    act(() => a.root.unmount());
+  });
+});
+
+describe("useLinkedPrInSet", () => {
+  it("is true only when the linked PR is one of the chat's own visible PRs", async () => {
+    const entry = (
+      repo: string,
+      number: number,
+      over: Record<string, unknown> = {},
+    ) => ({
+      snapshot: { repo, number },
+      relation: "owned",
+      dismissed: false,
+      ...over,
+    });
+    sets.s1 = {
+      ...setView("s1", 1),
+      entries: [
+        entry("acme/web", 482),
+        entry("acme/web", 470, { dismissed: true }),
+        entry("acme/web", 460, { relation: "other" }),
+      ] as never,
+    };
+    const m = await loadModule();
+    const seen: Record<string, boolean> = {};
+    function Probe({ name, item }: { name: string; item?: { repo: string; number: number } }) {
+      seen[name] = m.useLinkedPrInSet(item ? "s1" : undefined, item);
+      return null;
+    }
+    const a = mount(() =>
+      createElement(
+        "div",
+        null,
+        createElement(Probe, { name: "match", item: { repo: "Acme/Web", number: 482 } }),
+        createElement(Probe, { name: "otherRepo", item: { repo: "acme/api", number: 482 } }),
+        createElement(Probe, { name: "dismissed", item: { repo: "acme/web", number: 470 } }),
+        createElement(Probe, { name: "notOwn", item: { repo: "acme/web", number: 460 } }),
+        createElement(Probe, { name: "none" }),
+      ),
+    );
+    await a.render();
+    await flush();
+    expect(seen).toEqual({
+      match: true,
+      otherRepo: false,
+      dismissed: false,
+      notOwn: false,
+      none: false,
+    });
+    act(() => a.root.unmount());
+  });
+});
+
 describe("dismissPr", () => {
   it("refetches the observed session after a successful dismiss", async () => {
     const m = await loadModule();

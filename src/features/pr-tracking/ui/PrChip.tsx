@@ -1,21 +1,7 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { copyText } from "../../../platform/tauri/clipboard";
+import { useEffect, type ReactNode } from "react";
 import { EyeOff } from "../../../shared/ui/icons";
-import { Popover } from "../../../shared/ui/Popover";
 import type { LinkedWorkItem } from "../../sessions/model/session";
-import {
-  dismissPr,
-  refreshPrSet,
-  setPrInterest,
-  usePrSet,
-} from "../data/prTracking";
+import { setPrInterest, usePrSet } from "../data/prTracking";
 import {
   ariaLabel,
   freshnessLabel,
@@ -24,7 +10,7 @@ import {
   stripBars,
 } from "../model/prSetModel";
 import type { Attention, PrEntry } from "../model/types";
-import { PrSetCard, type PrCardStatus } from "./PrSetCard";
+import { PrSetPopover, usePrClock } from "./PrSetPopover";
 import { PrStatusIcon } from "./PrStatusIcon";
 import { PrStrip } from "./PrStrip";
 import { usePrHoverCard } from "./usePrHoverCard";
@@ -38,9 +24,6 @@ export type PrChipProps = {
   /** Opens the PR in the Inbox panel; without it rows open GitHub. */
   onOpenInbox?: (item: LinkedWorkItem) => void;
 };
-
-const COPIED_MS = 1600;
-const UNDO_MS = 6000;
 
 /** Hot while the pane is visible and the window focused, fleet otherwise. */
 function usePrInterest(sessionId: string, active: boolean) {
@@ -59,30 +42,11 @@ function usePrInterest(sessionId: string, active: boolean) {
   }, [sessionId, active]);
 }
 
-/** Wall clock for freshness labels, ticking while the card is open. */
-function useNow(ticking: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!ticking) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(id);
-  }, [ticking]);
-  return ticking ? now : Date.now();
-}
-
 function worstAttention(entries: PrEntry[]): Attention {
   if (entries.some((e) => e.attention === "block")) return "block";
   if (entries.some((e) => e.attention === "action")) return "action";
   return "none";
 }
-
-const workItem = (entry: PrEntry): LinkedWorkItem => ({
-  kind: "pr",
-  repo: entry.snapshot.repo,
-  number: entry.snapshot.number,
-  url: entry.snapshot.url,
-});
 
 /**
  * The composer's PR chip, after the branch button: the primary PR's status
@@ -95,12 +59,7 @@ export function PrChip({ sessionId, active = true, onOpenInbox }: PrChipProps) {
   const view = usePrSet(sessionId);
   usePrInterest(sessionId, active);
   const card = usePrHoverCard();
-  const now = useNow(card.open);
-  const [status, setStatus] = useState<PrCardStatus | null>(null);
-  const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  useEffect(() => () => clearTimeout(statusTimer.current), []);
+  const now = usePrClock(card.open);
 
   // Never feature someone else's PR: with none of this chat's own PRs
   // visible, fall back to the hidden chip, or to no chip at all.
@@ -114,64 +73,7 @@ export function PrChip({ sessionId, active = true, onOpenInbox }: PrChipProps) {
     if (!shown && cardOpen) close(false);
   }, [shown, cardOpen, close]);
 
-  // A status (and its Undo) belongs to one look at the card.
-  useEffect(() => {
-    if (cardOpen) return;
-    clearTimeout(statusTimer.current);
-    setStatus(null);
-  }, [cardOpen]);
-
-  const closeCard = useCallback(() => {
-    // Keep focus on the chip if it was in the card (a ⋯ menu item).
-    close(!!card.surfaceRef.current?.contains(document.activeElement));
-  }, [card.surfaceRef, close]);
-
   if (!view || !shown) return null;
-
-  const openGithub = (entry: PrEntry) => {
-    closeCard();
-    void openUrl(entry.snapshot.url).catch(() => undefined);
-  };
-  const openInbox = (entry: PrEntry) => {
-    if (!onOpenInbox) {
-      openGithub(entry);
-      return;
-    }
-    closeCard();
-    onOpenInbox(workItem(entry));
-  };
-  const announce = (next: PrCardStatus, ms: number) => {
-    clearTimeout(statusTimer.current);
-    setStatus(next);
-    statusTimer.current = setTimeout(() => setStatus(null), ms);
-  };
-  const copyLink = (entry: PrEntry) => {
-    copyText(entry.snapshot.url).then(
-      () =>
-        announce(
-          { text: `Copied link to #${entry.snapshot.number}` },
-          COPIED_MS,
-        ),
-      () => announce({ text: "Couldn't copy the link" }, COPIED_MS),
-    );
-  };
-  const dismiss = (entry: PrEntry, dismissed: boolean) => {
-    void dismissPr(
-      sessionId,
-      entry.snapshot.repo,
-      entry.snapshot.number,
-      dismissed,
-    );
-    if (dismissed) {
-      announce(
-        { text: `Hidden #${entry.snapshot.number}`, undo: entry },
-        UNDO_MS,
-      );
-    } else if (status?.undo) {
-      clearTimeout(statusTimer.current);
-      setStatus(null);
-    }
-  };
 
   let label: string;
   let title: string | undefined;
@@ -250,37 +152,15 @@ export function PrChip({ sessionId, active = true, onOpenInbox }: PrChipProps) {
         {content}
       </button>
       {card.open ? (
-        <Popover
-          ref={card.surfaceRef}
-          anchor={card.triggerRef}
+        <PrSetPopover
+          sessionId={sessionId}
+          view={view}
+          card={card}
+          now={now}
+          hiddenOnly={hiddenOnly}
           side="top"
-          align="start"
-          width={360}
-          maxHeight={440}
-          {...card.surfaceProps}
-          className="pr-card"
-          dismissOnEscape={false}
-          ignore="[data-pr-row-menu]"
-          onDismiss={(reason) => {
-            if (reason === "outside") close(false);
-          }}
-        >
-          <PrSetCard
-            view={view}
-            titleId={card.titleId}
-            now={now}
-            status={status}
-            hiddenOnly={hiddenOnly}
-            onFocusLost={() =>
-              card.triggerRef.current?.focus({ preventScroll: true })
-            }
-            onRefresh={() => void refreshPrSet(sessionId)}
-            onOpenInbox={openInbox}
-            onOpenGithub={openGithub}
-            onCopyLink={copyLink}
-            onDismiss={dismiss}
-          />
-        </Popover>
+          onOpenInbox={onOpenInbox}
+        />
       ) : null}
     </>
   );

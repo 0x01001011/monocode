@@ -53,6 +53,10 @@ vi.mock("../../inbox/model/inboxSelfActivity", () => ({
   recordInboxSelfActivity: vi.fn(),
 }));
 
+vi.mock("../../pr-tracking/data/prTracking", () => ({
+  recordPrUrl: vi.fn(async () => {}),
+}));
+
 import { GitChangesPanel } from "./GitChangesPanel";
 import {
   gitDiffIndex,
@@ -69,6 +73,7 @@ import {
   generatePrContent,
 } from "../../../integrations/harness";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { recordPrUrl } from "../../pr-tracking/data/prTracking";
 import type { GitChangedFile, GitDiffIndex } from "../../../platform/tauri/fs";
 
 function index(overrides: Partial<GitDiffIndex> = {}): GitDiffIndex {
@@ -193,11 +198,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function renderPanel(cwd = "/repo") {
+async function renderPanel(cwd = "/repo", sessionId?: string) {
   act(() =>
     root.render(
       createElement(GitChangesPanel, {
         cwd,
+        sessionId,
         enabled: true,
         onOpenFile: vi.fn(),
         onOpenAllChanges: vi.fn(),
@@ -502,5 +508,54 @@ describe("GitChangesPanel remote pull request", () => {
       "feature/pull",
     );
     expect(openUrl).toHaveBeenCalledWith("https://example.test/pull/42");
+    // Remote chats are not tracked.
+    expect(recordPrUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe("GitChangesPanel pull request attribution", () => {
+  async function createLocalPr(sessionId?: string) {
+    vi.mocked(recordPrUrl).mockClear();
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        remote: "origin",
+        upstream: "origin/feature/pull",
+        ahead: 0,
+        aheadOfDefault: 1,
+      }),
+    );
+    vi.mocked(generatePrContent).mockResolvedValue({
+      title: "Fix",
+      body: "Body",
+      base: "main",
+      head: "feature/pull",
+    });
+    vi.mocked(gitPrCreate).mockResolvedValue(
+      "https://github.com/acme/web/pull/482\n",
+    );
+    await renderPanel("/repo", sessionId);
+    const button = [
+      ...container.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((candidate) => candidate.textContent?.trim() === "Create PR");
+    expect(button?.disabled).toBe(false);
+    await act(async () => {
+      button!.click();
+      await Promise.resolve();
+    });
+    await act(async () => {});
+    expect(gitPrCreate).toHaveBeenCalled();
+  }
+
+  it("records the created PR for the chat after gitPrCreate succeeds", async () => {
+    await createLocalPr("s1");
+    expect(recordPrUrl).toHaveBeenCalledWith(
+      "s1",
+      "https://github.com/acme/web/pull/482",
+    );
+  });
+
+  it("records nothing without a chat", async () => {
+    await createLocalPr(undefined);
+    expect(recordPrUrl).not.toHaveBeenCalled();
   });
 });

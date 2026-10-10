@@ -79,6 +79,7 @@ import { applyProjectDiffStats } from "../hooks/useProjectDiffStats";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { confirmNative, reportError } from "../../../shared/lib/confirm";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { recordPrUrl } from "../../pr-tracking/data/prTracking";
 
 const GIT_POLL_MS = 2000;
 
@@ -95,6 +96,8 @@ type AmendTarget = { branch: string | null; head: string | null };
 
 type Props = {
   cwd: string;
+  /** The chat a PR created here is attributed to, when the checkout is its own. */
+  sessionId?: string;
   enabled: boolean;
   textHarness?: HarnessId;
   selectedPath?: string;
@@ -107,6 +110,7 @@ type Props = {
 
 export function GitChangesPanel({
   cwd,
+  sessionId,
   enabled,
   textHarness,
   selectedPath,
@@ -264,6 +268,7 @@ export function GitChangesPanel({
       </header>
       <ChangedFiles
         cwd={cwd}
+        sessionId={sessionId}
         textHarness={textHarness}
         index={index}
         files={files}
@@ -321,6 +326,7 @@ export function GitChangesPanel({
 
 function ChangedFiles({
   cwd,
+  sessionId,
   textHarness,
   index,
   files,
@@ -335,6 +341,7 @@ function ChangedFiles({
   onMutated,
 }: {
   cwd: string;
+  sessionId?: string;
   textHarness?: HarnessId;
   index: GitDiffIndex | null;
   files: GitChangedFile[];
@@ -664,6 +671,9 @@ function ChangedFiles({
     );
     const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);
     if (Number.isInteger(number) && number > 0) recordPrActivity(number);
+    // Attribution is best effort; recordPrUrl never rejects.
+    if (sessionId && !isRemoteProjectPath(cwd))
+      void recordPrUrl(sessionId, url.trim());
     await openUrl(url.trim());
   };
 

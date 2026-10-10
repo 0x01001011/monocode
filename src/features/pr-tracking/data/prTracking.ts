@@ -90,12 +90,22 @@ export async function recordPrUrl(
   await attempt("pr_record_url", { sessionId, url });
 }
 
+/**
+ * PR numbers the chat mentioned, in the repo behind `cwd`. With `repo`
+ * ("owner/name"), Rust drops the hints when `cwd` is a different repo.
+ */
 export async function recordPrHints(
   sessionId: string,
   cwd: string,
   numbers: number[],
+  repo?: string,
 ): Promise<void> {
-  await attempt("pr_record_hints", { sessionId, cwd, numbers });
+  await attempt("pr_record_hints", {
+    sessionId,
+    cwd,
+    numbers,
+    ...(repo ? { repo } : {}),
+  });
 }
 
 // ------------------------------------------------------------------ store
@@ -262,4 +272,77 @@ const getSummaries = () => summaries.value;
 /** One summary per chat that has PRs, keyed by session id. */
 export function usePrSummaries(): Record<string, PrSummary> {
   return useSyncExternalStore(subscribeSummaries, getSummaries, getSummaries);
+}
+
+// Every refetch parses fresh objects; hand out the previous one while a
+// chat's summary is unchanged so per-row selectors bail out of rendering.
+const summaryCache = new Map<string, PrSummary>();
+
+const sameSummary = (a: PrSummary, b: PrSummary) =>
+  a.count === b.count &&
+  a.primaryNumber === b.primaryNumber &&
+  a.primaryState === b.primaryState &&
+  a.primaryIsDraft === b.primaryIsDraft &&
+  a.attention === b.attention &&
+  a.stale === b.stale;
+
+function summaryFor(sessionId: string): PrSummary | undefined {
+  const next = summaries.value[sessionId];
+  if (!next) {
+    summaryCache.delete(sessionId);
+    return undefined;
+  }
+  const prior = summaryCache.get(sessionId);
+  if (prior && sameSummary(prior, next)) return prior;
+  summaryCache.set(sessionId, next);
+  return next;
+}
+
+/**
+ * One chat's summary, for hot list rows: the row re-renders only when this
+ * chat's summary changes, not when any other chat's does. Undefined for a
+ * chat without PRs, and without subscribing when `sessionId` is absent.
+ */
+export function usePrSummary(sessionId?: string): PrSummary | undefined {
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      sessionId ? subscribeSummaries(listener) : NO_UNSUBSCRIBE,
+    [sessionId],
+  );
+  const getSnapshot = useCallback(
+    () => (sessionId ? summaryFor(sessionId) : undefined),
+    [sessionId],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/**
+ * Whether the linked PR is one of the chat's own visible PRs (not dismissed,
+ * not someone else's). Fetches the chat's set, so only pass `sessionId` for
+ * a chat that has a linked PR and PRs of its own. False until it loads.
+ */
+export function useLinkedPrInSet(
+  sessionId: string | undefined,
+  item: { repo: string; number: number } | undefined,
+): boolean {
+  const repo = item?.repo.toLowerCase();
+  const number = item?.number;
+  const active = !!sessionId && !!repo && number != null;
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      active ? subscribeTo(setSource(sessionId!), listener) : NO_UNSUBSCRIBE,
+    [active, sessionId],
+  );
+  const getSnapshot = useCallback(() => {
+    if (!active) return false;
+    const view = setSource(sessionId!).value;
+    return !!view?.entries.some(
+      (e) =>
+        !e.dismissed &&
+        e.relation !== "other" &&
+        e.snapshot.number === number &&
+        e.snapshot.repo.toLowerCase() === repo,
+    );
+  }, [active, sessionId, repo, number]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

@@ -4333,6 +4333,54 @@ html.theme-light .btw-burst {
   }
 }
 
+/* Sidebar row glyph (mockup `.sb-glyph`): one status icon, or a PR icon and
+   a count, with the attention mark on its corner. Stale status is a dashed
+   outline at full contrast, never reduced opacity. */
+.sb-glyph {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 3px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  --pr-ground: var(--color-background-base);
+}
+.sb-glyph::after { content: ""; position: absolute; inset: -4px -3px; } /* 24×24 hit area */
+.sb-glyph:hover,
+.sb-glyph[aria-expanded="true"] {
+  background: var(--color-selection-hover);
+}
+.sb-glyph[data-stale="true"] {
+  outline: 1px dashed var(--color-ink-muted);
+  outline-offset: 1px;
+}
+.sb-glyph[data-stale="true"]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.sb-glyph .pr-att {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+}
+.sb-glyph .pr-att[data-kind="block"] {
+  box-shadow: 0 0 0 1.5px var(--pr-ground);
+}
+.sb-glyph .pr-att[data-kind="action"] {
+  background: var(--pr-ground);
+}
+@media (forced-colors: active) {
+  .sb-glyph[data-stale="true"] {
+    outline-color: CanvasText;
+  }
+  .sb-glyph[data-stale="true"]:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
 /* Composer header row (`composer-head`): the branch button keeps at least
    min(14ch, 45%); under 400px the PR chip drops its strip and +N, under
    320px the "Worktree" label collapses to its icon. Queried on the row, not

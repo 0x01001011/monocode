@@ -4,6 +4,8 @@ import { GitChangesPanel } from "./GitChangesPanel";
 
 type Props = {
   cwd: string;
+  /** The chat a PR created here is attributed to, when the checkout is its own. */
+  sessionId?: string;
   enabled: boolean;
   textHarness?: HarnessId;
   selectedPath?: string;
@@ -16,6 +18,7 @@ type Props = {
 
 export function SourceControl({
   cwd,
+  sessionId,
   enabled,
   textHarness,
   selectedPath,
@@ -30,6 +33,7 @@ export function SourceControl({
       <GitChangesPanel
         key={cwd}
         cwd={cwd}
+        sessionId={sessionId}
         enabled={enabled}
         textHarness={textHarness}
         selectedPath={selectedPath}
