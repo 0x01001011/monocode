@@ -235,6 +235,31 @@ describe("buildGraph", () => {
     expect(refs(row("task-4"))).toEqual(["muted:fixed in 7 rounds"]);
   });
 
+  it("stage clocks stop unless the stage itself is running", () => {
+    const build = (at: number) =>
+      buildGraph({
+        section: plan([
+          task(1, "done", {
+            stages: [
+              stage("implement", "done", { startedAt: 0, endedAt: 10 * MIN }),
+              stage("review", "attention", { startedAt: 10 * MIN, verdict: "2 issues" }),
+              stage("fix", "running", { startedAt: 20 * MIN }),
+            ],
+          }),
+        ]),
+        gaps: gapsFor(plan([])),
+        ship: notReady,
+        expanded: new Set(["task-1"]),
+        filter: "all",
+        now: at,
+      });
+    const metas = (at: number) => build(at).rows.filter((r) => r.id.includes(":stage:")).map((r) => r.meta);
+    // A finished review that found issues has no end time: unknown, never a growing clock.
+    expect(metas(NOW)).toEqual(["10m", "—", "1h 20m"]);
+    // The running fix stage is the control: it still counts live.
+    expect(metas(NOW + 30 * MIN)).toEqual(["10m", "—", "1h 50m"]);
+  });
+
   it("meta per status", () => {
     const steps = (done: number, total: number) =>
       Array.from({ length: total }, (_, i) => ({ text: `s${i}`, done: i < done, ticked: i < done }));

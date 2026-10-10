@@ -130,6 +130,13 @@ function nodeShas(node: BoardNode): string[] {
   return [...seen];
 }
 
+/** A stage counts live only while it is running; one that stopped without an end time has an unknown length, not a growing one. */
+function stageDuration(stage: BoardStage, now: number): string | undefined {
+  if (stage.startedAt === undefined || stage.status === "pending") return undefined;
+  if (stage.status !== "running" && stage.endedAt === undefined) return "—";
+  return durationLabel(stage, now);
+}
+
 function metaFor(node: BoardNode, now: number): string | undefined {
   const steps = node.steps ?? [];
   switch (node.status) {
@@ -242,7 +249,7 @@ export function buildGraph({ section, gaps, ship, expanded, filter, now, workers
 
     stages.forEach((stage, i) => {
       const side = forkAt !== undefined && i >= forkAt;
-      const duration = stage.startedAt !== undefined ? durationLabel(stage, now) : undefined;
+      const duration = stageDuration(stage, now);
       rows.push({
         id: `${node.id}:stage:${i}`,
         parentId: node.id,
