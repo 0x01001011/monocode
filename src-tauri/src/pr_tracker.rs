@@ -1030,20 +1030,12 @@ fn mark_attempted(tracker: &Tracker, request: &RepoRequest, now: i64) {
     }
 }
 
-/// What `write_pr` did to the stored snapshot.
-struct Written {
-    /// New snapshot, a field other than `fetched_at` changed, or a base
-    /// change was recorded.
-    changed: bool,
-    /// `fetched_at` of the snapshot it replaced.
-    previous_fetched_at: Option<i64>,
-}
-
 /// Writes one fetched PR under the request's repo key. With a known base tip,
 /// `behind_by` is the cached count for the current (head, base) tips, or
 /// unknown until compared. Without one it is kept while head and base are
-/// unchanged. Appends unseen base changes.
-fn write_pr(conn: &Connection, repo: &str, pr: &ParsedPr, now: i64) -> rusqlite::Result<Written> {
+/// unchanged. Appends unseen base changes. True when the snapshot is new, a
+/// field other than `fetched_at` changed, or a base change was recorded.
+fn write_pr(conn: &Connection, repo: &str, pr: &ParsedPr, now: i64) -> rusqlite::Result<bool> {
     let mut snapshot = pr.snapshot.clone();
     snapshot.repo = repo.to_string();
     snapshot.fetched_at = now;
@@ -1073,15 +1065,12 @@ fn write_pr(conn: &Connection, repo: &str, pr: &ParsedPr, now: i64) -> rusqlite:
             changed = true;
         }
     }
-    Ok(Written {
-        changed,
-        previous_fetched_at: old.map(|old| old.fetched_at),
-    })
+    Ok(changed)
 }
 
 /// Applies one repo's response; returns the sessions whose PR set changed.
-/// A PR whose refresh changed only `fetched_at` counts once its last notice
-/// is `FRESHNESS_NOTICE_MS` old.
+/// A PR whose refresh changed only `fetched_at` counts when this process has
+/// not announced it yet, or its last notice is `FRESHNESS_NOTICE_MS` old.
 fn apply_batch(
     conn: &Connection,
     tracker: &Tracker,
@@ -1092,13 +1081,13 @@ fn apply_batch(
 ) -> rusqlite::Result<BTreeSet<String>> {
     let repo = request.repo.as_str();
     let mut touched: BTreeSet<u32> = BTreeSet::new();
-    // Refreshed PRs that changed nothing visible: `(number, previous fetch)`.
-    let mut unchanged: Vec<(u32, Option<i64>)> = Vec::new();
-    let mut note = |number: u32, changed: bool, previous: Option<i64>| {
+    // Refreshed PRs that changed nothing visible.
+    let mut unchanged: Vec<u32> = Vec::new();
+    let mut note = |number: u32, changed: bool| {
         if changed {
             touched.insert(number);
         } else {
-            unchanged.push((number, previous));
+            unchanged.push(number);
         }
     };
     // Base-branch tips of open PRs, for the next compare decision.
@@ -1112,18 +1101,15 @@ fn apply_batch(
         match target {
             Target::Pr { alias, number, .. } => {
                 let mut changed = false;
-                let mut previous = None;
                 for pr in found.into_iter().flatten() {
-                    let written = write_pr(conn, repo, pr, now)?;
-                    changed |= written.changed;
-                    previous = written.previous_fetched_at;
+                    changed |= write_pr(conn, repo, pr, now)?;
                     base_oids.extend(open_base(pr));
                 }
                 let error = batch.errors.get(alias).map(String::as_str);
                 changed |= tracker.set_error(repo, *number, error);
                 // A failed lookup with an unchanged error leaves nothing new.
                 if changed || found.is_some_and(|prs| !prs.is_empty()) {
-                    note(*number, changed, previous);
+                    note(*number, changed);
                 }
             }
             Target::Branch { branch, .. } => {
@@ -1159,11 +1145,10 @@ fn apply_batch(
                             now,
                         )?;
                     }
-                    let written = write_pr(conn, repo, pr, now)?;
-                    changed |= written.changed;
+                    changed |= write_pr(conn, repo, pr, now)?;
                     base_oids.extend(open_base(pr));
                     changed |= tracker.set_error(repo, pr.snapshot.number, None);
-                    note(pr.snapshot.number, changed, written.previous_fetched_at);
+                    note(pr.snapshot.number, changed);
                 }
             }
             Target::Compare {
@@ -1198,7 +1183,7 @@ fn apply_batch(
                 {
                     snapshot.behind_by = Some(compare.behind_by);
                     pr_store::upsert_snapshot(conn, &snapshot)?;
-                    note(*number, true, None);
+                    note(*number, true);
                 }
             }
         }
@@ -1207,12 +1192,10 @@ fn apply_batch(
         for (number, oid) in base_oids {
             timers.base_oids.insert((repo.to_string(), number), oid);
         }
-        for (number, previous) in unchanged {
-            let last = timers
-                .notified
-                .get(&(repo.to_string(), number))
-                .copied()
-                .or(previous);
+        // The stored fetched_at says nothing about what the UI was told: a
+        // PR this process never announced counts once.
+        for number in unchanged {
+            let last = timers.notified.get(&(repo.to_string(), number)).copied();
             if last.is_none_or(|at| now - at >= FRESHNESS_NOTICE_MS) {
                 touched.insert(number);
             }
@@ -2395,6 +2378,35 @@ mod tests {
             changed_payload(&[]),
             serde_json::json!({ "sessionIds": [] })
         );
+    }
+
+    #[test]
+    fn first_unchanged_refresh_in_a_process_notifies_once_then_every_window() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_pr(&conn, "s1", "cli/cli", 14148, Relation::Owned, "create", 1)
+                .unwrap();
+            // Written by an earlier process 30s ago, identical to what
+            // GitHub answers now.
+            let mut old = parse_response(OPEN_FAILING_PARTIAL).unwrap().prs["p0"][0]
+                .snapshot
+                .clone();
+            old.fetched_at = NOW - 30_000;
+            pr_store::upsert_snapshot(&conn, &old).unwrap();
+        }
+        let runner = FakeRunner::new(vec![Ok(OPEN_FAILING_PARTIAL); 3]);
+        // A fresh process: nothing announced yet.
+        let tracker = Tracker::new();
+        let cycle = |at: i64| {
+            assert!(tracker.force("s1", at));
+            run_cycle(&store, &runner, &tracker, "t", at).changed
+        };
+        assert!(cycle(NOW).contains("s1"), "first refresh in a process");
+        assert!(cycle(NOW + 60_000).is_empty());
+        assert!(cycle(NOW + FRESHNESS_NOTICE_MS).contains("s1"));
+        assert_eq!(runner.queries().len(), 3);
     }
 
     #[test]
