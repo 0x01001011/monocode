@@ -2,7 +2,12 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearComposerPrefill, peekComposerPrefill, requestComposerPrefill } from "../model/composerPrefill";
+import {
+  clearComposerPrefill,
+  isComposerMounted,
+  peekComposerPrefill,
+  requestComposerPrefill,
+} from "../model/composerPrefill";
 import { useComposerPrefill } from "./useComposerPrefill";
 
 let container: HTMLDivElement;
@@ -31,6 +36,18 @@ afterEach(() => {
 });
 
 describe("useComposerPrefill", () => {
+  it("marks the session's composer mounted while the pane is mounted, hidden or not", () => {
+    expect(isComposerMounted("a")).toBe(false);
+    render("a", false);
+    expect(isComposerMounted("a")).toBe(true);
+    render("b", false);
+    expect(isComposerMounted("a")).toBe(false);
+    expect(isComposerMounted("b")).toBe(true);
+    act(() => root.unmount());
+    expect(isComposerMounted("b")).toBe(false);
+    root = createRoot(container);
+  });
+
   it("inserts a request that was made before the pane mounted, then clears it", () => {
     requestComposerPrefill("a", "About your decision: x");
     render("a", true);

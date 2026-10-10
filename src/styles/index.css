@@ -4671,3 +4671,137 @@ html.theme-light .pr-card .pr-list-container {
     outline-color: Highlight;
   }
 }
+
+/* Inbox stack rail and health line (mockup `.rail`, `.node`, `.health`).
+   The rail is position: relative so a node's offsetLeft is measured from
+   it when the scroll mode centers the viewed PR. */
+.pr-inbox-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr-rail-nav {
+  min-width: 0;
+}
+.pr-rail {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+  overflow: hidden;
+}
+.pr-rail > li {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.pr-rail[data-mode="scroll"] {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 20px,
+    #000 calc(100% - 20px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 20px,
+    #000 calc(100% - 20px),
+    transparent
+  );
+}
+.pr-rail[data-mode="scroll"]::-webkit-scrollbar {
+  display: none;
+}
+.pr-rail-trunk {
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+.pr-rail-arrow {
+  color: var(--color-ink-faint);
+  font-size: 12px;
+}
+.pr-rail-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--color-content) 9%, transparent);
+  border-radius: 14px;
+  font-size: 12px;
+  color: var(--color-content);
+  text-decoration: none;
+}
+.pr-rail-node:hover {
+  background: var(--color-selection-subtle);
+}
+.pr-rail-node[aria-current="step"] {
+  background: var(--color-selection-emphasis);
+  border-color: transparent;
+}
+/* Another chat's PR: dashed outline, so the shape carries it, not hue. */
+.pr-rail-node[data-other="true"] {
+  border-style: dashed;
+  border-color: var(--color-ink-muted);
+}
+.pr-rail-n {
+  font-variant-numeric: tabular-nums;
+}
+.pr-rail-ttl {
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--color-content) 70%, transparent);
+}
+.pr-health {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--color-pr-warn) 9%, transparent);
+}
+.pr-health-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.pr-health-act {
+  flex: none;
+  max-width: 50%;
+  min-height: 24px;
+  margin-left: auto;
+  padding: 3px 9px;
+  overflow: hidden;
+  border-radius: 5px;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+.pr-health-act:hover {
+  background: color-mix(in srgb, var(--color-content) 15%, transparent);
+}
+.pr-health-status {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+@media (forced-colors: active) {
+  .pr-rail-node[aria-current="step"] {
+    border-color: Highlight;
+  }
+}

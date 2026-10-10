@@ -115,6 +115,8 @@ import {
   type LinkedWorkItem,
 } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
+import type { PrEntryLite } from "../../pr-tracking/model/types";
+import { PrInboxStack } from "../../pr-tracking/ui/PrInboxStack";
 import {
   inboxItemMatchesLinkedWorkItem,
   linkedWorkItemInboxKey,
@@ -408,7 +410,7 @@ export function InboxView({
   onRepairChecks,
   sessions = [],
   onOpenSession,
-  target = null,
+  target: linkedTarget = null,
   onOpenIntegrations,
 }: Props) {
   const [discussionOpen, setDiscussionOpen] = useState(false);
@@ -443,6 +445,11 @@ export function InboxView({
     () => peekInboxForRail(recents, cwd)?.errors ?? {},
   );
   const [refresh, setRefresh] = useState(0);
+  // A PR opened from the stack rail behaves like a linked target until the
+  // caller names a new one.
+  const [stackTarget, setStackTarget] = useState<LinkedWorkItem | null>(null);
+  useEffect(() => setStackTarget(null), [linkedTarget]);
+  const target = stackTarget ?? linkedTarget;
   const targetSelectionKey = target ? linkedWorkItemInboxKey(target) : null;
   const [selectedKey, setSelectedKey] = useState<string | null>(
     targetSelectionKey,
@@ -820,6 +827,16 @@ export function InboxView({
     !!targetSelectionKey && selectedKey === targetSelectionKey;
   const selected =
     selectedByKey ?? (waitingForTarget ? null : visibleItems[0]) ?? null;
+  const openStackPr = useCallback((repo: string, pr: PrEntryLite) => {
+    const linked: LinkedWorkItem = {
+      kind: "pr",
+      repo,
+      number: pr.number,
+      url: pr.url,
+    };
+    setStackTarget(linked);
+    setSelectedKey(linkedWorkItemInboxKey(linked));
+  }, []);
   const updateInboxItem = useCallback((next: InboxItem) => {
     const key = inboxItemKey(next);
     setItems((current) =>
@@ -1210,6 +1227,7 @@ export function InboxView({
               onRepairChecks={onRepairChecks}
               onOpenSession={onOpenSession}
               onItemChange={updateInboxItem}
+              onOpenStackPr={openStackPr}
             />
           </div>
           {discussionOpen && selected ? (
@@ -1444,6 +1462,7 @@ function InboxDetailBody({
   onRepairChecks,
   onOpenSession,
   onItemChange,
+  onOpenStackPr,
 }: {
   item: InboxItem | null;
   cwd: string;
@@ -1456,6 +1475,7 @@ function InboxDetailBody({
   onRepairChecks?: CiRepairProps["onRepairChecks"];
   onOpenSession?: (sessionId: string) => void | Promise<void>;
   onItemChange?: (item: InboxItem) => void;
+  onOpenStackPr?: (repo: string, pr: PrEntryLite) => void;
 }) {
   if (!item) {
     return (
@@ -1479,6 +1499,7 @@ function InboxDetailBody({
       onRepairChecks={onRepairChecks}
       onOpenSession={onOpenSession}
       onItemChange={onItemChange}
+      onOpenStackPr={onOpenStackPr}
     />
   );
 }
@@ -2032,6 +2053,7 @@ export function InboxDetail({
   onRepairChecks,
   onOpenSession,
   onItemChange,
+  onOpenStackPr,
 }: {
   item: InboxItem;
   cwd: string;
@@ -2046,6 +2068,8 @@ export function InboxDetail({
   onRepairChecks?: CiRepairProps["onRepairChecks"];
   onOpenSession?: (sessionId: string) => void | Promise<void>;
   onItemChange?: (item: InboxItem) => void;
+  /** Opens another PR of the viewed PR's stack; without it, it opens on GitHub. */
+  onOpenStackPr?: (repo: string, pr: PrEntryLite) => void;
 }) {
   const detailLock = useLockOverscroll<HTMLDivElement>();
   const panel = mode === "panel";
@@ -2188,6 +2212,16 @@ export function InboxDetail({
       : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
         ? "text-danger"
         : "text-muted";
+  const stackChats = useMemo(
+    () =>
+      relatedSessions
+        .filter((session) => !session.archived)
+        .map((session) => ({
+          id: session.id,
+          title: sessionDisplayTitle(session.title, session.harness),
+        })),
+    [relatedSessions],
+  );
   const baseRef =
     details?.baseRefName?.trim() || thread?.baseRefName?.trim() || "";
   const headRef =
@@ -2981,6 +3015,18 @@ export function InboxDetail({
                   <InboxLabel key={label.name} label={label} />
                 ))}
               </div>
+            ) : null}
+            {tab === "summary" && isPr && githubKind === "pr" ? (
+              <PrInboxStack
+                repo={item.repo}
+                number={item.number}
+                relatedSessions={stackChats}
+                onOpenPr={(pr) =>
+                  onOpenStackPr
+                    ? onOpenStackPr(item.repo, pr)
+                    : void openUrl(pr.url)
+                }
+              />
             ) : null}
             {isPr && tab === "code" ? (
               diffLoading ? (

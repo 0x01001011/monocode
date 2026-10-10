@@ -93,6 +93,30 @@ export type PrSummary = {
   members: string[];
 };
 
+/** One stack member as the Inbox rail shows it (`pr_stack_for`). */
+export type PrEntryLite = {
+  number: number;
+  title: string;
+  url: string;
+  state: PrState;
+  isDraft: boolean;
+  headRef: string;
+  baseRef: string;
+  checks: Checks;
+  attention: Attention;
+  attentionReason: string | null;
+  /** Chats this PR is attributed to. */
+  ownerSessionIds: string[];
+  /** Not the viewed PR and shares no chat with it. */
+  isNeighbor: boolean;
+};
+
+/** The stack holding one PR; `entries` follow `group.members` (base first). */
+export type PrStackView = {
+  group: PrStackGroup;
+  entries: PrEntryLite[];
+};
+
 export type PrInterestLevel = "hot" | "fleet" | "off";
 
 export type PrSetChangedPayload = {
