@@ -139,7 +139,37 @@ export function PrSetCard({
     onDismiss(entry, dismissed);
   };
 
+  // The Undo button can expire (or be used) while it holds focus. Its ref
+  // detaches before the node leaves the DOM, so focus can still be checked.
+  const undoRef = useRef<HTMLButtonElement | null>(null);
+  const undoHadFocus = useRef(false);
+  const setUndoRef = (el: HTMLButtonElement | null) => {
+    if (!el && undoRef.current && document.activeElement === undoRef.current)
+      undoHadFocus.current = true;
+    undoRef.current = el;
+  };
+
   useLayoutEffect(() => {
+    const body = bodyRef.current;
+    const rowsNow = () =>
+      body ? [...body.querySelectorAll<HTMLElement>("[data-pr-row]")] : [];
+    const focusLost = () => {
+      const active = document.activeElement;
+      return !active || active === document.body || !active.isConnected;
+    };
+    if (undoHadFocus.current) {
+      undoHadFocus.current = false;
+      // A pending show (Undo pressed) places focus once the row is back.
+      if (!pending.current && focusLost()) {
+        const list = rowsNow();
+        const next =
+          list[roving.activeIndex] ??
+          list[list.length - 1] ??
+          body?.querySelector<HTMLElement>(".pr-hidden-toggle");
+        if (next) next.focus({ preventScroll: true });
+        else onFocusLost?.();
+      }
+    }
     const want = pending.current;
     if (!want) return;
     const target = view.entries.find(
@@ -148,12 +178,8 @@ export function PrSetCard({
     // Not applied yet: wait for the refetch.
     if (target && target.dismissed !== want.dismissed) return;
     pending.current = null;
-    const active = document.activeElement;
-    if (active && active !== document.body && active.isConnected) return;
-    const body = bodyRef.current;
-    const list = body
-      ? [...body.querySelectorAll<HTMLElement>("[data-pr-row]")]
-      : [];
+    if (!focusLost()) return;
+    const list = rowsNow();
     const next =
       (!want.dismissed
         ? list.find((el) => el.getAttribute("href") === want.url)
@@ -352,6 +378,7 @@ export function PrSetCard({
         </span>
         {status?.undo ? (
           <button
+            ref={setUndoRef}
             type="button"
             className="pr-undo"
             onClick={() => dismiss(status.undo!, false)}

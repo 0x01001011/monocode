@@ -4340,13 +4340,14 @@ html.theme-light .btw-burst {
 .composer-head {
   container: composer-head / inline-size;
 }
-/* The wrapper may not shrink below its button; the button carries the
-   floor, sized against the row (`cqi`) so short names leave no dead gap. */
+/* The floor sits on the wrapper, the row's flex item (`cqi` resolves
+   against the row), so it still shrinks to the floor and no further. The
+   button fills it, so a short name leaves no dead gap, and truncates. */
 .composer-head > [data-branch-trigger] {
-  min-width: auto;
+  min-width: min(14ch, 45cqi);
 }
 .composer-head > [data-branch-trigger] > button {
-  min-width: min(14ch, 45cqi);
+  flex: 1 1 auto;
 }
 .pr-chip-num {
   font-variant-numeric: tabular-nums;

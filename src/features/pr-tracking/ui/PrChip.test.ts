@@ -313,15 +313,15 @@ describe("PrChip narrow composers", () => {
     expect(css).toContain(
       ".composer-head { container: composer-head / inline-size; }",
     );
-    // On the trigger button itself (no dead gap after a short name), sized
-    // against the row through container units; the wrapper may not shrink
-    // below it.
+    // The floor sits on the wrapper (the row's flex item), sized against the
+    // row through container units; the button fills it and truncates.
     expect(css).toContain(
-      ".composer-head > [data-branch-trigger] { min-width: auto; }",
+      ".composer-head > [data-branch-trigger] { min-width: min(14ch, 45cqi); }",
     );
     expect(css).toContain(
-      ".composer-head > [data-branch-trigger] > button { min-width: min(14ch, 45cqi); }",
+      ".composer-head > [data-branch-trigger] > button { flex: 1 1 auto; }",
     );
+    expect(css).not.toContain("min-width: auto");
     expect(css).toContain(
       "@container composer-head (max-width: 400px) { .pr-chip .pr-strip, .pr-chip .pr-chip-more { display: none; } }",
     );
@@ -799,6 +799,25 @@ describe("PrChip dismiss, focus and undo", () => {
     expect(undoButton()).toBeDefined();
     act(() => vi.advanceTimersByTime(1));
     expect(undoButton()).toBeUndefined();
+  });
+
+  it("moves focus to the nearest row when Undo expires while focused", () => {
+    vi.useFakeTimers();
+    const { rerender } = render();
+    pin();
+    key(rows()[0], { key: "ArrowDown" });
+    key(rows()[1], { key: "Backspace" });
+    expect(h.dismissPr).toHaveBeenCalledWith("s1", REPO, 480, true);
+    h.view = hide(stackedView(), 480);
+    rerender();
+    const undo = undoButton()!;
+    undo.focus();
+    expect(document.activeElement).toBe(undo);
+    act(() => vi.advanceTimersByTime(6_000));
+    expect(undoButton()).toBeUndefined();
+    expect(dialog()!.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(rows()[1]);
+    expect(rows()[1].querySelector(".pr-n")?.textContent).toBe("#478");
   });
 
   it("drops the Undo status when the card closes", () => {
