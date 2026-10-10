@@ -118,6 +118,7 @@ type StageInput = {
 function stagesFor({ task, status, startedAt, reportAt, reportDone, reviews, implementDone }: StageInput): BoardStage[] {
   const done = status === "done";
   const active = !done && status !== "blocked";
+  const implemented = task?.implemented;
   const stages: BoardStage[] = [
     {
       kind: "implement",
@@ -125,9 +126,9 @@ function stagesFor({ task, status, startedAt, reportAt, reportDone, reviews, imp
       status: implementDone ? "done" : status === "blocked" ? "blocked" : "running",
       startedAt,
       endedAt: implementDone ? notBefore(startedAt, reportAt) : undefined,
+      ...(implemented?.sha ? { sha: implemented.sha } : {}),
     },
   ];
-  const implemented = task?.implemented;
   const fixes = task?.fixes ?? [];
   const verdict = implemented?.verdict;
   if (verdict !== undefined || (implemented && (done || fixes.length > 0))) {
@@ -157,11 +158,13 @@ function stagesFor({ task, status, startedAt, reportAt, reportDone, reviews, imp
     const rereview = open ? [...packagesFrom(reviews, fix.base), ...packagesFor(reviews, fix.implementedSha)] : [];
     const reviewing = open && (rereview.length > 0 || fix.implementedSha !== undefined);
     const reviewAt = latest(rereview);
+    const fixSha = fix.implementedSha ?? (fix.commits ? endSha(fix.commits) : undefined);
     stages.push({
       kind: "fix",
       label: `R${fix.round}`,
       status: finished ? ((fix.open ?? 0) > 0 ? "attention" : "done") : done || reviewing ? "done" : "running",
       ...(finished ? { verdict: `${fix.addressed ?? 0} addressed, ${fix.open ?? 0} open` } : {}),
+      ...(fixSha ? { sha: fixSha } : {}),
       endedAt: reviewing ? reviewAt : latest(packagesFor(reviews, fix.commits ? endSha(fix.commits) : undefined)),
     });
     if (reviewing) stages.push({ kind: "review", label: REVIEW_RUNNING, status: "running", startedAt: reviewAt });
@@ -267,9 +270,9 @@ function buildFinalReview(ledger: ParsedLedger): BoardNode {
  */
 function stepsFor(taskDone: boolean, planTask: PlanTask | undefined, brief: BriefInfo | undefined): BoardStep[] | undefined {
   if (planTask && planTask.steps.length > 0) {
-    return planTask.steps.map((step) => ({ text: step.text, done: taskDone || step.done }));
+    return planTask.steps.map((step) => ({ text: step.text, done: taskDone || step.done, ticked: step.done }));
   }
-  if (brief) return brief.steps.map((text) => ({ text: text.replace(STEP_LABEL, ""), done: taskDone }));
+  if (brief) return brief.steps.map((text) => ({ text: text.replace(STEP_LABEL, ""), done: taskDone, ticked: false }));
   return undefined;
 }
 
@@ -376,6 +379,7 @@ export function buildSddSection(snapshot: SddSnapshot, _now: number): BoardSecti
         : {}),
       ...(steps ? { steps } : {}),
       ...(task?.complete?.commits ? { commits: task.complete.commits } : {}),
+      ...(task?.complete && task.complete.parked > 0 ? { parkedAtClose: task.complete.parked } : {}),
       ...(task && task.fixes.length > 0 ? { fixRounds: maxRound } : {}),
       ...(report !== undefined
         ? { target: { kind: "report" as const, ref: `${snapshot.dir}/${reportName}` } }

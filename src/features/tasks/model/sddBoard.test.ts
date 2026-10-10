@@ -551,12 +551,12 @@ describe("buildSddSection with a plan file", () => {
     }
     expect(node(section, 9).title).toBe("Plan title 9");
     expect(node(section, 9).steps).toEqual([
-      { text: "nine a", done: false },
-      { text: "nine b", done: true },
+      { text: "nine a", done: false, ticked: false },
+      { text: "nine b", done: true, ticked: true },
     ]);
     expect(node(section, 10).steps).toEqual([
-      { text: "one", done: false },
-      { text: "two", done: false },
+      { text: "one", done: false, ticked: false },
+      { text: "two", done: false, ticked: false },
     ]);
   });
 
@@ -621,9 +621,9 @@ describe("buildSddSection with a plan file", () => {
     );
     expect(node(six, 6).status).toBe("running");
     expect(node(six, 6).steps).toEqual([
-      { text: "ticked", done: true },
-      { text: "not yet", done: false },
-      { text: "ticked upper", done: true },
+      { text: "ticked", done: true, ticked: true },
+      { text: "not yet", done: false, ticked: false },
+      { text: "ticked upper", done: true, ticked: true },
     ]);
     expect(node(six, 8).steps!.map((s) => s.done)).toEqual([true, false]);
   });
@@ -688,3 +688,58 @@ describe("buildSddSection with a plan file", () => {
   });
 });
 
+
+describe("buildSddSection board data for the graph", () => {
+  const withLedger = (ledgerText: string) => buildSddSection(fixtureSnapshot({ ledgerText }), NOW);
+  const stage = (n: BoardNode, kind: string) => n.stages!.filter((s) => s.kind === kind);
+
+  it("stage shas from ranges and bare shas", () => {
+    const ledger = [
+      "Task 1: implemented (a1b2c3d); review: spec ✅, Important x2 (a; b)",
+      "Task 1: fix round 1/5 dispatched; FIX_BASE=a1b2c3d",
+      "Task 1: fix round 1/5 implemented (b2c3d4e)",
+      "Task 1: fix round 2/5 dispatched; FIX_BASE=b2c3d4e",
+      "Task 1: fix round 2/5 (1 addressed, 0 open; commits b2c3d4e..d4e5f6a)",
+    ].join("\n");
+    const t1 = node(withLedger(ledger), 1);
+    expect(stage(t1, "implement")[0].sha).toBe("a1b2c3d");
+    const [r1, r2] = stage(t1, "fix");
+    expect(r1.sha).toBe("b2c3d4e");
+    expect(r2.sha).toBe("d4e5f6a");
+    expect(stage(t1, "review").every((s) => s.sha === undefined)).toBe(true);
+  });
+
+  it("an implement stage with no recorded sha has none", () => {
+    const t1 = node(withLedger("Task 1: fix round 1/5 dispatched"), 1);
+    expect(stage(t1, "implement")[0].sha).toBeUndefined();
+    expect(stage(t1, "fix")[0].sha).toBeUndefined();
+  });
+
+  it("ticked keeps the plan tick when the task is done", () => {
+    const plan = "### Task 1: One\n- [ ] open step\n- [x] ticked step\n";
+    const section = buildSddSection({ ...fixtureSnapshot(), planText: plan }, NOW);
+    expect(node(section, 1).status).toBe("done");
+    expect(node(section, 1).steps).toEqual([
+      { text: "open step", done: true, ticked: false },
+      { text: "ticked step", done: true, ticked: true },
+    ]);
+  });
+
+  it("brief steps are never ticked", () => {
+    const section = buildSddSection(fixtureSnapshot(), NOW);
+    const steps = node(section, 1).steps!;
+    expect(steps.length).toBeGreaterThan(0);
+    expect(node(section, 1).status).toBe("done");
+    expect(steps.every((s) => s.done && s.ticked === false)).toBe(true);
+  });
+
+  it("parkedAtClose from the complete line", () => {
+    const ledger = [
+      "Task 1: complete (commits 0000000..a1b2c3d, 2 parked)",
+      "Task 2: complete (commits a1b2c3d..b2c3d4e, review clean)",
+    ].join("\n");
+    const section = withLedger(ledger);
+    expect(node(section, 1).parkedAtClose).toBe(2);
+    expect("parkedAtClose" in node(section, 2)).toBe(false);
+  });
+});

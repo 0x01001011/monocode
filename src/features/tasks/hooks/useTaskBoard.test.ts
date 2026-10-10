@@ -671,15 +671,15 @@ describe("useTaskBoard", () => {
       ]);
       for (const extra of extras) {
         expect(extra.steps).toEqual([
-          { text: "first", done: false },
-          { text: "second", done: false },
-          { text: "third", done: false },
+          { text: "first", done: false, ticked: false },
+          { text: "second", done: false, ticked: false },
+          { text: "third", done: false, ticked: false },
         ]);
         expect(extra.stages).toBeUndefined();
         expect(extra.target).toBeUndefined();
       }
       // The running task's own brief title wins; its tick comes from the plan file.
-      expect(plan?.nodes[6]?.steps?.[0]).toEqual({ text: "first", done: true });
+      expect(plan?.nodes[6]?.steps?.[0]).toEqual({ text: "first", done: true, ticked: true });
       // 6 done tasks x 3 steps, plus task 7's one tick, over 10 x 3 steps.
       expect(plan?.steps).toEqual({ done: 19, total: 30 });
       expect(planOverview(plan!)).toMatchObject({ left: 5, steps: { done: 19, total: 30 }, current: { label: "Task 7" } });

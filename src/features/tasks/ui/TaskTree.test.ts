@@ -391,7 +391,7 @@ describe("TaskTree", () => {
     it("gives step rows stable ids, a 2-line clamp and the full text in the title", () => {
       const long = "A long step ".repeat(20).trim();
       render({
-        nodes: [node("a", { status: "running", startedAt: 0, steps: [{ text: long, done: false }] })],
+        nodes: [node("a", { status: "running", startedAt: 0, steps: [{ text: long, done: false, ticked: false }] })],
         expandedIds: new Set(["a"]),
       });
       const text = items()[1].querySelector(`[title='${long}']`);

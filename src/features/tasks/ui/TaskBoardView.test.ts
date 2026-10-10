@@ -53,8 +53,8 @@ const nodes: BoardNode[] = [
     commits: "129e9e2..e704fdd",
     models: "Implementer sonnet, reviewer opus",
     steps: [
-      { text: "Write the failing test", done: true },
-      { text: "Make it pass", done: true },
+      { text: "Write the failing test", done: true, ticked: true },
+      { text: "Make it pass", done: true, ticked: true },
     ],
     target: { kind: "report", ref: "/w/task-2-report.md" },
     stages: [
@@ -67,7 +67,7 @@ const nodes: BoardNode[] = [
   task(3, {
     status: "running",
     endedAt: undefined,
-    steps: [{ text: "Wire it up", done: false }],
+    steps: [{ text: "Wire it up", done: false, ticked: false }],
     stages: [
       { kind: "implement", label: "Implement", status: "done" },
       { kind: "review", label: "Review", status: "running" },
@@ -304,9 +304,9 @@ describe("TaskBoardView", () => {
       status: "running",
       endedAt: undefined,
       steps: [
-        { text: "One", done: true },
-        { text: "Two", done: false },
-        { text: "Three", done: true },
+        { text: "One", done: true, ticked: true },
+        { text: "Two", done: false, ticked: false },
+        { text: "Three", done: true, ticked: true },
       ],
     });
     const p = plan({ nodes: [mixed], total: 1, done: 0 });
