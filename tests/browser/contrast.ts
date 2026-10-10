@@ -78,7 +78,7 @@ export function measure(page: Page, scope?: string): Promise<Measured> {
     };
     const fails: { kind: string; what: string; got: number; need: number }[] = [];
     const check = (kind: string, what: string, got: number, need: number) => {
-      if (got + 0.005 < need || (window as unknown as { __all?: boolean }).__all) fails.push({ kind, what, got: +got.toFixed(2), need });
+      if (got + 0.005 < need) fails.push({ kind, what, got: +got.toFixed(2), need });
     };
 
     // Text: 4.5:1, or 3:1 for large text (24px+, or bold 18.66px+). Glyph marks are checked below.

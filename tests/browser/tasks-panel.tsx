@@ -345,7 +345,8 @@ const root = createRoot(document.getElementById("root")!);
 
 declare global {
   interface Window {
-    showTasks(state: string): void;
+    /** `nowOffsetMs` moves the panel's clock forward from `NOW`, so a spec can tell a stopped clock from a running one. */
+    showTasks(state: string, nowOffsetMs?: number): void;
     setTheme(theme: "dark" | "light", palette?: "default" | "colorblind" | "high-contrast"): void;
     tasksStates: string[];
     tasksEvents: TasksEvent[];
@@ -356,7 +357,7 @@ window.tasksStates = Object.keys(SCENES);
 window.tasksEvents = [];
 let renders = 0;
 
-window.showTasks = (state) => {
+window.showTasks = (state, nowOffsetMs = 0) => {
   const scene = SCENES[state];
   if (!scene) throw new Error(`Unknown tasks panel state "${state}"; known: ${Object.keys(SCENES).join(", ")}`);
   window.tasksEvents = [];
@@ -368,7 +369,7 @@ window.showTasks = (state) => {
       // Every call starts fresh: no toggles, filter or menu carried over.
       key={++renders}
       board={board(scene)}
-      now={NOW}
+      now={NOW + nowOffsetMs}
       onAction={(action) => log({ type: "action", action })}
       onOpenNode={(node) => log({ type: "open", id: node.id, ...(node.target ? { target: node.target } : {}) })}
       onOpenFile={(path) => log({ type: "file", path })}
