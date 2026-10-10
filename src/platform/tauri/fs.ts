@@ -401,6 +401,16 @@ export function gitPrCreate(
   return invoke<string>("git_pr_create", { cwd, title, body, base, head });
 }
 
+/** Whether `ancestor` is an ancestor of (or equal to) `descendant`. Rejects
+ * when either ref is unknown. Local checkouts only. */
+export function gitIsAncestor(
+  cwd: string,
+  ancestor: string,
+  descendant: string,
+): Promise<boolean> {
+  return invokeLocal<boolean>("git_is_ancestor", { cwd, ancestor, descendant });
+}
+
 export type GitBranchInfo = {
   name: string;
   current: boolean;

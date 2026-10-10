@@ -1179,6 +1179,55 @@ pub async fn git_pr_create(
     .map_err(|e| e.to_string())?
 }
 
+/// Whether `ancestor` is an ancestor of (or equal to) `descendant`.
+#[tauri::command]
+pub async fn git_is_ancestor(
+    cwd: String,
+    ancestor: String,
+    descendant: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        git_is_ancestor_for(&expand_home(&cwd), &ancestor, &descendant)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// `git merge-base --is-ancestor`: exit 0 is true, 1 is false, anything else
+/// (an unknown ref, not a repo) is an error. Refs that could parse as an
+/// option are refused.
+fn git_is_ancestor_for(root: &Path, ancestor: &str, descendant: &str) -> Result<bool, String> {
+    let ancestor = ancestor.trim();
+    let descendant = descendant.trim();
+    for rev in [ancestor, descendant] {
+        if rev.is_empty() || rev.starts_with('-') {
+            return Err(format!("Invalid ref: {rev:?}"));
+        }
+    }
+    let output = git_cmd()
+        .arg("--no-pager")
+        .arg("-C")
+        .arg(root)
+        .args(["merge-base", "--is-ancestor", ancestor, descendant])
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .map_err(|e| e.to_string())?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = stderr.trim();
+            Err(if msg.is_empty() {
+                format!("git merge-base --is-ancestor {ancestor} {descendant} failed")
+            } else {
+                msg.to_string()
+            })
+        }
+    }
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GitHubLabel {
@@ -7257,6 +7306,35 @@ mod tests {
         let history = git_history_for(&dir.0, Some(1)).unwrap();
         let sha = &history.commits[0].sha;
         assert!(git_commit_file_diff_for(&dir.0, sha, "../secret.txt").is_err());
+    }
+
+    #[test]
+    fn git_is_ancestor_true_and_false() {
+        let dir = tmp("git-is-ancestor");
+        if !init_git_commit(&dir.0, &[("a.txt", "alpha\n")]) {
+            return;
+        }
+        assert!(git(&dir.0, &["checkout", "-b", "parent"]));
+        std::fs::write(dir.0.join("p.txt"), "parent\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "parent work"]));
+        assert!(git(&dir.0, &["checkout", "-b", "child"]));
+        std::fs::write(dir.0.join("c.txt"), "child\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "child work"]));
+        assert!(git(&dir.0, &["checkout", "-b", "sibling", "main"]));
+        std::fs::write(dir.0.join("s.txt"), "sibling\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "sibling work"]));
+
+        assert_eq!(git_is_ancestor_for(&dir.0, "parent", "child"), Ok(true));
+        assert_eq!(git_is_ancestor_for(&dir.0, "main", "child"), Ok(true));
+        assert_eq!(git_is_ancestor_for(&dir.0, "child", "parent"), Ok(false));
+        assert_eq!(git_is_ancestor_for(&dir.0, "sibling", "child"), Ok(false));
+        assert!(git_is_ancestor_for(&dir.0, "no-such-branch", "child").is_err());
+        assert!(git_is_ancestor_for(&dir.0, "--all", "child").is_err());
+        assert!(git_is_ancestor_for(&dir.0, "parent", "-c").is_err());
+        assert!(git_is_ancestor_for(&dir.0, " ", "child").is_err());
     }
 
     #[test]
