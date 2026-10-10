@@ -376,8 +376,15 @@ export type GitRangeContext = {
   diffPatch: string;
 };
 
-export function gitRangeContext(cwd: string): Promise<GitRangeContext> {
-  return invoke<GitRangeContext>("git_range_context", { cwd });
+/** Commits and diff from `base` (default: the default branch) to HEAD. */
+export function gitRangeContext(
+  cwd: string,
+  base?: string,
+): Promise<GitRangeContext> {
+  return invoke<GitRangeContext>("git_range_context", {
+    cwd,
+    ...(base ? { base } : {}),
+  });
 }
 
 export type GitPr = {

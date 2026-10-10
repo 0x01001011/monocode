@@ -1122,12 +1122,18 @@ pub struct GitRangeContext {
     pub diff_patch: String,
 }
 
-/// Commits and diff between the default branch and HEAD, for PR text generation.
+/// Commits and diff between `base` (default: the default branch) and HEAD,
+/// for PR text generation.
 #[tauri::command]
-pub async fn git_range_context(cwd: String) -> Result<GitRangeContext, String> {
-    tauri::async_runtime::spawn_blocking(move || git_range_context_for(&expand_home(&cwd)))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn git_range_context(
+    cwd: String,
+    base: Option<String>,
+) -> Result<GitRangeContext, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        git_range_context_with_base(&expand_home(&cwd), base.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -1197,13 +1203,8 @@ pub async fn git_is_ancestor(
 /// (an unknown ref, not a repo) is an error. Refs that could parse as an
 /// option are refused.
 fn git_is_ancestor_for(root: &Path, ancestor: &str, descendant: &str) -> Result<bool, String> {
-    let ancestor = ancestor.trim();
-    let descendant = descendant.trim();
-    for rev in [ancestor, descendant] {
-        if rev.is_empty() || rev.starts_with('-') {
-            return Err(format!("Invalid ref: {rev:?}"));
-        }
-    }
+    let ancestor = checked_rev(ancestor)?;
+    let descendant = checked_rev(descendant)?;
     let output = git_cmd()
         .arg("--no-pager")
         .arg("-C")
@@ -2667,9 +2668,39 @@ fn git_sync_changes_for(root: &Path) -> Result<(), String> {
     git_push_for(root)
 }
 
+/// The default-branch range (`git_range_context` without a base).
+#[cfg(test)]
 fn git_range_context_for(root: &Path) -> Result<GitRangeContext, String> {
+    git_range_context_with_base(root, None)
+}
+
+/// A user-supplied ref, trimmed; refuses blanks and anything git could parse
+/// as an option.
+fn checked_rev(rev: &str) -> Result<&str, String> {
+    let rev = rev.trim();
+    if rev.is_empty() || rev.starts_with('-') {
+        return Err(format!("Invalid ref: {rev:?}"));
+    }
+    Ok(rev)
+}
+
+/// With `base`, the range starts at `<remote>/<base>` when that remote
+/// branch exists, else the local branch; an unknown base is an error. Without
+/// it, the default branch, as before.
+fn git_range_context_with_base(root: &Path, base: Option<&str>) -> Result<GitRangeContext, String> {
     let head = git_branch(root).ok_or_else(|| "Not on a branch".to_string())?;
     let remote = git_remote_name(root);
+    if let Some(base) = base {
+        let base = checked_rev(base)?;
+        let base_ref = match &remote {
+            Some(remote) if git_ref_exists(root, &format!("refs/remotes/{remote}/{base}")) => {
+                format!("{remote}/{base}")
+            }
+            _ if git_ref_exists(root, &format!("refs/heads/{base}")) => base.to_string(),
+            _ => return Err(format!("Base branch {base} not found")),
+        };
+        return git_range_context_between(root, base.to_string(), &base_ref, head);
+    }
     let default_branch = git_default_branch(root, remote.as_deref())
         .ok_or_else(|| "Could not resolve the default branch".to_string())?;
     let base_ref = match &remote {
@@ -2680,6 +2711,15 @@ fn git_range_context_for(root: &Path) -> Result<GitRangeContext, String> {
         }
         _ => default_branch.clone(),
     };
+    git_range_context_between(root, default_branch, &base_ref, head)
+}
+
+fn git_range_context_between(
+    root: &Path,
+    base: String,
+    base_ref: &str,
+    head: String,
+) -> Result<GitRangeContext, String> {
     let spec = format!("{base_ref}...HEAD");
     let commit_summary =
         git_run(root, &["log", "--format=%s", &format!("{base_ref}..HEAD")]).unwrap_or_default();
@@ -2689,7 +2729,7 @@ fn git_range_context_for(root: &Path) -> Result<GitRangeContext, String> {
         return Err("No commits to include in a pull request".into());
     }
     Ok(GitRangeContext {
-        base: default_branch,
+        base,
         head,
         commit_summary,
         diff_summary,
@@ -7306,6 +7346,40 @@ mod tests {
         let history = git_history_for(&dir.0, Some(1)).unwrap();
         let sha = &history.commits[0].sha;
         assert!(git_commit_file_diff_for(&dir.0, sha, "../secret.txt").is_err());
+    }
+
+    #[test]
+    fn git_range_context_uses_the_chosen_base() {
+        let dir = tmp("git-range-base");
+        if !init_git_commit(&dir.0, &[("a.txt", "alpha\n")]) {
+            return;
+        }
+        assert!(git(&dir.0, &["checkout", "-b", "parent"]));
+        std::fs::write(dir.0.join("p.txt"), "parent\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "parent work"]));
+        assert!(git(&dir.0, &["checkout", "-b", "child"]));
+        std::fs::write(dir.0.join("c.txt"), "child\n").unwrap();
+        assert!(git(&dir.0, &["add", "."]));
+        assert!(git(&dir.0, &["commit", "-m", "child work"]));
+
+        let stacked = git_range_context_with_base(&dir.0, Some("parent")).unwrap();
+        assert_eq!(stacked.base, "parent");
+        assert_eq!(stacked.head, "child");
+        assert_eq!(stacked.commit_summary.trim(), "child work");
+        assert!(stacked.diff_summary.contains("c.txt"));
+        assert!(!stacked.diff_summary.contains("p.txt"));
+        assert!(!stacked.diff_patch.contains("p.txt"));
+
+        let default = git_range_context_with_base(&dir.0, None).unwrap();
+        assert_eq!(default, git_range_context_for(&dir.0).unwrap());
+        assert_eq!(default.base, "main");
+        assert!(default.commit_summary.contains("child work"));
+        assert!(default.commit_summary.contains("parent work"));
+
+        assert!(git_range_context_with_base(&dir.0, Some("-p")).is_err());
+        assert!(git_range_context_with_base(&dir.0, Some("  ")).is_err());
+        assert!(git_range_context_with_base(&dir.0, Some("no-such-branch")).is_err());
     }
 
     #[test]

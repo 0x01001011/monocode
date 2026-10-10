@@ -715,7 +715,7 @@ function ChangedFiles({
   const openCreatedPr = async () => {
     const content = isRemoteProjectPath(cwd)
       ? await remotePrContent(cwd)
-      : await generatePrContent(cwd, textHarness);
+      : await generatePrContent(cwd, textHarness, chosenBase ?? undefined);
     if (!content) throw new Error("Could not prepare pull request content");
     const url = await gitPrCreate(
       cwd,

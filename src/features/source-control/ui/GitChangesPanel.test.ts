@@ -733,6 +733,12 @@ describe("GitChangesPanel chat pull requests", () => {
       "mc/tasks-panel-keyboard",
       "mc/next",
     );
+    // The title and body are generated against the stacked base, too.
+    expect(generatePrContent).toHaveBeenCalledWith(
+      "/repo",
+      undefined,
+      "mc/tasks-panel-keyboard",
+    );
   });
 
   it("lets the user override the base", async () => {
@@ -760,6 +766,7 @@ describe("GitChangesPanel chat pull requests", () => {
     });
     await act(async () => {});
     expect(gitPrCreate).toHaveBeenCalledWith("/repo", "Next", "Body", "main", "mc/next");
+    expect(generatePrContent).toHaveBeenCalledWith("/repo", undefined, "main");
   });
 
   it("targets the default branch when no chat PR is an ancestor", async () => {
