@@ -59,10 +59,14 @@ const animationsDone = (page: Page) =>
 
 const chip = (page: Page) => page.locator("#composer .pr-chip");
 const card = (page: Page) => page.locator('[role="dialog"].pr-card');
+/** The card's roving row, where pinning puts focus. */
+const firstRow = (page: Page) =>
+  page.locator('[role="dialog"] [data-pr-row][tabindex="0"]');
 
 async function pin(page: Page) {
   await chip(page).click();
   await expect(card(page)).toBeVisible();
+  await expect(firstRow(page)).toBeFocused();
   await animationsDone(page);
 }
 
@@ -696,7 +700,7 @@ test.describe("keyboard and focus", () => {
     };
     expect(await ring(".pr-chip")).toEqual(expected);
     await page.keyboard.press("Enter");
-    await expect(card(page)).toBeVisible();
+    await expect(firstRow(page)).toBeFocused();
     expect(await ring("[data-pr-row]")).toEqual(expected);
     await page.keyboard.press("Escape");
     await expect(chip(page)).toBeFocused();
@@ -758,7 +762,7 @@ test.describe("keyboard and focus", () => {
     await load(page);
     await tabToChip(page);
     await page.keyboard.press("Enter");
-    await expect(card(page)).toBeVisible();
+    await expect(firstRow(page)).toBeFocused();
     let presses = 0;
     while ((await card(page).count()) > 0 && presses < 40) {
       await page.keyboard.press("Tab");
@@ -768,7 +772,7 @@ test.describe("keyboard and focus", () => {
     await expect(chip(page)).toBeFocused();
     // Shift+Tab from the first row closes it the other way.
     await page.keyboard.press("Enter");
-    await expect(card(page)).toBeVisible();
+    await expect(firstRow(page)).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await page.keyboard.press("Shift+Tab");
     await expect(card(page)).toHaveCount(0);
@@ -779,6 +783,7 @@ test.describe("keyboard and focus", () => {
     await load(page);
     await tabToChip(page);
     await page.keyboard.press("Enter");
+    await expect(firstRow(page)).toBeFocused();
     await page.keyboard.press("Tab");
     expect(await activeLabel(page)).toBe("More actions for PR 482");
     await page.keyboard.press("Enter");
@@ -792,6 +797,21 @@ test.describe("keyboard and focus", () => {
     await page.keyboard.press("Escape");
     await expect(card(page)).toHaveCount(0);
     await expect(chip(page)).toBeFocused();
+  });
+
+  test("the panel's split menu takes focus; Esc returns it to the caret", async ({
+    page,
+  }) => {
+    await load(page);
+    await tabTo(page, '#panel button[aria-label="More pull requests"]');
+    await page.keyboard.press("Enter");
+    const menu = page.locator("[data-pr-split-menu]");
+    await expect(menu.locator('[role="menuitem"]').first()).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(menu.locator('[role="menuitem"]').nth(1)).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(page.locator('#panel button[aria-label="More pull requests"]')).toBeFocused();
   });
 
   test("rows rove with arrows, Home and End as one tab stop", async ({ page }) => {
@@ -856,7 +876,7 @@ test.describe("modes and states", () => {
     await tabToChip(page);
     expect(await ring()).toEqual({ width: "2px", style: "solid", color: highlight });
     await page.keyboard.press("Enter");
-    await expect(card(page)).toBeVisible();
+    await expect(firstRow(page)).toBeFocused();
     expect(await ring()).toEqual({ width: "2px", style: "solid", color: highlight });
     await page.keyboard.press("Escape");
     // The stale sidebar glyph swaps its dashed outline for the ring.

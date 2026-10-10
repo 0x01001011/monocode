@@ -284,6 +284,31 @@ describe("PrRow", () => {
     expect(hidden.props.onDismiss).toHaveBeenCalledWith(hidden.props.entry, false);
   });
 
+  it("moves focus into the menu after the popover's hidden measuring pass", async () => {
+    // As in browsers, an element under visibility: hidden cannot take focus.
+    // Popover's first pass is hidden, so focusing on mount alone misses.
+    const focus = HTMLElement.prototype.focus;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "focus")
+      .mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+        if (this.closest('[style*="visibility: hidden"]')) return;
+        focus.call(this, options);
+      });
+    try {
+      const { container } = renderRow(entry(482));
+      const more = container.querySelector<HTMLButtonElement>(".pr-row-more")!;
+      more.focus();
+      act(() => more.click());
+      await act(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+      );
+      const first = document.querySelector('[role="menu"] [role="menuitem"]');
+      expect(document.activeElement).toBe(first);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("closes the menu on Escape and returns focus to the ⋯ button", () => {
     const { container } = renderRow(entry(482));
     const more = container.querySelector<HTMLButtonElement>(".pr-row-more")!;

@@ -256,6 +256,33 @@ describe("PrSection", () => {
     expect(document.querySelector("[data-pr-split-menu]")).toBeNull();
   });
 
+  it("focuses the caret menu's first item after the popover's hidden pass", async () => {
+    // As in browsers, an element under visibility: hidden cannot take focus.
+    const focus = HTMLElement.prototype.focus;
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "focus")
+      .mockImplementation(function (this: HTMLElement, options?: FocusOptions) {
+        if (this.closest('[style*="visibility: hidden"]')) return;
+        focus.call(this, options);
+      });
+    try {
+      render();
+      const caret = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="More pull requests"]',
+      )!;
+      caret.focus();
+      act(() => caret.click());
+      await act(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+      );
+      expect(document.activeElement).toBe(
+        document.querySelector('[data-pr-split-menu] [role="menuitem"]'),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("falls back to the checkout's open PR when no row is on the live branch", () => {
     h.view = panelView({
       entries: panelView().entries.map((e) => ({ ...e, onLiveBranch: false })),

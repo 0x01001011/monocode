@@ -20,7 +20,13 @@ import {
   trackerNotice,
 } from "../model/prSetModel";
 import type { PrEntry, PrSetView } from "../model/types";
-import { PR_LIST_CONTAINER, PR_MENU_ITEM, PrRow, prMenuKeyDown } from "./PrRow";
+import {
+  PR_LIST_CONTAINER,
+  PR_MENU_ITEM,
+  PrRow,
+  prMenuKeyDown,
+  useFocusFirstMenuItem,
+} from "./PrRow";
 import { prWorkItem, usePrClock } from "./PrSetPopover";
 import { PrStatusIcon } from "./PrStatusIcon";
 import { useRovingRows } from "./usePrHoverCard";
@@ -365,11 +371,7 @@ function SplitMenu({
   onOpen: (entry: PrEntry) => void;
 }) {
   const surface = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    surface.current
-      ?.querySelector<HTMLElement>('[role="menuitem"]')
-      ?.focus({ preventScroll: true });
-  }, []);
+  useFocusFirstMenuItem(surface);
 
   return (
     <Popover

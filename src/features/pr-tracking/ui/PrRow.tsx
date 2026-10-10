@@ -5,6 +5,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   Check,
@@ -329,6 +330,25 @@ export function prMenuKeyDown(
   items[next].focus();
 }
 
+/**
+ * Focuses a just-opened menu's first `menuitem`. Popover measures itself
+ * under `visibility: hidden` on its first pass, and a hidden element cannot
+ * take focus, so a try that does not land is repeated on the next frame.
+ */
+export function useFocusFirstMenuItem(surface: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const focusFirst = () => {
+      const item =
+        surface.current?.querySelector<HTMLElement>('[role="menuitem"]') ?? null;
+      item?.focus({ preventScroll: true });
+      return !!item && document.activeElement === item;
+    };
+    if (focusFirst()) return;
+    const frame = requestAnimationFrame(focusFirst);
+    return () => cancelAnimationFrame(frame);
+  }, [surface]);
+}
+
 function RowMenu({
   entry,
   anchor,
@@ -343,12 +363,7 @@ function RowMenu({
   onClose: (refocus: boolean) => void;
 } & Pick<PrRowProps, "onOpenInbox" | "onOpenGithub" | "onCopyLink" | "onDismiss">) {
   const surface = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    surface.current
-      ?.querySelector<HTMLElement>('[role="menuitem"]')
-      ?.focus({ preventScroll: true });
-  }, []);
+  useFocusFirstMenuItem(surface);
 
   const run = (action: () => void) => () => {
     onClose(true);
