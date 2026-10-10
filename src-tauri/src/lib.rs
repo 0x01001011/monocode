@@ -523,6 +523,7 @@ pub fn run() {
             artifacts::artifacts_delete,
             html_preview::preview_open,
             html_preview::preview_close,
+            html_preview::preview_update,
             notes::notes_delete,
             notes::notes_save_image,
             notes::notes_image_path,

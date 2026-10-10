@@ -8,10 +8,12 @@ import { isRemoteProjectPath } from "../projects/model/recents";
 /** Tauri event whose payload is the token of a preview whose files changed. */
 export const PREVIEW_CHANGED_EVENT = "monocode:preview-changed";
 
-/** A folder serves a site (relative links resolve); an artifact is one page. */
+/** A folder serves a site (relative links resolve); an artifact or a page held
+ * in memory, such as a file on a connected machine, is one page. */
 export type PreviewSource =
   | { kind: "dir"; path: string }
-  | { kind: "artifact"; id: string };
+  | { kind: "artifact"; id: string }
+  | { kind: "html"; html: string };
 
 export function isHtmlPath(path: string): boolean {
   return /\.html?$/i.test(path);
@@ -30,6 +32,11 @@ export function previewUrl(token: string, rel = "", windows = IS_WIN): string {
 /** Register a preview root; the token is only valid until `closePreview`. */
 export function openPreview(source: PreviewSource): Promise<string> {
   return invoke<string>("preview_open", { source });
+}
+
+/** Show new markup in a preview opened from `html`; its frame reloads. */
+export function updatePreview(token: string, html: string): Promise<void> {
+  return invoke("preview_update", { token, html });
 }
 
 export function closePreview(token: string): Promise<void> {

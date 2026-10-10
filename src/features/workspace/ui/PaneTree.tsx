@@ -20,7 +20,10 @@ import type {
   ApprovalDecision,
   UserQuestionReply,
 } from "../../../integrations/harness";
-import type { EditorNavigationTarget } from "../../search/model/search";
+import type {
+  EditorNavigationTarget,
+  OpenFileFn,
+} from "../../search/model/search";
 import {
   layoutLeaves,
   layoutSashes,
@@ -142,7 +145,7 @@ type Shared = {
     reply: UserQuestionReply,
   ) => void;
   onQuestionInteraction?: (sessionId: string, requestId: number) => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: OpenFileFn;
   editorNavigation?: EditorNavigationTarget | null;
   onOpenDiff: (
     path?: string,

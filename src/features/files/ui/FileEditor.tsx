@@ -57,12 +57,16 @@ import {
   type GitFileDiffKind,
 } from "../../../platform/tauri/fs";
 import { describeFileError } from "../model/fileErrors";
+import { MovedFileLinks } from "./MovedFileLinks";
 import { syncWatchedMtime, watchedMtime, watchFile } from "../model/fileWatch";
 import { filePreviewKind } from "../model/filePreview";
 import { HtmlFrame } from "../../html-preview/ui/HtmlFrame";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { displayPath } from "../../../shared/lib/paths";
-import type { EditorNavigation } from "../../search/model/search";
+import type {
+  EditorNavigation,
+  OpenFileFn,
+} from "../../search/model/search";
 import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
 import {
   DiffCommentComposer,
@@ -116,7 +120,7 @@ type Props = {
   navigation?: EditorNavigationRequest | null;
   onDirtyChange: (path: string, dirty: boolean) => void;
   onErrorCountChange?: (path: string, count: number) => void;
-  onOpenFile?: (path: string) => void;
+  onOpenFile?: OpenFileFn;
 };
 
 type LoadState =
@@ -152,8 +156,10 @@ export function FileEditor({
   const previewKind = filePreviewKind(path);
   const markdown = previewKind === "markdown";
   const svg = previewKind === "svg";
-  // Remote files have no local folder for the preview scheme to serve.
-  const html = previewKind === "html" && !isRemoteProjectPath(path);
+  const html = previewKind === "html";
+  // A remote file has no local folder for the preview scheme to serve, so its
+  // markup is handed over as read; files next to it are not reachable.
+  const remote = isRemoteProjectPath(path);
   // Diff tabs open as source: the git gutter only renders in the editor.
   const [mode, setMode] = useMarkdownMode(
     showDiff ? `review:${path}` : path,
@@ -471,6 +477,9 @@ export function FileEditor({
               </p>
             );
           })()}
+          {describeFileError(loadState.message).kind === "not-found" && (
+            <MovedFileLinks path={path} cwd={cwd} onOpenFile={onOpenFile} />
+          )}
           <button
             type="button"
             onClick={() => setReloadKey((value) => value + 1)}
@@ -516,7 +525,11 @@ export function FileEditor({
               // Shows the saved file; the folder watcher reloads it on save.
               mode === "preview" ? (
                 <HtmlFrame
-                  source={{ kind: "file", path }}
+                  source={
+                    remote
+                      ? { kind: "page", path, html: loadState.content }
+                      : { kind: "file", path }
+                  }
                   title={basename(path)}
                 />
               ) : null

@@ -1,12 +1,13 @@
 import type { ConsoleLevel } from "./frameChannel";
 
-/** What a preview shows: an artifact, or a file in a folder. */
+/** What a preview shows: an artifact, a file in a folder, or a page held in memory. */
 export type PreviewLogSource =
   | { kind: "file"; path: string }
-  | { kind: "artifact"; id: string };
+  | { kind: "artifact"; id: string }
+  | { kind: "page"; path: string };
 
 export const previewLogKey = (source: PreviewLogSource): string =>
-  source.kind === "file" ? `file:${source.path}` : `artifact:${source.id}`;
+  source.kind === "artifact" ? `artifact:${source.id}` : `${source.kind}:${source.path}`;
 
 export type PreviewLog = { level: ConsoleLevel; text: string; at: number };
 

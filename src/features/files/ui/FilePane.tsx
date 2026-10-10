@@ -21,7 +21,10 @@ import {
 } from "../../workspace/model/layout";
 import { isImagePath } from "../model/filePreview";
 import type { TerminalMetaPatch } from "../../terminal/model/terminalTab";
-import type { EditorNavigationTarget } from "../../search/model/search";
+import type {
+  EditorNavigationTarget,
+  OpenFileFn,
+} from "../../search/model/search";
 import { editorPathsEqual } from "../../search/model/search";
 import type { PlanBuildTarget, Session } from "../../sessions/model/session";
 import { Play } from "../../../shared/ui/icons";
@@ -76,7 +79,7 @@ type Props = {
   onDirtyChange: (fileId: string, dirty: boolean) => void;
   onErrorCountChange: (fileId: string, count: number) => void;
   onReorderFiles: (paneId: string, ids: string[]) => void;
-  onOpenFile: (path: string) => void;
+  onOpenFile: OpenFileFn;
   onUpdatePlan: (sessionId: string, blockId: string, text: string) => void;
   onBuildPlan: (
     sessionId: string,
@@ -317,7 +320,7 @@ function PlanSurface({
 }: {
   file: FilePaneTab;
   sessions: Session[];
-  onOpenFile: (path: string) => void;
+  onOpenFile: OpenFileFn;
   onUpdatePlan: (sessionId: string, blockId: string, text: string) => void;
   onBuildPlan: (
     sessionId: string,
