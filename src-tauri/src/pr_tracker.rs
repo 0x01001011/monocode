@@ -11,10 +11,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Condvar, LazyLock, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 use serde_json::Value;
@@ -38,6 +38,12 @@ const DISCOVERY_HOT_MS: i64 = 60_000;
 const DISCOVERY_FLEET_MS: i64 = 600_000;
 /// Backoff assumed when GitHub reports a rate limit without a reset time.
 const RATE_LIMIT_FALLBACK_MS: i64 = 60_000;
+/// Longest a single `gh` child may run before it is killed.
+const GH_DEADLINE: Duration = Duration::from_secs(45);
+/// Minimum gap between two forced refreshes of one chat.
+const REFRESH_THROTTLE_MS: i64 = 5_000;
+/// Error text for a killed `gh` child; `classify_gh_error` reads it as offline.
+const GH_TIMED_OUT: &str = "GitHub request timed out";
 
 const PR_FIELDS: &str = "fragment PrFields on PullRequest { number url title state isDraft \
 isCrossRepository headRepositoryOwner { login } headRefName baseRefName headRefOid \
@@ -436,6 +442,7 @@ pub fn classify_gh_error(stderr: &str) -> TrackerError {
         "network is unreachable",
         "i/o timeout",
         "tls handshake timeout",
+        "timed out",
     ]) {
         return TrackerError::Offline;
     }
@@ -492,6 +499,10 @@ struct Timers {
     refreshed: HashMap<(String, u32), i64>,
     /// Sessions whose targets are due on the next cycle regardless of tier.
     forced: HashSet<String>,
+    /// Forced targets the alias cap pushed out of a cycle; still forced.
+    forced_targets: HashSet<(String, Due)>,
+    /// When each session last forced a refresh, for throttling.
+    last_forced: HashMap<String, i64>,
 }
 
 pub struct Tracker {
@@ -501,6 +512,8 @@ pub struct Tracker {
     timers: Mutex<Timers>,
     /// Last lookup error per PR, cleared by the next successful fetch.
     errors: Mutex<HashMap<(String, u32), String>>,
+    /// Set once any request succeeded in this process.
+    succeeded: AtomicBool,
     wake: Mutex<bool>,
     wake_cv: Condvar,
 }
@@ -511,6 +524,7 @@ impl Tracker {
             status: Mutex::new(TrackerStatus::Idle),
             remaining: AtomicI64::new(-1),
             timers: Mutex::new(Timers::default()),
+            succeeded: AtomicBool::new(false),
             errors: Mutex::new(HashMap::new()),
             wake: Mutex::new(false),
             wake_cv: Condvar::new(),
@@ -534,10 +548,22 @@ impl Tracker {
         u32::try_from(self.remaining.load(Ordering::Relaxed)).ok()
     }
 
-    fn force(&self, session_id: &str) {
-        if let Ok(mut timers) = self.timers.lock() {
-            timers.forced.insert(session_id.to_string());
+    /// Makes the session's targets due next cycle. At most one forced refresh
+    /// per session per `REFRESH_THROTTLE_MS`; false when this call is ignored.
+    fn force(&self, session_id: &str, now: i64) -> bool {
+        let Ok(mut timers) = self.timers.lock() else {
+            return false;
+        };
+        let recent = timers
+            .last_forced
+            .get(session_id)
+            .is_some_and(|at| now - at < REFRESH_THROTTLE_MS && now >= *at);
+        if recent {
+            return false;
         }
+        timers.last_forced.insert(session_id.to_string(), now);
+        timers.forced.insert(session_id.to_string());
+        true
     }
 
     fn set_error(&self, repo: &str, number: u32, error: Option<&str>) {
@@ -605,6 +631,8 @@ struct Plan {
     requests: Vec<RepoRequest>,
     /// Non-off sessions that worked on each `(repo, branch)`.
     branch_sessions: HashMap<(String, String), Vec<String>>,
+    /// True when any non-off chat has a branch or PR to track, due or not.
+    tracking_anything: bool,
 }
 
 #[derive(Default)]
@@ -614,6 +642,7 @@ struct Want {
     sessions: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Due {
     Branch(String),
     Pr(u32),
@@ -629,6 +658,7 @@ fn plan_cycle(
 ) -> rusqlite::Result<Plan> {
     let levels: HashMap<String, String> = pr_store::interest_levels(conn)?.into_iter().collect();
     let forced = std::mem::take(&mut timers.forced);
+    let carried = std::mem::take(&mut timers.forced_targets);
     let mut branches: BTreeMap<(String, String), Want> = BTreeMap::new();
     let mut prs: BTreeMap<(String, u32), Want> = BTreeMap::new();
     for session in pr_store::tracked_sessions(conn)? {
@@ -650,6 +680,23 @@ fn plan_cycle(
             want.forced |= is_forced;
         }
     }
+
+    // Targets forced earlier but cut by the alias cap stay forced.
+    for (repo, item) in &carried {
+        match item {
+            Due::Branch(branch) => {
+                if let Some(want) = branches.get_mut(&(repo.clone(), branch.clone())) {
+                    want.forced = true;
+                }
+            }
+            Due::Pr(number) => {
+                if let Some(want) = prs.get_mut(&(repo.clone(), *number)) {
+                    want.forced = true;
+                }
+            }
+        }
+    }
+    let tracking_anything = !branches.is_empty() || !prs.is_empty();
 
     // (forced, overdue ms, target) per repo.
     let mut due: BTreeMap<String, Vec<(bool, i64, Due)>> = BTreeMap::new();
@@ -701,9 +748,14 @@ fn plan_cycle(
             continue;
         };
         items.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+        let cut = items.split_off(items.len().min(MAX_ALIASES));
+        for (forced, _, item) in cut {
+            if forced {
+                timers.forced_targets.insert((repo.clone(), item));
+            }
+        }
         let targets = items
             .into_iter()
-            .take(MAX_ALIASES)
             .enumerate()
             .map(|(i, (_, _, item))| match item {
                 Due::Branch(branch) => Target::Branch {
@@ -729,6 +781,7 @@ fn plan_cycle(
     Ok(Plan {
         requests,
         branch_sessions,
+        tracking_anything,
     })
 }
 
@@ -851,12 +904,45 @@ struct CycleOutcome {
     status_changed: bool,
 }
 
+/// Renews `holder`'s lease right now; false when another instance took it.
+fn still_leased(store: &SessionStore, holder: &str) -> bool {
+    store
+        .lock_conn()
+        .map(|conn| acquire_lease(&conn, holder, now_millis(), LEASE_TTL_MS))
+        .unwrap_or(false)
+}
+
+/// The status to show when nothing ran this cycle, or `None` to keep the
+/// current one. A rate limit is stale once its reset time passed; signed-out
+/// and offline have no expiry, so they stay the latest known truth until a
+/// request runs, unless nothing is tracked at all any more.
+fn settled_status(
+    current: TrackerStatus,
+    tracking_anything: bool,
+    succeeded: bool,
+    now: i64,
+) -> Option<TrackerStatus> {
+    let stale = match current {
+        TrackerStatus::RateLimited { until } => until <= now,
+        TrackerStatus::SignedOut | TrackerStatus::Offline => !tracking_anything,
+        _ => false,
+    };
+    stale.then_some(if succeeded {
+        TrackerStatus::Ok
+    } else {
+        TrackerStatus::Idle
+    })
+}
+
 /// One polling pass. Never clears snapshots: a failed request only updates
-/// the status and per-PR errors.
+/// the status and per-PR errors. Before each request the lease of `holder`
+/// is renewed; when another instance took it the rest of the cycle is
+/// skipped.
 fn run_cycle(
     store: &SessionStore,
     runner: &dyn GhRunner,
     tracker: &Tracker,
+    holder: &str,
     now: i64,
 ) -> CycleOutcome {
     let before = tracker.status();
@@ -881,6 +967,10 @@ fn run_cycle(
     let cwd = std::env::temp_dir();
     let mut status = None;
     for (index, request) in plan.requests.iter().enumerate() {
+        if !still_leased(store, holder) {
+            eprintln!("[pr_tracker] lease lost; another instance polls now");
+            break;
+        }
         mark_attempted(tracker, request, now);
         let query = build_query(&request.targets);
         let result = runner
@@ -905,6 +995,7 @@ fn run_cycle(
                     Ok(changed) => outcome.changed.extend(changed),
                     Err(err) => eprintln!("[pr_tracker] could not save {}: {err}", request.repo),
                 }
+                tracker.succeeded.store(true, Ordering::Relaxed);
                 status.get_or_insert(TrackerStatus::Ok);
             }
             Err(err) => {
@@ -930,6 +1021,14 @@ fn run_cycle(
             }
         }
     }
+    let status = status.or_else(|| {
+        settled_status(
+            before,
+            plan.tracking_anything,
+            tracker.succeeded.load(Ordering::Relaxed),
+            now,
+        )
+    });
     if let Some(status) = status {
         tracker.set_status(status);
     }
@@ -959,8 +1058,7 @@ impl GhRunner for GhCli {
 /// Like `fs::gh_run_raw`, but a GraphQL response that carries `data` is a
 /// success even though `gh` exits non-zero for its partial errors.
 fn run_gh_graphql(cwd: &Path, args: &[&str]) -> Result<String, String> {
-    const MISSING: &str = "GitHub CLI (`gh`) is not installed.";
-    let program = crate::harness::resolve_gui_binary("gh").ok_or_else(|| MISSING.to_string())?;
+    let program = crate::harness::resolve_gui_binary("gh").ok_or_else(|| GH_MISSING.to_string())?;
     let mut cmd = Command::new(&program);
     cmd.current_dir(cwd)
         .args(args)
@@ -970,13 +1068,93 @@ fn run_gh_graphql(cwd: &Path, args: &[&str]) -> Result<String, String> {
         .env("GIT_PAGER", "cat");
     crate::harness::apply_gui_env(&mut cmd);
     crate::hide_window_console(&mut cmd);
-    let output = cmd.output().map_err(|error| {
+    run_gh_command(cmd, GH_DEADLINE)
+}
+
+const GH_MISSING: &str = "GitHub CLI (`gh`) is not installed.";
+
+/// Output of one pipe, filled by a helper thread so a chatty child never
+/// blocks on a full pipe while we poll it.
+struct Drain {
+    buf: std::sync::Arc<Mutex<Vec<u8>>>,
+    done: std::sync::mpsc::Receiver<()>,
+}
+
+impl Drain {
+    fn start<R: std::io::Read + Send + 'static>(pipe: Option<R>) -> Self {
+        let buf = std::sync::Arc::new(Mutex::new(Vec::new()));
+        let (tx, done) = std::sync::mpsc::channel();
+        match pipe {
+            Some(mut pipe) => {
+                let sink = std::sync::Arc::clone(&buf);
+                std::thread::spawn(move || {
+                    let mut chunk = [0u8; 8192];
+                    while let Ok(n) = pipe.read(&mut chunk) {
+                        if n == 0 {
+                            break;
+                        }
+                        if let Ok(mut out) = sink.lock() {
+                            out.extend_from_slice(&chunk[..n]);
+                        }
+                    }
+                    let _ = tx.send(());
+                });
+            }
+            None => {
+                let _ = tx.send(());
+            }
+        }
+        Self { buf, done }
+    }
+
+    /// What the child wrote. Waits up to `grace` for end of file: another
+    /// process (a grandchild, or a child spawned concurrently that inherited
+    /// the pipe before close-on-exec was set) can hold the write end open
+    /// after our child exited, and its output is already buffered by then.
+    fn finish(self, grace: Duration) -> Vec<u8> {
+        let _ = self.done.recv_timeout(grace);
+        self.buf.lock().map(|b| b.clone()).unwrap_or_default()
+    }
+}
+
+/// Runs `cmd` to completion, or kills it once `limit` has passed. A killed
+/// child yields `GH_TIMED_OUT`, which classifies as offline.
+fn run_gh_command(mut cmd: Command, limit: Duration) -> Result<String, String> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
-            MISSING.to_string()
+            GH_MISSING.to_string()
         } else {
             error.to_string()
         }
     })?;
+    let stdout_pipe = Drain::start(child.stdout.take());
+    let stderr_pipe = Drain::start(child.stderr.take());
+    let deadline = Instant::now() + limit;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("{GH_TIMED_OUT} after {}s", limit.as_secs_f32()));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.to_string());
+            }
+        }
+    };
+    const GRACE: Duration = Duration::from_secs(1);
+    let output = std::process::Output {
+        status,
+        stdout: stdout_pipe.finish(GRACE),
+        stderr: stderr_pipe.finish(GRACE),
+    };
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let has_data = serde_json::from_str::<Value>(&stdout)
         .ok()
@@ -1010,7 +1188,7 @@ fn tick(app: &AppHandle, holder: &str) {
     if !leased {
         return;
     }
-    let outcome = run_cycle(&store, &GhCli, &TRACKER, now);
+    let outcome = run_cycle(&store, &GhCli, &TRACKER, holder, now);
     // An empty list means "everything": a status change affects every chat.
     let session_ids: Vec<String> = if outcome.status_changed {
         Vec::new()
@@ -1065,12 +1243,14 @@ pub fn pr_set_interest(
     Ok(())
 }
 
-/// Makes every target of the session due now, terminal PRs included.
+/// Makes every target of the session due now, terminal PRs included. Calls
+/// within five seconds of the session's last forced refresh are ignored.
 #[tauri::command(async)]
 pub fn pr_refresh(session_id: String) -> Result<(), String> {
     validate_id(&session_id, "session")?;
-    TRACKER.force(&session_id);
-    TRACKER.wake();
+    if TRACKER.force(&session_id, now_millis()) {
+        TRACKER.wake();
+    }
     Ok(())
 }
 
@@ -1464,7 +1644,7 @@ mod tests {
         }
         let runner = FakeRunner::new(vec![Ok(DISCOVERY_FOREIGN)]);
         let tracker = Tracker::new();
-        let outcome = run_cycle(&store, &runner, &tracker, NOW);
+        let outcome = run_cycle(&store, &runner, &tracker, "t", NOW);
         let queries = runner.queries();
         assert_eq!(queries.len(), 1);
         assert!(queries[0].contains("b0: repository(owner: \"cli\", name: \"cli\")"));
@@ -1485,7 +1665,7 @@ mod tests {
 
         // Within the ten-minute discovery window nothing is asked again, but
         // the discovered PR itself is now refreshed on its fleet tier.
-        run_cycle(&store, &runner, &tracker, NOW + 60_000);
+        run_cycle(&store, &runner, &tracker, "t", NOW + 60_000);
         assert_eq!(runner.queries().len(), 1);
     }
 
@@ -1504,7 +1684,7 @@ mod tests {
         );
         assert_ne!(forked, DISCOVERY_FOREIGN);
         let runner = FakeRunner::new(vec![Ok(&forked)]);
-        run_cycle(&store, &runner, &Tracker::new(), NOW);
+        run_cycle(&store, &runner, &Tracker::new(), "t", NOW);
         let conn = store.lock_conn().unwrap();
         assert!(pr_store::session_pr_keys(&conn, "s1").unwrap().is_empty());
         assert_eq!(pr_store::load_snapshot(&conn, "cli/cli", 14571), None);
@@ -1528,7 +1708,7 @@ mod tests {
         let runner = FakeRunner::new(vec![Err(
             "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.",
         )]);
-        let outcome = run_cycle(&store, &runner, &TRACKER, NOW);
+        let outcome = run_cycle(&store, &runner, &TRACKER, "t", NOW);
         assert_eq!(runner.queries().len(), 1);
         assert!(outcome.status_changed);
         assert_eq!(status(), TrackerStatus::SignedOut);
@@ -1559,7 +1739,7 @@ mod tests {
         }
         let runner = FakeRunner::new(vec![Ok(BASE_CHANGED), Ok(BASE_CHANGED)]);
         let tracker = Tracker::new();
-        let outcome = run_cycle(&store, &runner, &tracker, NOW);
+        let outcome = run_cycle(&store, &runner, &tracker, "t", NOW);
         assert!(outcome.changed.contains("s1"));
         assert!(runner.queries()[0].contains("pullRequest(number: 99649)"));
         let history = |store: &SessionStore| {
@@ -1574,12 +1754,12 @@ mod tests {
             )]
         );
         // A forced refresh fetches the merged PR again without duplicating history.
-        tracker.force("s1");
-        run_cycle(&store, &runner, &tracker, NOW + 1_000);
+        tracker.force("s1", NOW + 1_000);
+        run_cycle(&store, &runner, &tracker, "t", NOW + 1_000);
         assert_eq!(runner.queries().len(), 2);
         assert_eq!(history(&store).len(), 1);
         // Unforced, a terminal PR with a snapshot is never polled again.
-        run_cycle(&store, &runner, &tracker, NOW + 3_600_000);
+        run_cycle(&store, &runner, &tracker, "t", NOW + 3_600_000);
         assert_eq!(runner.queries().len(), 2);
     }
 
@@ -1629,9 +1809,196 @@ mod tests {
         }
         let runner = FakeRunner::new(vec![]);
         let tracker = Tracker::new();
-        tracker.force("s1");
-        run_cycle(&store, &runner, &tracker, NOW);
+        tracker.force("s1", NOW);
+        run_cycle(&store, &runner, &tracker, "t", NOW);
         assert!(runner.queries().is_empty());
         assert_eq!(tracker.status(), TrackerStatus::Idle);
+    }
+
+    #[test]
+    fn gh_child_past_deadline_is_killed_and_reads_as_offline() {
+        let started = Instant::now();
+        let mut slow = Command::new("sleep");
+        slow.arg("5");
+        let err = run_gh_command(slow, Duration::from_millis(200)).unwrap_err();
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "must not wait for the child"
+        );
+        assert!(err.contains(GH_TIMED_OUT), "{err}");
+        assert_eq!(classify_gh_error(&err), TrackerError::Offline);
+
+        // A child that finishes in time is read as before.
+        let mut fast = Command::new("sh");
+        fast.args(["-c", r#"echo '{"data":{}}'; exit 1"#]);
+        assert_eq!(
+            run_gh_command(fast, Duration::from_secs(10)).unwrap(),
+            r#"{"data":{}}"#
+        );
+        let mut failing = Command::new("sh");
+        failing.args(["-c", "echo boom >&2; exit 1"]);
+        assert_eq!(
+            run_gh_command(failing, Duration::from_secs(10)).unwrap_err(),
+            "boom"
+        );
+        let missing = Command::new("/nonexistent/gh-for-test");
+        assert_eq!(
+            classify_gh_error(&run_gh_command(missing, Duration::from_secs(1)).unwrap_err()),
+            TrackerError::GhMissing
+        );
+    }
+
+    /// Answers like `FakeRunner`, then hands the lease to another instance.
+    struct LeaseThief<'a> {
+        store: &'a SessionStore,
+        inner: FakeRunner,
+    }
+
+    impl GhRunner for LeaseThief<'_> {
+        fn graphql(&self, cwd: &Path, query: &str) -> Result<String, String> {
+            let result = self.inner.graphql(cwd, query);
+            let conn = self.store.lock_conn().unwrap();
+            conn.execute(
+                "UPDATE pr_tracker_lease SET holder = 'other', expires_at = ?1",
+                [i64::MAX / 2],
+            )
+            .unwrap();
+            result
+        }
+    }
+
+    #[test]
+    fn lost_lease_aborts_the_rest_of_the_cycle() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_pr(&conn, "s1", "o/a", 1, Relation::Owned, "create", 1).unwrap();
+            pr_store::record_pr(&conn, "s1", "o/b", 2, Relation::Owned, "create", 1).unwrap();
+        }
+        let thief = LeaseThief {
+            store: &store,
+            inner: FakeRunner::new(vec![
+                Ok(r#"{"data":{"viewer":{"login":"v"}}}"#),
+                Ok(r#"{"data":{"viewer":{"login":"v"}}}"#),
+            ]),
+        };
+        run_cycle(&store, &thief, &Tracker::new(), "t", NOW);
+        let queries = thief.inner.queries();
+        assert_eq!(queries.len(), 1, "second repo must not be requested");
+        assert!(queries[0].contains("name: \"a\""));
+
+        // Without a thief both repos are requested.
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_pr(&conn, "s1", "o/a", 1, Relation::Owned, "create", 1).unwrap();
+            pr_store::record_pr(&conn, "s1", "o/b", 2, Relation::Owned, "create", 1).unwrap();
+        }
+        let runner = FakeRunner::new(vec![
+            Ok(r#"{"data":{"viewer":{"login":"v"}}}"#),
+            Ok(r#"{"data":{"viewer":{"login":"v"}}}"#),
+        ]);
+        run_cycle(&store, &runner, &Tracker::new(), "t", NOW);
+        assert_eq!(runner.queries().len(), 2);
+    }
+
+    fn pr_numbers(plan: &Plan) -> BTreeSet<u32> {
+        plan.requests
+            .iter()
+            .flat_map(|r| &r.targets)
+            .filter_map(|t| match t {
+                Target::Pr { number, .. } => Some(*number),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn forced_targets_beyond_the_alias_cap_stay_forced() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        add_session(&conn, "s1");
+        let template = parse_response(OPEN_FAILING_PARTIAL).unwrap().prs["p0"][0]
+            .snapshot
+            .clone();
+        for n in 1..=25 {
+            pr_store::record_pr(&conn, "s1", "o/r", n, Relation::Owned, "create", 1).unwrap();
+            // Fresh open snapshots: nothing is due unless forced.
+            pr_store::upsert_snapshot(
+                &conn,
+                &PrSnapshot {
+                    repo: "o/r".into(),
+                    number: n,
+                    fetched_at: NOW,
+                    state: PrState::Open,
+                    ..template.clone()
+                },
+            )
+            .unwrap();
+        }
+        let tracker = Tracker::new();
+        assert!(tracker.force("s1", NOW));
+        let mut timers = tracker.timers.lock().unwrap();
+        let first = plan_cycle(&conn, &mut timers, None, NOW).unwrap();
+        assert_eq!(pr_numbers(&first).len(), MAX_ALIASES);
+        let second = plan_cycle(&conn, &mut timers, None, NOW + 1_000).unwrap();
+        let rest = pr_numbers(&second);
+        assert_eq!(rest.len(), 5, "the five cut targets stay forced");
+        assert!(rest.is_disjoint(&pr_numbers(&first)));
+        let third = plan_cycle(&conn, &mut timers, None, NOW + 2_000).unwrap();
+        assert!(third.requests.is_empty());
+    }
+
+    #[test]
+    fn refresh_is_throttled_per_session() {
+        let tracker = Tracker::new();
+        assert!(tracker.force("s1", NOW));
+        assert!(!tracker.force("s1", NOW + 4_999));
+        assert!(tracker.force("s2", NOW + 1));
+        assert!(tracker.force("s1", NOW + 5_000));
+        assert!(!tracker.force("s1", NOW + 9_999));
+    }
+
+    #[test]
+    fn stale_error_status_resets_when_nothing_runs() {
+        use TrackerStatus as S;
+        assert_eq!(
+            settled_status(S::RateLimited { until: NOW }, true, false, NOW),
+            Some(S::Idle)
+        );
+        assert_eq!(
+            settled_status(S::RateLimited { until: NOW }, true, true, NOW),
+            Some(S::Ok)
+        );
+        assert_eq!(
+            settled_status(S::RateLimited { until: NOW + 1 }, true, true, NOW),
+            None
+        );
+        // Signed-out and offline stay while anything is tracked.
+        assert_eq!(settled_status(S::SignedOut, true, true, NOW), None);
+        assert_eq!(settled_status(S::Offline, true, false, NOW), None);
+        assert_eq!(
+            settled_status(S::SignedOut, false, false, NOW),
+            Some(S::Idle)
+        );
+        assert_eq!(settled_status(S::Offline, false, true, NOW), Some(S::Ok));
+        assert_eq!(settled_status(S::Ok, false, true, NOW), None);
+        assert_eq!(settled_status(S::GhMissing, false, true, NOW), None);
+
+        // Through a cycle: the rate limit expired and nothing was due.
+        let store = SessionStore::open_in_memory().unwrap();
+        let runner = FakeRunner::new(vec![]);
+        let tracker = Tracker::new();
+        tracker.set_status(S::RateLimited { until: NOW - 1 });
+        let outcome = run_cycle(&store, &runner, &tracker, "t", NOW);
+        assert!(runner.queries().is_empty());
+        assert_eq!(tracker.status(), S::Idle);
+        assert!(outcome.status_changed);
+        tracker.succeeded.store(true, Ordering::Relaxed);
+        tracker.set_status(S::SignedOut);
+        run_cycle(&store, &runner, &tracker, "t", NOW);
+        assert_eq!(tracker.status(), S::Ok);
     }
 }
