@@ -1,15 +1,9 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactElement,
-} from "react";
+import { useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { durationLabel } from "../model/nodeLabels";
 import type { BoardNode, BoardStage, BoardStep } from "../model/taskBoard";
 import { TaskGlyph, glyphForStatus, type GlyphKind } from "./TaskGlyph";
+import { useFocusKeptInTree, useTreeReveal, type TreeReveal } from "./treeFocus";
 
 export { durationLabel };
 
@@ -21,7 +15,7 @@ type Props = {
   expandedIds?: ReadonlySet<string>;
   onToggle?: (id: string) => void;
   /** Panel-side request (see TasksPanel): a new `token` expands to row `id`, scrolls it into view and focuses it. */
-  reveal?: { id: string; token: number };
+  reveal?: TreeReveal;
 };
 
 const STRUGGLING_FROM_ROUND = 3;
@@ -33,9 +27,6 @@ type Child = { node: BoardNode; kind: RowKind };
 type Kids = { all: Child[]; stages: Child[]; steps: Child[]; tasks: Child[] };
 type Entry = { node: BoardNode; parentId?: string; depth: number; kind: RowKind; index: number };
 type KidsOf = (node: BoardNode) => Kids;
-
-// A reveal that has not found its row by then is dropped, so a late render cannot steal focus.
-const REVEAL_WINDOW_MS = 500;
 
 function stageNode(parent: BoardNode, stage: BoardStage, index: number): BoardNode {
   return {
@@ -135,7 +126,7 @@ function stepsMeta(node: BoardNode): ReactElement | null {
 export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle, reveal }: Props) {
   const [internal, setInternal] = useState<ReadonlySet<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string>();
-  const refs = useRef(new Map<string, HTMLLIElement>());
+  const refs = useRef(new Map<string, HTMLElement>());
 
   const expanded = (id: string) => (expandedIds ?? internal).has(id);
   const toggle = (id: string) => {
@@ -165,12 +156,7 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle, rev
 
   // When a collapse removes the focused row, keep focus inside the tree on the ancestor.
   const treeRef = useRef<HTMLUListElement>(null);
-  const focusInside = useRef(false);
-  useLayoutEffect(() => {
-    if (!focusInside.current || tabId === undefined) return;
-    if (treeRef.current?.contains(document.activeElement)) return;
-    refs.current.get(tabId)?.focus();
-  });
+  const keepFocus = useFocusKeptInTree(treeRef, refs, tabId);
 
   const focusEntry = (entry: Entry | undefined) => {
     if (!entry) return;
@@ -178,54 +164,19 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle, rev
     refs.current.get(entry.node.id)?.focus();
   };
 
-  // A reveal asks for ancestors to open, which renders later (a controlled parent updates on its
-  // own schedule), so the row is found again after the render that shows it.
-  const pendingReveal = useRef<string | undefined>(undefined);
-  const revealTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const lastToken = useRef(reveal?.token);
-  const showRow = (id: string): boolean => {
-    const item = refs.current.get(id);
-    if (!item) return false;
-    setActiveId(id);
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-    // Scroll the row itself: the item also contains its children, which can be far taller.
-    (item.firstElementChild as HTMLElement | null)?.scrollIntoView?.({
-      block: "nearest",
-      behavior: reduce ? "auto" : "smooth",
-    });
-    item.focus({ preventScroll: true });
-    return true;
-  };
-  useLayoutEffect(() => {
-    const id = pendingReveal.current;
-    if (id !== undefined && showRow(id)) {
-      pendingReveal.current = undefined;
-      clearTimeout(revealTimer.current);
-    }
+  useTreeReveal({
+    reveal,
+    items: refs,
+    setActiveId,
+    closedAncestors: (id) => {
+      const parents = parentIndex(nodes, kidsOf);
+      if (!parents.has(id)) return undefined;
+      const closed: string[] = [];
+      for (let p = parents.get(id); p !== undefined; p = parents.get(p)) if (!expanded(p)) closed.push(p);
+      return closed;
+    },
+    toggle,
   });
-  useLayoutEffect(() => {
-    if (reveal === undefined || reveal.token === lastToken.current) return;
-    lastToken.current = reveal.token;
-    const parents = parentIndex(nodes, kidsOf);
-    if (!parents.has(reveal.id)) return;
-    const closed: string[] = [];
-    for (let id = parents.get(reveal.id); id !== undefined; id = parents.get(id)) {
-      if (!expanded(id)) closed.push(id);
-    }
-    if (closed.length === 0) {
-      showRow(reveal.id);
-      return;
-    }
-    pendingReveal.current = reveal.id;
-    clearTimeout(revealTimer.current);
-    revealTimer.current = setTimeout(() => {
-      pendingReveal.current = undefined;
-    }, REVEAL_WINDOW_MS);
-    for (const id of closed) toggle(id);
-    // Only a new token reveals; a re-render with the same request must not.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reveal?.token]);
-  useEffect(() => () => clearTimeout(revealTimer.current), []);
 
   const onKeyDown = (event: KeyboardEvent<HTMLLIElement>, entry: Entry) => {
     if (event.target !== event.currentTarget) return;
@@ -380,15 +331,7 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle, rev
       role="tree"
       aria-label={label}
       className="m-0 list-none p-0"
-      onFocus={() => {
-        focusInside.current = true;
-      }}
-      onBlur={(e) => {
-        // A removed row may blur with no target; only a real move out ends "inside".
-        if (e.target.isConnected && !treeRef.current?.contains(e.relatedTarget as Node | null)) {
-          focusInside.current = false;
-        }
-      }}
+      {...keepFocus}
     >
       {renderRows(roots, undefined, 0)}
     </ul>

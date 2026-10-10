@@ -40,6 +40,11 @@ export function glyphForStatus(status: BoardStatus): GlyphKind {
   return STATUS_GLYPH[status];
 }
 
+/** The words a glyph reads as, e.g. "done" or "review found issues". */
+export function glyphLabel(kind: GlyphKind): string {
+  return LABELS[kind];
+}
+
 // Every glyph is a 16px cell so rows line up. Colour ladder: red = stopped and
 // needs you, amber = needs a look, accent = running, green = done, gray ring =
 // not started. The running dot is static on purpose; only the status card pulses.
