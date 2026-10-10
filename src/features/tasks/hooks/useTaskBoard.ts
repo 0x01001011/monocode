@@ -290,14 +290,14 @@ export function useTaskBoard(input: Input): TaskBoard {
           ? deriveFlow({
               plan: planSection,
               ...(ship ? { ship } : {}),
-              ...(blocks ? { blocks } : {}),
+              ...(testRun ? { testRun } : {}),
               subagentsRunning: countSubagentsRunning(sections, planSection),
               now: nowRef.current(),
               planRoot: planCwd,
             })
           : NO_FLOW,
       // `clock` re-derives the age of the last test run as polls complete.
-      [visible, planSection, sections, blocks, clock, planCwd, ship],
+      [visible, planSection, sections, testRun, clock, planCwd, ship],
     ),
   );
   return {

@@ -23,6 +23,8 @@ export type FlowInput = {
   plan: BoardSection;
   /** The session's blocks; the newest test run in them feeds Check. */
   blocks?: readonly Block[];
+  /** The newest test run, when the caller already derived it; else it is found in `blocks`. */
+  testRun?: TestRun;
   /** Subagents working right now (the transcript's and the plan's own). */
   subagentsRunning: number;
   now: number;
@@ -108,7 +110,7 @@ function shipStatus(plan: BoardSection, ship: Ship): BoardStatus {
  * evidence on disk or in the transcript, so there is no "unknown" state: with no `Spec:`
  * line in the ledger there is no Spec phase. Pure: `now` is the only clock.
  */
-export function deriveFlow({ plan, blocks, subagentsRunning, now, planRoot, ship }: FlowInput): FlowPhase[] {
+export function deriveFlow({ plan, blocks, subagentsRunning, now, planRoot, ship, testRun }: FlowInput): FlowPhase[] {
   const phases: FlowPhase[] = [];
   const openable = (path: string | undefined) =>
     path !== undefined && isSafePlanPath(planRoot, path) ? { path } : {};
@@ -127,7 +129,7 @@ export function deriveFlow({ plan, blocks, subagentsRunning, now, planRoot, ship
     const detail = buildDetail(plan, status, subagentsRunning);
     phases.push({ id: "build", label: "Build", status, ...(detail ? { detail } : {}) });
   }
-  const run = lastTestRun(blocks);
+  const run = testRun ?? lastTestRun(blocks);
   const final = plan.finalReview?.status;
   const detail = [run ? testPart(run, now) : undefined, finalPart(final)].filter(Boolean).join(", ");
   phases.push({

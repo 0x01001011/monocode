@@ -75,6 +75,16 @@ describe("shipReadiness", () => {
     expect(item(plan([task(1, "done", { parkedAtClose: 1 })]), passed, "gaps")?.text).toBe("1 gap");
   });
 
+  it("counts a missing final review once, not again as a gap", () => {
+    const s = plan([task(1, "done"), task(2, "done")], { finalReview: { id: "final-review", title: "Last review", status: "pending" } });
+    expect(gapsFor(s).map((g) => g.kind)).toEqual(["no-final-review"]);
+    const ship = shipReadiness(s, passed);
+    expect(ship.left).toBe(1);
+    expect(ship.ready).toBe(false);
+    expect(ship.items.find((i) => i.id === "gaps")).toEqual({ id: "gaps", met: true, text: "no gaps" });
+    expect(ship.items.find((i) => i.id === "final")?.met).toBe(false);
+  });
+
   it("counts every unmet item as left", () => {
     const s = plan([task(1, "done"), task(2, "pending")]);
     expect(shipReadiness(s, { status: "failed", command: "x" }).left).toBe(2);

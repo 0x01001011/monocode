@@ -67,7 +67,8 @@ export function shipReadiness(section: BoardSection, testRun: TestRun | undefine
     section.finalReview?.status === "done"
       ? { id: "final", met: true, text: "final review clean" }
       : { id: "final", met: false, text: "final review not done", nodeId: "final-review" };
-  const gaps = gapsFor(section);
+  // A missing final review is the "final" item's business; counting it here too would say two things for one.
+  const gaps = gapsFor(section).filter((g) => g.kind !== "no-final-review");
   const gapItem: ShipItem = gaps.length === 0
     ? { id: "gaps", met: true, text: "no gaps" }
     : { id: "gaps", met: false, text: plural(gaps.length, "gap", "gaps"), nodeId: gaps[0]!.nodeId };

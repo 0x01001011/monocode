@@ -310,3 +310,58 @@ describe("a finished plan", () => {
     ]);
   });
 });
+
+describe("deriveFlow ship phase", () => {
+  const ship = (over: Partial<Ship> = {}): Ship => ({
+    ready: false,
+    items: [
+      { id: "tasks", met: false, text: "2 tasks left" },
+      { id: "final", met: false, text: "final review not done" },
+      { id: "tests", met: "unknown", text: "no test run yet" },
+      { id: "gaps", met: true, text: "no gaps" },
+    ],
+    left: 3,
+    deferred: 0,
+    commits: 0,
+    ...over,
+  });
+  const shipPhase = (p: BoardSection, s: Ship | undefined) => phase(flow(p, s ? { ship: s } : {}), "ship");
+
+  it("is the last phase, labelled Ship", () => {
+    const phases = flow(plan(["done", "running"]), { ship: ship() });
+    expect(phases.map((x) => x.id)).toEqual(["spec", "plan", "build", "check", "ship"]);
+    expect(phases[phases.length - 1]?.label).toBe("Ship");
+  });
+
+  it("is done with detail ready when everything is met", () => {
+    const ready = ship({ ready: true, left: 0, items: ship().items.map((i) => ({ ...i, met: true })) });
+    expect(shipPhase(plan(["done"]), ready)).toEqual({ id: "ship", label: "Ship", status: "done", detail: "ready" });
+  });
+
+  it("fails when the tests item is unmet", () => {
+    const failed = ship({ items: ship().items.map((i) => (i.id === "tests" ? { ...i, met: false, text: "tests failed" } : i)) });
+    expect(shipPhase(plan(["done", "running"]), failed)).toEqual({ id: "ship", label: "Ship", status: "failed", detail: "3 left" });
+  });
+
+  it("is pending when no task has started", () => {
+    expect(shipPhase(plan(["pending", "pending"]), ship({ left: 4 }))).toEqual({ id: "ship", label: "Ship", status: "pending", detail: "4 left" });
+  });
+
+  it("needs attention once work has started", () => {
+    expect(shipPhase(plan(["done", "pending"]), ship({ left: 2 }))).toEqual({ id: "ship", label: "Ship", status: "attention", detail: "2 left" });
+    expect(shipPhase(plan(["running", "pending"]), ship())?.status).toBe("attention");
+  });
+
+  it("is absent without a ship readiness", () => {
+    expect(shipPhase(plan(["done"]), undefined)).toBeUndefined();
+  });
+
+  it("is absent for an empty plan", () => {
+    expect(flow(plan([]), { ship: ship() }).map((x) => x.id)).not.toContain("ship");
+  });
+
+  it("takes the test run it is given instead of scanning blocks", () => {
+    const phases = flow(plan(["done"]), { testRun: { status: "passed", at: NOW - 2 * MIN, command: "npm test" } });
+    expect(phase(phases, "check")?.detail).toBe("tests passed 2m ago");
+  });
+});
