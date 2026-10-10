@@ -663,6 +663,46 @@ const RUBRIC: [string, Check][] = [
       return pills >= 8 && hidden === 0 && bad.length === 0;
     },
   ],
+  [
+    "meta readable",
+    async (page, note) => {
+      const bad: string[] = [];
+      let metas = 0;
+      let nowSteps = 0;
+      for (const state of ["running", "problems"]) {
+        for (const width of [240, 300, 340, 480]) {
+          await render(page, state, "dark", "default", width);
+          await page.mouse.move(0, 0);
+          await settle(page);
+          const found = await page.locator('[role="treeitem"]').evaluateAll((els) =>
+            els
+              .filter((el) => el.getClientRects().length > 0)
+              .flatMap((el) => {
+                const id = el.getAttribute("data-row-id")!;
+                const now = el.querySelector(":scope > [data-row] [data-now-pill]") !== null;
+                return Array.from(el.querySelectorAll<HTMLElement>(":scope > [data-row] [data-meta]"))
+                  .filter((m) => getComputedStyle(m).display !== "none" && m.getClientRects().length > 0)
+                  .map((m) => ({ id, now, text: (m.textContent ?? "").trim(), scroll: m.scrollWidth, client: m.clientWidth, box: m.getBoundingClientRect().width }));
+              }),
+          );
+          for (const m of found) {
+            metas++;
+            if (m.box <= 0) bad.push(`${state}@${width} ${m.id} "${m.text}" 0 px wide`);
+            else if (m.scroll > m.client + 1) bad.push(`${state}@${width} ${m.id} "${m.text}" ${m.scroll}/${m.client}`);
+          }
+          if (width >= 340) {
+            for (const m of found.filter((f) => f.now && /\d+\/\d+/.test(f.text))) {
+              nowSteps++;
+              if (m.box <= 0 || m.scroll > m.client + 1) bad.push(`${state}@${width} ${m.id} NOW step count "${m.text}" cut`);
+            }
+          }
+        }
+      }
+      await render(page, "running");
+      note(bad.length > 0 ? `cut: ${bad.join("; ")}` : `all ${metas} metas fit`);
+      return metas >= 10 && nowSteps >= 1 && bad.length === 0;
+    },
+  ],
 ];
 
 test("tasks score", async ({ page, browserName }) => {
