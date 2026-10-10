@@ -60,6 +60,10 @@ mod unix {
     const MAX_SOCKET_PATH_BYTES: usize = 100;
     const MAX_PENDING_SIDS: usize = 1024;
     const MAX_THROTTLE_KEYS: usize = 256;
+    const MAX_HEAD_KEYS: usize = 256;
+    /// A (chat, worktree) HEAD not seen for this long may be forgotten when
+    /// the memory is full; forgetting only costs one extra notice.
+    const HEAD_KEY_TTL: Duration = Duration::from_secs(30 * 60);
     const MAX_SESSION_ID_BYTES: usize = 128;
     const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -269,6 +273,55 @@ mod unix {
         }
     }
 
+    /// The branch HEAD was last seen on per (chat, worktree) in this process,
+    /// so re-checking out a branch already on record still refreshes the
+    /// chip's live-branch PR. Holds at most `MAX_HEAD_KEYS` keys.
+    #[derive(Default)]
+    pub struct HeadMemory {
+        last: HashMap<Key, (Option<String>, Instant)>,
+    }
+
+    impl HeadMemory {
+        /// True when `head` differs from the last one seen for the action's
+        /// (chat, worktree), or this is the first sighting.
+        pub fn observe(&mut self, action: &Action, head: Option<&str>, now: Instant) -> bool {
+            let key = (action.session_id.clone(), action.worktree.clone());
+            if !self.last.contains_key(&key) && self.last.len() >= MAX_HEAD_KEYS {
+                self.last
+                    .retain(|_, (_, at)| now.saturating_duration_since(*at) < HEAD_KEY_TTL);
+                if self.last.len() >= MAX_HEAD_KEYS {
+                    // Still full of recent keys: forget the older half.
+                    let mut seen: Vec<Instant> = self.last.values().map(|(_, at)| *at).collect();
+                    seen.sort_unstable();
+                    let cutoff = seen[seen.len() / 2];
+                    self.last.retain(|_, (_, at)| *at > cutoff);
+                }
+            }
+            let head = head.map(str::to_string);
+            let changed = self.last.get(&key).is_none_or(|(last, _)| *last != head);
+            self.last.insert(key, (head, now));
+            changed
+        }
+
+        #[cfg(test)]
+        pub fn len(&self) -> usize {
+            self.last.len()
+        }
+    }
+
+    /// Whether the UI should hear about `action`: `record` wrote or changed a
+    /// branch row, or HEAD moved to another branch since the last sighting.
+    pub(super) fn attribution_changed(
+        heads: &mut HeadMemory,
+        action: &Action,
+        head: Option<&str>,
+        now: Instant,
+        record: impl FnOnce() -> bool,
+    ) -> bool {
+        let recorded = record();
+        heads.observe(action, head, now) || recorded
+    }
+
     pub(super) fn socket_path_in(dir: &Path, pid: u32) -> Option<PathBuf> {
         use std::os::unix::ffi::OsStrExt;
         let path = dir.join(format!("{pid}.sock"));
@@ -341,8 +394,9 @@ mod unix {
         let worker = std::thread::Builder::new()
             .name("pr-trace-worker".into())
             .spawn(move || {
+                let mut heads = HeadMemory::default();
                 for action in rx {
-                    let _ = catch_unwind(AssertUnwindSafe(|| attribute(&app, &action)));
+                    let _ = catch_unwind(AssertUnwindSafe(|| attribute(&app, &action, &mut heads)));
                 }
             });
         if worker.is_ok() {
@@ -350,20 +404,24 @@ mod unix {
         }
     }
 
-    /// Records the branch git ran on; the UI hears about it only when that
-    /// added or changed a branch row (a repeat sighting changes nothing).
-    fn attribute(app: &AppHandle, action: &Action) {
+    /// Records the branch git ran on. The UI hears about it when that added
+    /// or changed a branch row, or HEAD moved to another branch (a checkout
+    /// back to a branch already on record changes the live-branch PR); a
+    /// commit on the same branch stays quiet.
+    fn attribute(app: &AppHandle, action: &Action, heads: &mut HeadMemory) {
         let branch = crate::fs::git_head_branch(Path::new(&action.worktree));
         let Some(store) = app.try_state::<SessionStore>() else {
             return;
         };
-        let changed = store.lock_conn().is_ok_and(|conn| {
-            crate::pr_attribution::note_branch_trace(
-                &conn,
-                &action.session_id,
-                &action.worktree,
-                branch.as_deref(),
-            )
+        let changed = attribution_changed(heads, action, branch.as_deref(), Instant::now(), || {
+            store.lock_conn().is_ok_and(|conn| {
+                crate::pr_attribution::note_branch_trace(
+                    &conn,
+                    &action.session_id,
+                    &action.worktree,
+                    branch.as_deref(),
+                )
+            })
         });
         if changed {
             crate::pr_tracker::notify_session_changed(app, &action.session_id);
@@ -492,6 +550,73 @@ mod unix {
                 worktree: worktree.map(Into::into),
                 exit,
             }
+        }
+
+        fn action(session: &str, worktree: &str) -> Action {
+            Action {
+                session_id: session.into(),
+                worktree: worktree.into(),
+            }
+        }
+
+        #[test]
+        fn checkout_between_recorded_branches_notifies_on_each_switch() {
+            let conn = rusqlite::Connection::open_in_memory().unwrap();
+            crate::pr_store::ensure_schema(&conn).unwrap();
+            let mut heads = HeadMemory::default();
+            let now = Instant::now();
+            let a = action("s1", "/work");
+            let mut seen = |branch: &str| {
+                attribution_changed(&mut heads, &a, Some(branch), now, || {
+                    crate::pr_attribution::note_branch_with_source(
+                        &conn,
+                        "s1",
+                        "/work",
+                        Some(branch),
+                        "trace2",
+                        |_| Some("o/r".to_string()),
+                    )
+                })
+            };
+            // Both branches are already on record for the chat.
+            assert!(seen("feat/a"));
+            assert!(seen("feat/b"));
+            // No row changes from here on; only HEAD moves.
+            assert!(seen("feat/a"), "a -> b -> a");
+            assert!(seen("feat/b"));
+            assert!(seen("feat/a"));
+            // Commits on the same branch change nothing.
+            assert!(!seen("feat/a"));
+            assert!(!seen("feat/a"));
+        }
+
+        #[test]
+        fn head_memory_counts_first_sightings_and_detaches_per_worktree() {
+            let mut heads = HeadMemory::default();
+            let now = Instant::now();
+            assert!(heads.observe(&action("s1", "/w1"), Some("feat/a"), now));
+            assert!(!heads.observe(&action("s1", "/w1"), Some("feat/a"), now));
+            // Another worktree or chat is its own first sighting.
+            assert!(heads.observe(&action("s1", "/w2"), Some("feat/a"), now));
+            assert!(heads.observe(&action("s2", "/w1"), Some("feat/a"), now));
+            // Detaching HEAD is a change, and so is coming back.
+            assert!(heads.observe(&action("s1", "/w1"), None, now));
+            assert!(heads.observe(&action("s1", "/w1"), Some("feat/a"), now));
+        }
+
+        #[test]
+        fn head_memory_stays_bounded() {
+            let mut heads = HeadMemory::default();
+            let start = Instant::now();
+            for i in 0..(MAX_HEAD_KEYS * 3) {
+                let at = start + Duration::from_millis(i as u64);
+                heads.observe(&action("s1", &format!("/w{i}")), Some("b"), at);
+                assert!(heads.len() <= MAX_HEAD_KEYS, "{} keys", heads.len());
+            }
+            // Old keys aged out; recent ones are still remembered.
+            let last = format!("/w{}", MAX_HEAD_KEYS * 3 - 1);
+            let at = start + Duration::from_secs(1);
+            assert!(!heads.observe(&action("s1", &last), Some("b"), at));
         }
 
         #[test]
