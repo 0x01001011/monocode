@@ -1883,6 +1883,13 @@ fn delete_session(conn: &Connection, session_id: &str) -> rusqlite::Result<()> {
         "DELETE FROM orchestration_workers WHERE session_id = ?1 OR lead_id = ?1",
         [session_id],
     )?;
+    // PR tracking rows of the chat (snapshots are shared and stay).
+    for table in ["session_branches", "session_prs", "pr_interest"] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE session_id = ?1"),
+            [session_id],
+        )?;
+    }
     tx.execute("DELETE FROM sessions WHERE id = ?1", [session_id])?;
     tx.commit()
 }
@@ -3171,6 +3178,32 @@ mod tests {
         delete_session(&conn, "s1").unwrap();
         assert!(get_session(&conn, "s1").unwrap().is_none());
         assert!(list_by_project(&conn, "/tmp/a").unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_removes_the_chats_pr_tracking_rows() {
+        use crate::pr_store::{self, Relation};
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        for id in ["s1", "s2"] {
+            upsert_session(&conn, &sample(id, "/tmp/a", id)).unwrap();
+            pr_store::record_branch(&conn, id, "o/r", "feat/a", "trace2", 1).unwrap();
+            pr_store::record_pr(&conn, id, "o/r", 7, Relation::Owned, "create", 1).unwrap();
+            pr_store::set_interest(&conn, id, "hot", 1).unwrap();
+        }
+        delete_session(&conn, "s1").unwrap();
+        let count = |table: &str, id: &str| -> i64 {
+            conn.query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE session_id = ?1"),
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        for table in ["session_branches", "session_prs", "pr_interest"] {
+            assert_eq!(count(table, "s1"), 0, "{table}");
+            assert_eq!(count(table, "s2"), 1, "{table} of another chat");
+        }
     }
 
     #[test]

@@ -232,8 +232,26 @@ fn should_request_quit(code: Option<i32>) -> bool {
     code.is_some() || cfg!(any(target_os = "linux", target_os = "windows"))
 }
 
+/// Variables a harness sets on the agents it spawns so their git activity is
+/// attributed to the chat (see `harness_spawn` and `pr_trace`). A MonoCode
+/// build launched from inside a chat inherits them and must not report its
+/// own git activity to the parent's socket; its own spawns set fresh values.
+const INHERITED_CHAT_ENV: [&str; 3] = [
+    "MONOCODE_SESSION_ID",
+    "GIT_TRACE2_EVENT",
+    "GIT_TRACE2_PARENT_SID",
+];
+
+fn strip_inherited_chat_env(mut remove: impl FnMut(&str)) {
+    for key in INHERITED_CHAT_ENV {
+        remove(key);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any thread or child process starts.
+    strip_inherited_chat_env(|key| std::env::remove_var(key));
     #[cfg(target_os = "macos")]
     macos::register_spellcheck_default();
     #[cfg(windows)]
@@ -711,7 +729,21 @@ pub fn ensure_macos_dev_bundle() {
 
 #[cfg(test)]
 mod tests {
-    use super::should_request_quit;
+    use super::{should_request_quit, strip_inherited_chat_env};
+
+    #[test]
+    fn startup_strips_the_chat_variables_a_parent_harness_set() {
+        let mut removed = Vec::new();
+        strip_inherited_chat_env(|key| removed.push(key.to_string()));
+        assert_eq!(
+            removed,
+            [
+                "MONOCODE_SESSION_ID",
+                "GIT_TRACE2_EVENT",
+                "GIT_TRACE2_PARENT_SID"
+            ]
+        );
+    }
 
     #[test]
     fn explicit_exit_requests_quit() {

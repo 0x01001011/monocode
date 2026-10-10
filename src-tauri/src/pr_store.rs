@@ -3,10 +3,6 @@
 //! Tables are unversioned (`CREATE TABLE IF NOT EXISTS`, no `schema_migrations`
 //! row) because other builds share this database and own those numbers.
 
-// Later tracking modules consume these items; until they land the non-test
-// build sees them as unused.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -547,19 +543,6 @@ pub fn session_has_trace2(conn: &Connection, session_id: &str) -> bool {
     )
     .map(|found| found != 0)
     .unwrap_or(false)
-}
-
-/// `(repo, branch)` the chat touched most recently.
-pub fn last_branch(conn: &Connection, session_id: &str) -> Option<(String, String)> {
-    conn.query_row(
-        "SELECT repo, branch FROM session_branches
-         WHERE session_id = ?1 ORDER BY last_seen DESC, rowid DESC LIMIT 1",
-        [session_id],
-        |row| Ok((row.get(0)?, row.get(1)?)),
-    )
-    .optional()
-    .ok()
-    .flatten()
 }
 
 /// Cached `behindBy` of `head_oid` against `base_oid`.
@@ -1388,20 +1371,6 @@ mod tests {
         assert!(!session_has_trace2(&conn, "s2"));
         let view = build_set_view(&conn, "s1", None, TrackerStatus::Ok, 100);
         assert_eq!(view.tracking, Tracking::Full);
-    }
-
-    #[test]
-    fn last_branch_is_the_most_recently_seen() {
-        let store = SessionStore::open_in_memory().unwrap();
-        let conn = store.lock_conn().unwrap();
-        assert_eq!(last_branch(&conn, "s1"), None);
-        record_branch(&conn, "s1", "o/r", "feat/a", "git", 1).unwrap();
-        record_branch(&conn, "s1", "o/r", "feat/b", "git", 5).unwrap();
-        record_branch(&conn, "s1", "o/r", "feat/a", "git", 3).unwrap();
-        assert_eq!(
-            last_branch(&conn, "s1"),
-            Some(("o/r".to_string(), "feat/b".to_string()))
-        );
     }
 
     fn entry(

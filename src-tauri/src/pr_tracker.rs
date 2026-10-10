@@ -135,8 +135,6 @@ pub struct CompareResult {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RateLimit {
     pub remaining: u32,
-    /// Milliseconds since the epoch.
-    pub reset_at: i64,
     pub cost: u32,
 }
 
@@ -425,7 +423,6 @@ pub fn parse_response(json: &str) -> Result<ParsedBatch, TrackerError> {
     batch.rate_limit = data.get("rateLimit").and_then(|rate| {
         Some(RateLimit {
             remaining: u32::try_from(rate["remaining"].as_u64()?).ok()?,
-            reset_at: rate["resetAt"].as_str().and_then(rfc3339_ms).unwrap_or(0),
             cost: rate["cost"]
                 .as_u64()
                 .and_then(|c| u32::try_from(c).ok())
@@ -1837,7 +1834,6 @@ mod tests {
             batch.rate_limit,
             Some(RateLimit {
                 remaining: 4969,
-                reset_at: ms("2026-10-09T16:44:32Z"),
                 cost: 1,
             })
         );
