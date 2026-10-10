@@ -28,22 +28,59 @@ function warnOnce(command: string, error: unknown) {
 
 type Attempt<T> = { ok: true; value: T } | { ok: false };
 
+/**
+ * Runs a command. With `accept`, a payload it rejects (for example a test
+ * double or an older backend answering `[]`) counts as a failed attempt, so
+ * nothing malformed reaches render. `accept` may also normalize the payload.
+ */
 async function attempt<T>(
   command: string,
   args?: Record<string, unknown>,
+  accept?: (value: unknown) => T | null,
 ): Promise<Attempt<T>> {
   try {
-    return { ok: true, value: await invoke<T>(command, args) };
+    const value = await invoke<T>(command, args);
+    if (!accept) return { ok: true, value };
+    const checked = accept(value);
+    if (checked == null) {
+      warnOnce(command, new Error("unexpected payload shape"));
+      return { ok: false };
+    }
+    return { ok: true, value: checked };
   } catch (error) {
     warnOnce(command, error);
     return { ok: false };
   }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+function asPrSetView(value: unknown): PrSetView | null {
+  if (!isRecord(value)) return null;
+  return Array.isArray(value.entries) && Array.isArray(value.stacks)
+    ? (value as PrSetView)
+    : null;
+}
+
+/** Keeps object-shaped summaries; a missing `members` becomes `[]`. */
+function asPrSummaries(value: unknown): Record<string, PrSummary> | null {
+  if (!isRecord(value)) return null;
+  const out: Record<string, PrSummary> = {};
+  for (const [id, summary] of Object.entries(value)) {
+    if (!isRecord(summary)) continue;
+    out[id] = {
+      ...(summary as PrSummary),
+      members: Array.isArray(summary.members) ? summary.members : [],
+    };
+  }
+  return out;
+}
+
 /** The chat's PRs, or null when the lookup failed. */
 export async function fetchPrSet(sessionId: string): Promise<PrSetView | null> {
-  const result = await attempt<PrSetView>("pr_session_set", { sessionId });
-  return result.ok ? (result.value ?? null) : null;
+  const result = await attempt("pr_session_set", { sessionId }, asPrSetView);
+  return result.ok ? result.value : null;
 }
 
 /** One summary per chat that has PRs, or null when the lookup failed. */
@@ -51,8 +88,8 @@ export async function fetchPrSummaries(): Promise<Record<
   string,
   PrSummary
 > | null> {
-  const result = await attempt<Record<string, PrSummary>>("pr_summaries");
-  return result.ok ? (result.value ?? null) : null;
+  const result = await attempt("pr_summaries", undefined, asPrSummaries);
+  return result.ok ? result.value : null;
 }
 
 export async function setPrInterest(

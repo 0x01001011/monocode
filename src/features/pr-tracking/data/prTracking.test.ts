@@ -137,6 +137,64 @@ describe("fetch wrappers", () => {
     expect(names.filter((n) => n.includes("pr_summaries"))).toHaveLength(1);
     expect(names).toHaveLength(7);
   });
+
+  it.each([[[]], ["x"], [{}], [null], [{ entries: [] }], [{ entries: {}, stacks: [] }]])(
+    "fetchPrSet treats a malformed payload %j as a failed attempt",
+    async (payload) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      vi.mocked(invoke).mockResolvedValue(payload);
+      const m = await loadModule();
+      expect(await m.fetchPrSet("s1")).toBeNull();
+      expect(await m.fetchPrSet("s1")).toBeNull();
+      expect(
+        warn.mock.calls.filter((c) => String(c[0]).includes("pr_session_set")),
+      ).toHaveLength(1);
+    },
+  );
+
+  it.each([[[]], ["x"], [null], [7]])(
+    "fetchPrSummaries treats a malformed payload %j as a failed attempt",
+    async (payload) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      vi.mocked(invoke).mockResolvedValue(payload);
+      const m = await loadModule();
+      expect(await m.fetchPrSummaries()).toBeNull();
+      expect(
+        warn.mock.calls.filter((c) => String(c[0]).includes("pr_summaries")),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("fetchPrSummaries accepts an empty object and defaults missing members", async () => {
+    const m = await loadModule();
+    vi.mocked(invoke).mockResolvedValue({});
+    expect(await m.fetchPrSummaries()).toEqual({});
+    const summary = {
+      count: 1,
+      primaryNumber: 4,
+      primaryState: "open",
+      primaryIsDraft: false,
+      attention: "none",
+      stale: false,
+    };
+    vi.mocked(invoke).mockResolvedValue({ s1: summary, s2: "junk", s3: null });
+    expect(await m.fetchPrSummaries()).toEqual({ s1: { ...summary, members: [] } });
+  });
+
+  it("usePrSet never hands a malformed payload to its consumers", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.mocked(invoke).mockResolvedValue([]);
+    const m = await loadModule();
+    const seen: unknown[] = [];
+    const Probe = () => {
+      seen.push(m.usePrSet("s1"));
+      return null;
+    };
+    const { render } = mount(() => createElement(Probe));
+    render();
+    await flush();
+    expect(seen.every((v) => v === null)).toBe(true);
+  });
 });
 
 describe("usePrSet", () => {
