@@ -1,4 +1,10 @@
-import { useId, useState, type ReactNode } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Clock,
   RefreshCw,
@@ -20,13 +26,20 @@ import {
 import { PR_LIST_CONTAINER, PrRow, type PrRowProps } from "./PrRow";
 import { useRovingRows } from "./usePrHoverCard";
 
+/** Footer status line; `undo` offers to show a just-hidden PR again. */
+export type PrCardStatus = { text: string; undo?: PrEntry };
+
 export type PrSetCardProps = {
   view: PrSetView;
   /** Id for the title; the dialog around the card is labelled by it. */
   titleId: string;
   now: number;
-  /** Polite status line, e.g. "Copied link to #482". */
-  status?: string | null;
+  /** Polite status line, e.g. "Copied link to #482" or "Hidden #482". */
+  status?: PrCardStatus | null;
+  /** Every PR is hidden: show only the Hidden section, expanded. */
+  hiddenOnly?: boolean;
+  /** Focus was lost and nothing in the card can take it. */
+  onFocusLost?: () => void;
   onRefresh: () => void;
 } & Pick<
   PrRowProps,
@@ -62,6 +75,8 @@ export function PrSetCard({
   titleId,
   now,
   status,
+  hiddenOnly = false,
+  onFocusLost,
   onRefresh,
   onOpenInbox,
   onOpenGithub,
@@ -69,8 +84,19 @@ export function PrSetCard({
   onDismiss,
 }: PrSetCardProps) {
   const idBase = useId();
-  const [showHidden, setShowHidden] = useState(false);
-  const { stack, other, hiddenCount } = sections(view);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [showHidden, setShowHidden] = useState(hiddenOnly);
+  // Hiding the last PR while the card is open switches to the Hidden
+  // section; open it so the row that keeps focus is there.
+  const [wasHiddenOnly, setWasHiddenOnly] = useState(hiddenOnly);
+  if (wasHiddenOnly !== hiddenOnly) {
+    setWasHiddenOnly(hiddenOnly);
+    if (hiddenOnly) setShowHidden(true);
+  }
+  const sorted = sections(view);
+  const { hiddenCount } = sorted;
+  const stack = hiddenOnly ? [] : sorted.stack;
+  const other = hiddenOnly ? [] : sorted.other;
   const byKey = new Map(
     view.entries.map((e) => [key(e.snapshot.repo, e.snapshot.number), e]),
   );
@@ -87,7 +113,56 @@ export function PrSetCard({
   const ordered = [...groups.flatMap((g) => g.rows), ...other, ...hidden];
   const roving = useRovingRows(ordered.length);
 
-  const visibleCount = view.entries.filter((e) => !e.dismissed).length;
+  // The same set `ariaLabel()` counts: this chat's own visible PRs.
+  const ownCount = view.entries.filter(
+    (e) => !e.dismissed && e.relation !== "other",
+  ).length;
+
+  /**
+   * A row about to leave its list. Once the view reflects the change, focus
+   * that dropped to the body goes to the row now at that index (hide) or to
+   * the row itself (show), else the last row, the Hidden toggle, the chip.
+   */
+  const pending = useRef<{
+    key: string;
+    url: string;
+    dismissed: boolean;
+    index: number;
+  } | null>(null);
+  const dismiss = (entry: PrEntry, dismissed: boolean) => {
+    pending.current = {
+      key: key(entry.snapshot.repo, entry.snapshot.number),
+      url: entry.snapshot.url,
+      dismissed,
+      index: Math.max(0, ordered.indexOf(entry)),
+    };
+    onDismiss(entry, dismissed);
+  };
+
+  useLayoutEffect(() => {
+    const want = pending.current;
+    if (!want) return;
+    const target = view.entries.find(
+      (e) => key(e.snapshot.repo, e.snapshot.number) === want.key,
+    );
+    // Not applied yet: wait for the refetch.
+    if (target && target.dismissed !== want.dismissed) return;
+    pending.current = null;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const body = bodyRef.current;
+    const list = body
+      ? [...body.querySelectorAll<HTMLElement>("[data-pr-row]")]
+      : [];
+    const next =
+      (!want.dismissed
+        ? list.find((el) => el.getAttribute("href") === want.url)
+        : undefined) ??
+      list[Math.min(want.index, list.length - 1)] ??
+      body?.querySelector<HTMLElement>(".pr-hidden-toggle");
+    if (next) next.focus({ preventScroll: true });
+    else onFocusLost?.();
+  });
   const notice = trackerNotice(view.status, now);
   const kind = trackerKind(view.status);
   const until =
@@ -114,7 +189,7 @@ export function PrSetCard({
         onOpenInbox={onOpenInbox}
         onOpenGithub={onOpenGithub}
         onCopyLink={onCopyLink}
-        onDismiss={onDismiss}
+        onDismiss={dismiss}
       />
     );
   };
@@ -153,11 +228,17 @@ export function PrSetCard({
     <>
       <div className="pr-card-head">
         <span className="pr-card-title" id={titleId}>
-          {plural(
-            visibleCount,
-            "1 pull request from this chat",
-            "{n} pull requests from this chat",
-          )}
+          {hiddenOnly
+            ? plural(
+                hiddenCount,
+                "1 hidden pull request",
+                "{n} hidden pull requests",
+              )
+            : plural(
+                ownCount,
+                "1 pull request from this chat",
+                "{n} pull requests from this chat",
+              )}
         </span>
         <span
           className="pr-card-updated"
@@ -177,6 +258,7 @@ export function PrSetCard({
         </button>
       </div>
       <div
+        ref={bodyRef}
         className={`pr-card-body ${PR_LIST_CONTAINER} min-h-0 flex-1 overflow-y-auto overscroll-contain`}
         onKeyDown={roving.onKeyDown}
         onFocus={roving.onFocus}
@@ -266,8 +348,17 @@ export function PrSetCard({
       <div className="pr-card-foot">
         {/* One persistent live region, so the message is announced. */}
         <span role="status" className={status ? "truncate" : "sr-only"}>
-          {status ?? ""}
+          {status?.text ?? ""}
         </span>
+        {status?.undo ? (
+          <button
+            type="button"
+            className="pr-undo"
+            onClick={() => dismiss(status.undo!, false)}
+          >
+            Undo
+          </button>
+        ) : null}
         {status ? null : (
           <>
             <span>

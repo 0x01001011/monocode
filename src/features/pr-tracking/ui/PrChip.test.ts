@@ -202,11 +202,57 @@ describe("PrChip trigger", () => {
     expect(render().container.innerHTML).toBe("");
   });
 
-  it("renders nothing when every PR is hidden", () => {
+  it("keeps a minimal chip when every PR is hidden", () => {
     h.view = stackedView({
       entries: stackedView().entries.map((e) => ({ ...e, dismissed: true })),
     });
+    render();
+    const button = chip()!;
+    expect(button).not.toBeNull();
+    expect(button.getAttribute("aria-label")).toBe("4 hidden pull requests");
+    expect(button.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(button.textContent).toBe("4 hidden");
+    expect(button.querySelector("svg")).not.toBeNull();
+    expect(button.querySelector(".pr-strip, .pr-att, .pr-chip-num")).toBeNull();
+    expect(button.className).toContain("text-ink-muted");
+    expect(button.className).not.toMatch(/opacity/);
+  });
+
+  it("never features someone else's PR: no chip, or the hidden chip", () => {
+    const other = entry(900, {
+      relation: "other",
+      ownerSessionId: null,
+      onLiveBranch: true,
+    });
+    h.view = stackedView({ entries: [other], stacks: [] });
     expect(render().container.innerHTML).toBe("");
+
+    h.view = stackedView({
+      entries: [other, entry(471, { dismissed: true })],
+      stacks: [],
+    });
+    render();
+    expect(chip()!.getAttribute("aria-label")).toBe("1 hidden pull request");
+    expect(chip()!.textContent).toBe("1 hidden");
+  });
+
+  it("counts only this chat's PRs when an Other neighbour is listed", () => {
+    const view = stackedView();
+    view.entries.push(entry(901, { relation: "other", ownerSessionId: "s2" }));
+    h.view = view;
+    render();
+    expect(chip()!.getAttribute("aria-label")).toBe(
+      "PR 482 open, checks failing, stack 3 of 3, 4 pull requests",
+    );
+    expect(chip()!.querySelector(".pr-chip-more")?.textContent).toBe("+1");
+    pin();
+    expect(dialog()!.querySelector(".pr-card-title")?.textContent).toBe(
+      "4 pull requests from this chat",
+    );
+    // The neighbour is still listed.
+    expect(rows().map((r) => r.querySelector(".pr-n")?.textContent)).toContain(
+      "#901",
+    );
   });
 
   it("shows the primary PR, its stack strip, +N and the attention mark", () => {
@@ -267,8 +313,14 @@ describe("PrChip narrow composers", () => {
     expect(css).toContain(
       ".composer-head { container: composer-head / inline-size; }",
     );
+    // On the trigger button itself (no dead gap after a short name), sized
+    // against the row through container units; the wrapper may not shrink
+    // below it.
     expect(css).toContain(
-      ".composer-head > [data-branch-trigger] { min-width: min(14ch, 45%); }",
+      ".composer-head > [data-branch-trigger] { min-width: auto; }",
+    );
+    expect(css).toContain(
+      ".composer-head > [data-branch-trigger] > button { min-width: min(14ch, 45cqi); }",
     );
     expect(css).toContain(
       "@container composer-head (max-width: 400px) { .pr-chip .pr-strip, .pr-chip .pr-chip-more { display: none; } }",
@@ -669,5 +721,149 @@ describe("PrChip row actions", () => {
     expect(dialog()!.querySelector('[role="status"]')?.textContent).toBe(
       "Copied link to #480",
     );
+  });
+});
+
+describe("PrChip dismiss, focus and undo", () => {
+  const hide = (view: PrSetView, ...numbers: number[]) => ({
+    ...view,
+    entries: view.entries.map((e) =>
+      numbers.includes(e.snapshot.number) ? { ...e, dismissed: true } : e,
+    ),
+  });
+  const undoButton = () =>
+    [...(dialog()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+      (b) => b.textContent === "Undo",
+    );
+
+  it("keeps focus inside the card on ⌫, on the row now at that index", () => {
+    const { rerender } = render();
+    pin();
+    expect(document.activeElement).toBe(rows()[0]);
+    key(rows()[0], { key: "Backspace" });
+    expect(h.dismissPr).toHaveBeenCalledWith("s1", REPO, 482, true);
+    h.view = hide(stackedView(), 482);
+    rerender();
+    expect(dialog()).not.toBeNull();
+    expect(dialog()!.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(rows()[0]);
+    expect(rows()[0].querySelector(".pr-n")?.textContent).toBe("#480");
+    expect(rows()[0].tabIndex).toBe(0);
+  });
+
+  it("keeps focus inside the card after ⋯ → Hide, falling back to the last row", () => {
+    const { rerender } = render();
+    pin();
+    const lastMore = [
+      ...dialog()!.querySelectorAll<HTMLButtonElement>(".pr-row-more"),
+    ].at(-1)!;
+    act(() => lastMore.click());
+    const hideItem = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((i) => i.textContent === "Hide")!;
+    act(() => hideItem.click());
+    expect(h.dismissPr).toHaveBeenCalledWith("s1", REPO, 475, true);
+    h.view = hide(stackedView(), 475);
+    rerender();
+    expect(document.activeElement).toBe(rows().at(-1));
+    expect(rows().at(-1)!.querySelector(".pr-n")?.textContent).toBe("#478");
+  });
+
+  it("offers Undo for about 6s after hiding, which shows the PR again", () => {
+    vi.useFakeTimers();
+    const { rerender } = render();
+    pin();
+    key(rows()[0], { key: "Backspace" });
+    h.view = hide(stackedView(), 482);
+    rerender();
+    expect(dialog()!.querySelector('[role="status"]')?.textContent).toBe(
+      "Hidden #482",
+    );
+    const undo = undoButton()!;
+    expect(undo).toBeDefined();
+    expect(undo.className).toContain("pr-undo");
+    expect(undo.tabIndex).toBe(0);
+    undo.focus();
+    act(() => undo.click());
+    expect(h.dismissPr).toHaveBeenLastCalledWith("s1", REPO, 482, false);
+    expect(undoButton()).toBeUndefined();
+    h.view = stackedView();
+    rerender();
+    // Focus follows the restored row rather than dropping to the body.
+    expect(document.activeElement).toBe(rows()[0]);
+    expect(rows()[0].querySelector(".pr-n")?.textContent).toBe("#482");
+
+    key(rows()[0], { key: "Backspace" });
+    expect(undoButton()).toBeDefined();
+    act(() => vi.advanceTimersByTime(5_999));
+    expect(undoButton()).toBeDefined();
+    act(() => vi.advanceTimersByTime(1));
+    expect(undoButton()).toBeUndefined();
+  });
+
+  it("drops the Undo status when the card closes", () => {
+    render();
+    pin();
+    key(rows()[0], { key: "Backspace" });
+    expect(undoButton()).toBeDefined();
+    key(document.activeElement!, { key: "Escape" });
+    expect(dialog()).toBeNull();
+    pin();
+    expect(undoButton()).toBeUndefined();
+    expect(dialog()!.querySelector('[role="status"]')?.textContent).toBe("");
+  });
+
+  it("keeps the chip and card reachable after hiding the last PR, and shows it again", () => {
+    const single = stackedView({
+      entries: [entry(471, { onLiveBranch: true })],
+      stacks: [],
+    });
+    h.view = single;
+    const { rerender } = render();
+    const button = chip()!;
+    pin();
+    key(rows()[0], { key: "Backspace" });
+    h.view = hide(single, 471);
+    rerender();
+    // Same trigger, card still open, focus still inside it.
+    expect(chip()).toBe(button);
+    expect(button.getAttribute("aria-label")).toBe("1 hidden pull request");
+    const card = dialog()!;
+    expect(card).not.toBeNull();
+    expect(card.querySelector(".pr-card-title")?.textContent).toBe(
+      "1 hidden pull request",
+    );
+    expect(card.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(rows()[0]);
+
+    act(() => card.querySelector<HTMLButtonElement>(".pr-row-more")!.click());
+    const show = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((i) => i.textContent === "Show")!;
+    act(() => show.click());
+    expect(h.dismissPr).toHaveBeenLastCalledWith("s1", REPO, 471, false);
+    h.view = single;
+    rerender();
+    expect(chip()).toBe(button);
+    expect(button.querySelector(".pr-chip-num")?.textContent).toBe("#471");
+    expect(dialog()!.contains(document.activeElement)).toBe(true);
+  });
+
+  it("opens the hidden chip's card on the Hidden section, expanded", () => {
+    h.view = stackedView({
+      entries: stackedView().entries.map((e) => ({ ...e, dismissed: true })),
+    });
+    render();
+    pin();
+    const card = dialog()!;
+    expect(card.querySelector(".pr-card-title")?.textContent).toBe(
+      "4 hidden pull requests",
+    );
+    const toggle = card.querySelector<HTMLButtonElement>(".pr-hidden-toggle")!;
+    expect(toggle.textContent).toBe("Hidden · 4");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(card.querySelector("ol")).toBeNull();
+    expect(rows()).toHaveLength(4);
+    expect(document.activeElement).toBe(rows()[0]);
   });
 });

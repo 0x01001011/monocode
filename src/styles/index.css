@@ -4340,8 +4340,13 @@ html.theme-light .btw-burst {
 .composer-head {
   container: composer-head / inline-size;
 }
+/* The wrapper may not shrink below its button; the button carries the
+   floor, sized against the row (`cqi`) so short names leave no dead gap. */
 .composer-head > [data-branch-trigger] {
-  min-width: min(14ch, 45%);
+  min-width: auto;
+}
+.composer-head > [data-branch-trigger] > button {
+  min-width: min(14ch, 45cqi);
 }
 .pr-chip-num {
   font-variant-numeric: tabular-nums;
@@ -4488,6 +4493,19 @@ html.theme-light .pr-card .pr-list-container {
   font-size: 10px;
   white-space: nowrap;
   color: var(--color-ink-muted);
+}
+.pr-undo {
+  flex: none;
+  min-height: 24px;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--color-content);
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+.pr-undo:hover {
+  background: color-mix(in srgb, var(--color-content) 15%, transparent);
 }
 .pr-card-foot kbd {
   margin-right: 3px;

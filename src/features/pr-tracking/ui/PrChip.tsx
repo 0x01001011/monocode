@@ -1,6 +1,13 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
+import { EyeOff } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 import {
@@ -17,7 +24,7 @@ import {
   stripBars,
 } from "../model/prSetModel";
 import type { Attention, PrEntry } from "../model/types";
-import { PrSetCard } from "./PrSetCard";
+import { PrSetCard, type PrCardStatus } from "./PrSetCard";
 import { PrStatusIcon } from "./PrStatusIcon";
 import { PrStrip } from "./PrStrip";
 import { usePrHoverCard } from "./usePrHoverCard";
@@ -33,6 +40,7 @@ export type PrChipProps = {
 };
 
 const COPIED_MS = 1600;
+const UNDO_MS = 6000;
 
 /** Hot while the pane is visible and the window focused, fleet otherwise. */
 function usePrInterest(sessionId: string, active: boolean) {
@@ -88,53 +96,37 @@ export function PrChip({ sessionId, active = true, onOpenInbox }: PrChipProps) {
   usePrInterest(sessionId, active);
   const card = usePrHoverCard();
   const now = useNow(card.open);
-  const [status, setStatus] = useState<string | null>(null);
+  const [status, setStatus] = useState<PrCardStatus | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
   useEffect(() => () => clearTimeout(statusTimer.current), []);
 
-  const visible = view ? view.entries.filter((e) => !e.dismissed) : [];
-  const primary = view ? (primaryEntry(view) ?? visible[0] ?? null) : null;
+  // Never feature someone else's PR: with none of this chat's own PRs
+  // visible, fall back to the hidden chip, or to no chip at all.
+  const primary = view ? primaryEntry(view) : null;
+  const hiddenCount = view ? view.entries.filter((e) => e.dismissed).length : 0;
+  const hiddenOnly = !primary && hiddenCount > 0;
+  const shown = !!view && (!!primary || hiddenOnly);
   const { open: cardOpen, close } = card;
 
   useEffect(() => {
-    if (!primary && cardOpen) close(false);
-  }, [primary, cardOpen, close]);
+    if (!shown && cardOpen) close(false);
+  }, [shown, cardOpen, close]);
+
+  // A status (and its Undo) belongs to one look at the card.
+  useEffect(() => {
+    if (cardOpen) return;
+    clearTimeout(statusTimer.current);
+    setStatus(null);
+  }, [cardOpen]);
 
   const closeCard = useCallback(() => {
     // Keep focus on the chip if it was in the card (a ⋯ menu item).
     close(!!card.surfaceRef.current?.contains(document.activeElement));
   }, [card.surfaceRef, close]);
 
-  if (!view || !primary) return null;
-
-  const { snapshot } = primary;
-  const group = view.stacks.find(
-    (g) => g.repo === snapshot.repo && g.members.includes(snapshot.number),
-  );
-  const seen = new Set<number>();
-  const bars = group
-    ? stripBars(view).filter((bar) => {
-        if (!group.members.includes(bar.number) || seen.has(bar.number))
-          return false;
-        seen.add(bar.number);
-        return true;
-      })
-    : [];
-  const inGroup = group
-    ? visible.filter(
-        (e) =>
-          e.snapshot.repo === group.repo &&
-          group.members.includes(e.snapshot.number),
-      ).length
-    : 1;
-  const outside = Math.max(0, visible.length - inGroup);
-  const attention = worstAttention(visible);
-  const stale = isSnapshotStale(snapshot, now);
-  const label = stale
-    ? `${ariaLabel(view, primary)}, status may be out of date, ${freshnessLabel(snapshot.fetchedAt, now).toLowerCase()}`
-    : ariaLabel(view, primary);
+  if (!view || !shown) return null;
 
   const openGithub = (entry: PrEntry) => {
     closeCard();
@@ -148,15 +140,19 @@ export function PrChip({ sessionId, active = true, onOpenInbox }: PrChipProps) {
     closeCard();
     onOpenInbox(workItem(entry));
   };
-  const announce = (message: string) => {
+  const announce = (next: PrCardStatus, ms: number) => {
     clearTimeout(statusTimer.current);
-    setStatus(message);
-    statusTimer.current = setTimeout(() => setStatus(null), COPIED_MS);
+    setStatus(next);
+    statusTimer.current = setTimeout(() => setStatus(null), ms);
   };
   const copyLink = (entry: PrEntry) => {
     copyText(entry.snapshot.url).then(
-      () => announce(`Copied link to #${entry.snapshot.number}`),
-      () => announce("Couldn't copy the link"),
+      () =>
+        announce(
+          { text: `Copied link to #${entry.snapshot.number}` },
+          COPIED_MS,
+        ),
+      () => announce({ text: "Couldn't copy the link" }, COPIED_MS),
     );
   };
   const dismiss = (entry: PrEntry, dismissed: boolean) => {
@@ -166,18 +162,54 @@ export function PrChip({ sessionId, active = true, onOpenInbox }: PrChipProps) {
       entry.snapshot.number,
       dismissed,
     );
+    if (dismissed) {
+      announce(
+        { text: `Hidden #${entry.snapshot.number}`, undo: entry },
+        UNDO_MS,
+      );
+    } else if (status?.undo) {
+      clearTimeout(statusTimer.current);
+      setStatus(null);
+    }
   };
 
-  return (
-    <>
-      <button
-        ref={card.triggerRef}
-        type="button"
-        className="pr-chip -ml-1.5 flex h-6 max-w-[168px] shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[12px] text-muted hover:bg-content/8 hover:text-content active:scale-[0.97] aria-expanded:bg-content/8 aria-expanded:text-content"
-        aria-label={label}
-        title={stale ? freshnessLabel(snapshot.fetchedAt, now) : undefined}
-        {...card.triggerProps}
-      >
+  let label: string;
+  let title: string | undefined;
+  let content: ReactNode;
+  if (primary) {
+    const { snapshot } = primary;
+    const own = view.entries.filter(
+      (e) => !e.dismissed && e.relation !== "other",
+    );
+    const group = view.stacks.find(
+      (g) => g.repo === snapshot.repo && g.members.includes(snapshot.number),
+    );
+    const seen = new Set<number>();
+    const bars = group
+      ? stripBars(view).filter((bar) => {
+          if (!group.members.includes(bar.number) || seen.has(bar.number))
+            return false;
+          seen.add(bar.number);
+          return true;
+        })
+      : [];
+    // Same set as `ariaLabel()`'s count: this chat's own visible PRs.
+    const inGroup = group
+      ? own.filter(
+          (e) =>
+            e.snapshot.repo === group.repo &&
+            group.members.includes(e.snapshot.number),
+        ).length
+      : 1;
+    const outside = Math.max(0, own.length - inGroup);
+    const attention = worstAttention(view.entries.filter((e) => !e.dismissed));
+    const stale = isSnapshotStale(snapshot, now);
+    label = stale
+      ? `${ariaLabel(view, primary)}, status may be out of date, ${freshnessLabel(snapshot.fetchedAt, now).toLowerCase()}`
+      : ariaLabel(view, primary);
+    title = stale ? freshnessLabel(snapshot.fetchedAt, now) : undefined;
+    content = (
+      <>
         <PrStatusIcon
           state={snapshot.state}
           isDraft={snapshot.isDraft}
@@ -190,6 +222,32 @@ export function PrChip({ sessionId, active = true, onOpenInbox }: PrChipProps) {
         {attention !== "none" ? (
           <span className="pr-att" data-kind={attention} aria-hidden="true" />
         ) : null}
+      </>
+    );
+  } else {
+    label =
+      hiddenCount === 1
+        ? "1 hidden pull request"
+        : `${hiddenCount} hidden pull requests`;
+    content = (
+      <>
+        <EyeOff aria-hidden="true" size={14} className="shrink-0" />
+        <span className="tabular-nums">{hiddenCount} hidden</span>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <button
+        ref={card.triggerRef}
+        type="button"
+        className={`pr-chip -ml-1.5 flex h-6 max-w-[168px] shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[12px] ${hiddenOnly ? "text-ink-muted" : "text-muted"} hover:bg-content/8 hover:text-content active:scale-[0.97] aria-expanded:bg-content/8 aria-expanded:text-content`}
+        aria-label={label}
+        title={title}
+        {...card.triggerProps}
+      >
+        {content}
       </button>
       {card.open ? (
         <Popover
@@ -212,6 +270,10 @@ export function PrChip({ sessionId, active = true, onOpenInbox }: PrChipProps) {
             titleId={card.titleId}
             now={now}
             status={status}
+            hiddenOnly={hiddenOnly}
+            onFocusLost={() =>
+              card.triggerRef.current?.focus({ preventScroll: true })
+            }
             onRefresh={() => void refreshPrSet(sessionId)}
             onOpenInbox={openInbox}
             onOpenGithub={openGithub}
