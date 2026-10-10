@@ -1402,10 +1402,31 @@ fn tick(app: &AppHandle, holder: &str) {
     } else {
         outcome.changed.into_iter().collect()
     };
-    let _ = app.emit(
-        "pr-set-changed",
-        serde_json::json!({ "sessionIds": session_ids }),
-    );
+    let _ = app.emit("pr-set-changed", changed_payload(&session_ids));
+}
+
+/// Payload of `pr-set-changed`; an empty list means every chat.
+fn changed_payload(session_ids: &[String]) -> Value {
+    serde_json::json!({ "sessionIds": session_ids })
+}
+
+/// Tells the frontend that one chat's PR set changed.
+pub(crate) fn notify_session_changed(app: &AppHandle, session_id: &str) {
+    let _ = app.emit("pr-set-changed", changed_payload(&[session_id.to_string()]));
+}
+
+/// After a chat gains a PR or hint: forces its targets (same throttle as
+/// `pr_refresh`) and wakes the loop. The wake is unconditional because a new
+/// target has no snapshot and is due even when the force is throttled.
+fn refresh_after_attribution(tracker: &Tracker, session_id: &str, now: i64) -> bool {
+    let forced = tracker.force(session_id, now);
+    tracker.wake();
+    forced
+}
+
+/// `refresh_after_attribution` on the process-wide tracker.
+pub(crate) fn refresh_session_after_attribution(session_id: &str) {
+    refresh_after_attribution(&TRACKER, session_id, now_millis());
 }
 
 /// Starts the polling loop. It works only while this process holds the
@@ -1431,6 +1452,7 @@ pub fn start(app: &AppHandle) {
 
 #[tauri::command(async)]
 pub fn pr_set_interest(
+    app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
     level: String,
@@ -1445,6 +1467,7 @@ pub fn pr_set_interest(
             .map_err(|e| e.to_string())?;
     }
     TRACKER.wake();
+    notify_session_changed(&app, &session_id);
     Ok(())
 }
 
@@ -2183,6 +2206,35 @@ mod tests {
         assert!(tracker.force("s2", NOW + 1));
         assert!(tracker.force("s1", NOW + 5_000));
         assert!(!tracker.force("s1", NOW + 9_999));
+    }
+
+    #[test]
+    fn attribution_refresh_keeps_the_throttle_but_always_wakes() {
+        let tracker = Tracker::new();
+        assert!(refresh_after_attribution(&tracker, "s1", NOW));
+        assert!(*tracker.wake.lock().unwrap());
+        *tracker.wake.lock().unwrap() = false;
+        // Throttled: no new force, but the new target is due anyway, so the
+        // loop still wakes.
+        assert!(!refresh_after_attribution(&tracker, "s1", NOW + 4_999));
+        assert!(*tracker.wake.lock().unwrap());
+        assert!(
+            !tracker.force("s1", NOW + 4_999),
+            "shares pr_refresh's throttle"
+        );
+        assert!(refresh_after_attribution(&tracker, "s1", NOW + 5_000));
+    }
+
+    #[test]
+    fn changed_payload_names_the_sessions() {
+        assert_eq!(
+            changed_payload(&["s1".to_string()]),
+            serde_json::json!({ "sessionIds": ["s1"] })
+        );
+        assert_eq!(
+            changed_payload(&[]),
+            serde_json::json!({ "sessionIds": [] })
+        );
     }
 
     #[test]

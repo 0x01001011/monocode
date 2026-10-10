@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use rusqlite::Connection;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::pr_store::{self, Relation};
 use crate::session_store::{now_millis, validate_id, SessionStore};
@@ -204,6 +204,12 @@ fn record_url(conn: &Connection, session_id: &str, url: &str) -> Result<(), Stri
     .map_err(|e| e.to_string())
 }
 
+/// Hints carry the repo of the URL they came from when the frontend knows
+/// it; numbers from another repo must not land on the checkout's repo.
+fn hint_repo_matches(claimed: Option<&str>, checkout: &str) -> bool {
+    claimed.is_none_or(|repo| repo.trim().eq_ignore_ascii_case(checkout))
+}
+
 /// Drops 0 and repeats, keeping at most `MAX_HINTS` numbers in order.
 fn bounded_hints(numbers: &[u32]) -> Vec<u32> {
     let mut out: Vec<u32> = Vec::new();
@@ -241,32 +247,54 @@ fn record_hints(
 
 #[tauri::command(async)]
 pub fn pr_record_url(
+    app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
     url: String,
 ) -> Result<(), String> {
     validate_id(&session_id, "session")?;
-    let conn = store.lock_conn()?;
-    record_url(&conn, &session_id, &url)
+    {
+        let conn = store.lock_conn()?;
+        record_url(&conn, &session_id, &url)?;
+    }
+    after_attribution(&app, &session_id);
+    Ok(())
+}
+
+/// A chat gained a PR or hint: refresh its targets now and tell the UI.
+fn after_attribution(app: &AppHandle, session_id: &str) {
+    crate::pr_tracker::refresh_session_after_attribution(session_id);
+    crate::pr_tracker::notify_session_changed(app, session_id);
 }
 
 #[tauri::command(async)]
 pub fn pr_record_hints(
+    app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
     cwd: String,
     numbers: Vec<u32>,
+    repo: Option<String>,
 ) -> Result<(), String> {
     validate_id(&session_id, "session")?;
+    let claimed = repo;
     let Some(repo) = repo_slug_for(&crate::fs::expand_home(&cwd)) else {
         return Ok(());
     };
-    let conn = store.lock_conn()?;
-    record_hints(&conn, &session_id, &repo, &numbers).map_err(|e| e.to_string())
+    if !hint_repo_matches(claimed.as_deref(), &repo) {
+        return Ok(());
+    }
+    {
+        let conn = store.lock_conn()?;
+        record_hints(&conn, &session_id, &repo, &numbers).map_err(|e| e.to_string())?;
+    }
+    after_attribution(&app, &session_id);
+    Ok(())
 }
 
 #[tauri::command(async)]
 pub fn pr_dismiss(
+    app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
     repo: String,
@@ -274,8 +302,13 @@ pub fn pr_dismiss(
     dismissed: bool,
 ) -> Result<(), String> {
     validate_id(&session_id, "session")?;
-    let conn = store.lock_conn()?;
-    pr_store::set_dismissed(&conn, &session_id, &repo, number, dismissed).map_err(|e| e.to_string())
+    {
+        let conn = store.lock_conn()?;
+        pr_store::set_dismissed(&conn, &session_id, &repo, number, dismissed)
+            .map_err(|e| e.to_string())?;
+    }
+    crate::pr_tracker::notify_session_changed(&app, &session_id);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -290,6 +323,15 @@ mod tests {
 
     fn repo(_: &Path) -> Option<String> {
         Some("Octo/Repo".to_string())
+    }
+
+    #[test]
+    fn hint_repo_must_match_the_checkout_when_given() {
+        assert!(hint_repo_matches(None, "octo/repo"));
+        assert!(hint_repo_matches(Some("Octo/Repo"), "octo/repo"));
+        assert!(hint_repo_matches(Some(" octo/repo "), "Octo/Repo"));
+        assert!(!hint_repo_matches(Some("octo/other"), "octo/repo"));
+        assert!(!hint_repo_matches(Some(""), "octo/repo"));
     }
 
     #[test]
