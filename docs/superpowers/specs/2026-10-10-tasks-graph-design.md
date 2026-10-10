@@ -65,7 +65,8 @@ wrong and where, what was deferred, which commits each task made, and whether th
 │ │   ○ Draw the rail                                                          │
 │ ○  5  Ship node                       4 steps                                │
 │ ○  Final review → final fixes                                                │
-│ ◇  Ship · 3 things before ship                                         ▸     │  terminal node
+│ ◇  Ship · 3 things before ship                                               │  terminal node (verdict)
+│ ▸ Ship checklist · 1 of 4 met                                                │  checklist toggle
 ├──────────────────────────────────────────────────────────────────────────────┤
 │ Deferred · 4      Gaps · 1      Decisions made for you · 2                   │  collapsible groups
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -100,14 +101,16 @@ wrong and where, what was deferred, which commits each task made, and whether th
     clean".
   - The final fix wave forks from the final review and merges into Ship.
   - Subagents and orchestration workers that run while the plan runs get their own lane for as long
-    as they run (`dependsOn` draws the fork from the task they depend on). At most 3 side lanes are
-    drawn; more collapse into a "+2 lanes" marker on the last one.
+    as they run. Their rows sit right after the current (now) task, or after the last task when
+    nothing runs. At most 2 worker lanes are drawn; more collapse into a "+2 lanes" marker on the
+    last one. The Problems filter leaves workers out: running work is not a plan problem.
 - **Drawing**: each row has an SVG gutter (12 px per lane, at most 4 lanes = 48 px). Lines use
   `stroke-muted` at 1.5 px; fork and merge are quarter curves. Nodes: solid dot = done, ring = not
   started, ringed dot = running, hollow = review, diamond = Ship. Node fill is the status token;
   the row also carries the `TaskGlyph` label, so state is never colour alone.
 - **Now pointer**: the running (or needs-a-look) row shows a small `NOW` ref pill (git-`HEAD` style,
-  `bg-accent/22`, text `text-focus`). Only this node pulses, under `motion-safe`.
+  solid `bg-accent text-accent-foreground`, at least 4.5:1 on any row; a tint failed on the tinted
+  running row). Only this node pulses, under `motion-safe`.
 - **Refs (git-label style)**: up to two short pills per row, in this order:
   `fix 3 of 5`, `failed`, `blocked`, `no commit`, `2 deferred`, `review clean`, `fixed in N rounds`.
   More collapse into the expanded row. Refs reuse the status tokens on a tint.
@@ -116,18 +119,34 @@ wrong and where, what was deferred, which commits each task made, and whether th
 - **Expanded row**: stages on the side lane (each with verdict and its commit SHA), then the steps.
   Steps are a checklist under the rail, not graph nodes.
 - **Commits**: SHAs are 7-character mono links (`commits a1b2..c3d4` shows both ends). Activating one
-  opens the existing commit view (`BoardTarget` kind `commit`).
+  opens the existing commit view (`BoardTarget` kind `commit`). Under 340 px a commit range shows
+  only its last SHA, so the actions fit beside the title.
+- **Narrow tabs** (measured with container queries on the tree):
+  - Refs and the `NOW` pill never truncate; the title yields. What does not fit is hidden whole and
+    stays in the row's accessible name.
+  - Under 400 px a row shows one ref (the first, in the order above).
+  - Under 300 px a row with a ref shows that ref alone: its `NOW` pill and meta hide. A row without
+    refs keeps `NOW` and its meta.
+  - The meta never truncates either. It is a step count and a time ("3/4 · 32m"), each shown whole
+    or hidden whole, and the time hides first: under 400 px beside a ref, under 300 px otherwise.
+  - Row gaps tighten under 360 px.
 
 ### Row actions (hover, focus, keyboard)
 
 On hover or focus a row shows icon buttons (24 px): **Open report/brief**, **Open commit**,
-**Copy SHA**. Keyboard on a focused row: arrows/Home/End/Enter as today, `o` opens the target,
-`c` copies the SHA, `n` jumps to now. Shortcuts are listed in the `?` legend.
+**Copy SHA**. Keyboard on a focused row: arrows/Home/End as today, `o` opens the target,
+`c` copies the SHA, `n` jumps to now. Shortcuts are listed in the `?` legend. Enter opens a row's
+target; a row without one opens or closes instead. Enter or a click on a "3 done hidden" row
+switches the filter to All and focuses the first row it hid. A "Copied" note belongs to the control
+that copied: copying a SHA never makes Ship's **Copy summary** say "Copied".
 
 ### Ship node (terminal)
 
-- Collapsed: `◇ Ship · Ready to ship` or `◇ Ship · 3 things before ship`.
-- Expanded: a checklist, each unmet item a button that reveals its row:
+- The graph's Ship row is the verdict: `◇ Ship · Ready to ship` or `◇ Ship · 3 things before ship`.
+  It is not expandable (no `aria-expanded`, Right Arrow does nothing). Enter or a click on it opens
+  the checklist and moves focus to the checklist toggle, so there is one disclosure, not two.
+- Under the tree, a toggle **Ship checklist · K of M met** opens the checklist (on by itself once
+  every task is done), each unmet item a button that reveals its row:
   - every task done (`2 tasks left`);
   - final review clean, or its fix wave complete;
   - last test run passed (from `lastTestRun`; unknown when piped or never run, and then says so);
@@ -156,7 +175,7 @@ instead of opening a tab.
 | Deferred | `parked` + `minors` notes, grouped per task |
 | Gap: no commit | task `done` with no `commits` and no stage SHA |
 | Gap: closed with parked items | `complete` line with `parked > 0` |
-| Gap: steps unticked at finish | task `done` and plan steps with `ticked === false` |
+| Gap: steps unticked at finish | task `done` and plan steps with `ticked === false`, only when the plan file shows at least one ticked step anywhere (evidence the executor ticks); a plan with no tick never raises it |
 | Gap: no final review | all tasks done and `finalReview` absent or pending |
 | Ship | the checklist above |
 | Commits | `implemented (sha)`, fix `implementedSha`/`commits`, `complete commits` |
@@ -211,7 +230,8 @@ is removed; its checks move to `tasks-panel.spec.ts`.
 - **Metric** (higher is better): `rubric_points - 5 × a11y_failures`. Rubric: 1 point for each
   state in the States table visible in the fixture, each keyboard action working, the sticky bar,
   and each filter. a11y failures come from the browser measurements.
-- **Verify**: `npx playwright test -c preview-ux/pw-tasks.config.ts tasks-score` prints the score.
+- **Verify**: `npx playwright test tasks-score --project chromium` (the repo's `playwright.config.ts`)
+  prints the score. The score test is skipped on WebKit, and a low score never fails it.
 - **Guard**: `npx vitest run src/features/tasks src/app/shell && npx tsc --noEmit`.
 - **Bound**: 10 iterations, each an `experiment:` commit, reverted with `git revert` when it does
   not improve the score or breaks the guard.
