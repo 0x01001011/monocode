@@ -98,3 +98,19 @@ All are 2× PNGs, each under 400KB, prefixed `dark-` or `light-`; a WebKit cross
 - Sidebar glyph rows and hover.
 - Changes panel section.
 - Inbox rails 3/6/12 with health lines, plus narrow 420px.
+
+## Full-branch verification (final run, head `f61487c`)
+
+Run fresh by the controller after the last review, in this order:
+
+| Check | Result |
+|---|---|
+| `npx tsc --noEmit` | exit 0 |
+| `npx vitest run` | 552 files passed, 2 skipped; 6312 tests passed, 13 skipped |
+| `cargo fmt --check` | exit 0 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo test` | 866 passed, 0 failed, 2 ignored |
+| `npx playwright test tests/browser/pr-tracking.spec.ts` (Chromium and WebKit) | 69 passed, 5 skipped (4 evidence-screenshot tests need `PR_EVIDENCE=1`; forced colors only runs on Chromium) |
+| Live GraphQL query shape against `0x01001011/monocode` (read-only, one request) | schema valid, cost 1, partial `compare` error returned with `data` as handled |
+
+Not run: a Tauri build of the app, and a long session against real `gh` data.
