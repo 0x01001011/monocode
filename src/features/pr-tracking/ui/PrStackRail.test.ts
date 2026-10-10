@@ -169,6 +169,15 @@ describe("PrStackRail", () => {
     );
   });
 
+  it("makes every node a tab stop, even where Tab skips plain links (WebKit)", () => {
+    render();
+    expect(nodes().map((a) => a.getAttribute("tabindex"))).toEqual([
+      "0",
+      "0",
+      "0",
+    ]);
+  });
+
   it("draws merged parents with the merged shape and other chats' PRs with the other treatment", () => {
     render();
     const [base, merged] = nodes();

@@ -150,6 +150,9 @@ export function PrStackRail({ view, current, onOpenPr }: PrStackRailProps) {
               </span>
               <a
                 href={entry.url}
+                // WebKit (and so the macOS webview) skips plain links on Tab
+                // unless the user turned on Safari's "highlight each item".
+                tabIndex={0}
                 className="pr-rail-node"
                 data-pr={entry.number}
                 data-state={status}
