@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -318,6 +319,22 @@ describe("PrRow", () => {
     });
     expect(document.querySelector('[role="menu"]')).toBeNull();
     expect(document.activeElement).toBe(more);
+  });
+});
+
+describe("PrRow icon halo", () => {
+  // The halo masks the stack connector behind the icon. It must be the
+  // row's own fill, or it reads as a disc (light selection is 6%, not 12%).
+  const css = readFileSync("src/styles/index.css", "utf8").replace(/\s+/g, " ");
+  it("matches the selected fill in both themes", () => {
+    expect(css).toContain(
+      '.pr-row[data-selected="true"] .pr-ico::before { background: color-mix( in srgb, var(--color-content) var(--selection-strength), var(--pr-ground, var(--color-background-base)) ); }',
+    );
+  });
+  it("matches the hover and focus fill", () => {
+    expect(css).toContain(
+      ".pr-row:hover .pr-ico::before, .pr-row:focus-within .pr-ico::before { background: color-mix( in srgb, var(--color-content) var(--selection-subtle-strength), var(--pr-ground, var(--color-background-base)) ); }",
+    );
   });
 });
 

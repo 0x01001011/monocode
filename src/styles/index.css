@@ -4178,10 +4178,21 @@ html.theme-light .btw-burst {
   background: var(--pr-ground, var(--color-background-base));
   z-index: -1;
 }
+/* The halo takes the row's own fill, so only the connector is masked and
+   no disc shows (light selection is 6%, not the mockup's fixed 12%). The
+   selected rule comes last so a hovered selected row keeps its fill. */
+.pr-row:hover .pr-ico::before,
+.pr-row:focus-within .pr-ico::before {
+  background: color-mix(
+    in srgb,
+    var(--color-content) var(--selection-subtle-strength),
+    var(--pr-ground, var(--color-background-base))
+  );
+}
 .pr-row[data-selected="true"] .pr-ico::before {
   background: color-mix(
     in srgb,
-    var(--color-content) 12%,
+    var(--color-content) var(--selection-strength),
     var(--pr-ground, var(--color-background-base))
   );
 }

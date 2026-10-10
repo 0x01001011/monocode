@@ -926,6 +926,41 @@ test.describe("modes and states", () => {
     );
   });
 
+  for (const theme of THEMES) {
+    test(`icon halos match their row's fill, ${theme}`, async ({ page }) => {
+      await load(page, { theme });
+      await pin(page);
+      await page.locator("#panel .pr-row").nth(2).hover();
+      const gaps = await page.evaluate(() => {
+        // Paint the row fill and the halo over the page ground; compare.
+        const cv = document.createElement("canvas").getContext("2d")!;
+        const paint = (...layers: string[]) => {
+          cv.clearRect(0, 0, 1, 1);
+          for (const fill of layers) {
+            cv.fillStyle = fill;
+            cv.fillRect(0, 0, 1, 1);
+          }
+          return [...cv.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+        };
+        const ground = getComputedStyle(document.body).backgroundColor;
+        const out: { where: string; gap: number }[] = [];
+        const rows = [
+          ['#panel .pr-row[data-selected="true"]', "selected"],
+          ["#panel .pr-row:hover", "hover"],
+        ];
+        for (const [selector, where] of rows) {
+          const row = document.querySelector(selector)!;
+          const halo = getComputedStyle(row.querySelector(".pr-ico")!, "::before");
+          const a = paint(ground, getComputedStyle(row).backgroundColor);
+          const b = paint(ground, halo.backgroundColor);
+          out.push({ where, gap: Math.max(...a.map((v, i) => Math.abs(v - b[i]))) });
+        }
+        return out;
+      });
+      for (const { where, gap } of gaps) expect(gap, where).toBeLessThanOrEqual(2);
+    });
+  }
+
   test("stale status keeps full opacity", async ({ page }) => {
     await load(page, { fixture: "stale" });
     await pin(page);
