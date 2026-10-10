@@ -297,8 +297,37 @@ export function PrRow({
   );
 }
 
-const MENU_ITEM =
+export const PR_MENU_ITEM =
   "flex min-h-6 w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui text-content hover:bg-selection-hover focus-visible:bg-selection-hover focus-visible:focus-ring-inset";
+
+/**
+ * Keyboard for a PR action menu: ↑/↓ (wrapping), Home and End move between
+ * its `menuitem`s; Tab closes it (the owner returns focus to its button).
+ */
+export function prMenuKeyDown(
+  event: KeyboardEvent<HTMLElement>,
+  surface: HTMLElement | null,
+  close: () => void,
+) {
+  const items = [
+    ...(surface?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []),
+  ];
+  if (items.length === 0) return;
+  const at = items.indexOf(document.activeElement as HTMLElement);
+  let next: number | null = null;
+  if (event.key === "ArrowDown") next = (at + 1) % items.length;
+  else if (event.key === "ArrowUp") next = (at - 1 + items.length) % items.length;
+  else if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = items.length - 1;
+  else if (event.key === "Tab") {
+    event.preventDefault();
+    close();
+    return;
+  }
+  if (next == null) return;
+  event.preventDefault();
+  items[next].focus();
+}
 
 function RowMenu({
   entry,
@@ -326,27 +355,8 @@ function RowMenu({
     action();
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const items = [
-      ...(surface.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ??
-        []),
-    ];
-    if (items.length === 0) return;
-    const at = items.indexOf(document.activeElement as HTMLElement);
-    let next: number | null = null;
-    if (event.key === "ArrowDown") next = (at + 1) % items.length;
-    else if (event.key === "ArrowUp") next = (at - 1 + items.length) % items.length;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = items.length - 1;
-    else if (event.key === "Tab") {
-      event.preventDefault();
-      onClose(true);
-      return;
-    }
-    if (next == null) return;
-    event.preventDefault();
-    items[next].focus();
-  };
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) =>
+    prMenuKeyDown(event, surface.current, () => onClose(true));
 
   return (
     <Popover
@@ -367,7 +377,7 @@ function RowMenu({
         type="button"
         role="menuitem"
         tabIndex={-1}
-        className={MENU_ITEM}
+        className={PR_MENU_ITEM}
         onClick={run(() => onOpenInbox(entry))}
       >
         <Inbox aria-hidden="true" size={14} className="shrink-0" />
@@ -377,7 +387,7 @@ function RowMenu({
         type="button"
         role="menuitem"
         tabIndex={-1}
-        className={MENU_ITEM}
+        className={PR_MENU_ITEM}
         onClick={run(() => onOpenGithub(entry))}
       >
         <ExternalLink aria-hidden="true" size={14} className="shrink-0" />
@@ -387,7 +397,7 @@ function RowMenu({
         type="button"
         role="menuitem"
         tabIndex={-1}
-        className={MENU_ITEM}
+        className={PR_MENU_ITEM}
         onClick={run(() => onCopyLink(entry))}
       >
         <Copy aria-hidden="true" size={14} className="shrink-0" />
@@ -397,7 +407,7 @@ function RowMenu({
         type="button"
         role="menuitem"
         tabIndex={-1}
-        className={MENU_ITEM}
+        className={PR_MENU_ITEM}
         onClick={run(() => onDismiss(entry, !entry.dismissed))}
       >
         <Eye aria-hidden="true" size={14} className="shrink-0" />

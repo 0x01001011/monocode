@@ -2173,6 +2173,11 @@ function SidebarComponent({
             <SourceControl
                 cwd={gitRoot}
                 sessionId={prSessionId}
+                onOpenInbox={
+                  onOpenInboxItem && prSessionId
+                    ? (item) => onOpenInboxItem(item, prSessionId)
+                    : undefined
+                }
                 enabled={panelOpen}
                 textHarness={textHarness}
                 selectedPath={selectedDiffPath}

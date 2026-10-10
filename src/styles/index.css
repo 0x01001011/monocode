@@ -4566,3 +4566,108 @@ html.theme-light .pr-card .pr-list-container {
   color: var(--color-ink-on-fill);
   background: color-mix(in srgb, var(--color-content) 8%, transparent);
 }
+
+/* Changes panel (mockup `.pr-section`, `.btn-split`, `.base-field`). The
+   section is the `prlist` container, so rows go narrow under 340px. */
+.pr-section {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-stroke);
+}
+.pr-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+.pr-section-head h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-content);
+}
+.pr-section-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-muted);
+}
+.pr-section .pr-row {
+  padding-left: 4px;
+  padding-right: 2px;
+}
+/* The panel's header area does not scroll; a long list scrolls itself so
+   the changed files stay in view. */
+.pr-section .pr-list {
+  max-height: 216px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 0;
+}
+.pr-section .pr-notice {
+  margin: 2px 0 6px;
+}
+.pr-section-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-ink-muted);
+}
+.pr-split {
+  display: flex;
+  gap: 1px;
+  margin-top: 8px;
+}
+.pr-base-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+}
+.pr-base-field > label {
+  flex: none;
+  color: var(--color-ink-muted);
+}
+.pr-base-select {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--color-content) 6%, transparent);
+}
+.pr-base-select:hover {
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+.pr-base-select:focus-within {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+/* The native select covers the box and takes clicks and keys; the value
+   and tag beside it are what sighted users read. */
+.pr-base-select > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.pr-base-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-content);
+}
+@media (forced-colors: active) {
+  .pr-base-select:focus-within {
+    outline-color: Highlight;
+  }
+}

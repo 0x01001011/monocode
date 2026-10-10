@@ -12,7 +12,8 @@ import type { usePrHoverCard } from "./usePrHoverCard";
 const COPIED_MS = 1600;
 const UNDO_MS = 6000;
 
-const workItem = (entry: PrEntry): LinkedWorkItem => ({
+/** The Inbox's handle for a PR row. */
+export const prWorkItem = (entry: PrEntry): LinkedWorkItem => ({
   kind: "pr",
   repo: entry.snapshot.repo,
   number: entry.snapshot.number,
@@ -84,7 +85,7 @@ export function PrSetPopover({
       return;
     }
     closeCard();
-    onOpenInbox(workItem(entry));
+    onOpenInbox(prWorkItem(entry));
   };
   const announce = (next: PrCardStatus, ms: number) => {
     clearTimeout(statusTimer.current);

@@ -34,6 +34,8 @@ vi.mock("../../../platform/tauri/fs", () => ({
   gitDiscardFile: vi.fn(async () => {}),
   gitPrCreate: vi.fn(async () => ""),
   gitRangeContext: vi.fn(),
+  gitIsAncestor: vi.fn(async () => false),
+  gitBranches: vi.fn(async () => ({ current: null, detached: false, branches: [] })),
   notifyGitChanged: vi.fn(),
   subscribeGitChanged: () => () => {},
   basename: (path: string) => path.split("/").pop() ?? path,
@@ -53,14 +55,24 @@ vi.mock("../../inbox/model/inboxSelfActivity", () => ({
   recordInboxSelfActivity: vi.fn(),
 }));
 
+const prState = vi.hoisted(() => ({
+  view: null as import("../../pr-tracking/model/types").PrSetView | null,
+}));
+
 vi.mock("../../pr-tracking/data/prTracking", () => ({
   recordPrUrl: vi.fn(async () => {}),
+  usePrSet: (sessionId?: string) => (sessionId ? prState.view : null),
+  refreshPrSet: vi.fn(async () => {}),
+  dismissPr: vi.fn(async () => {}),
 }));
 
 import { GitChangesPanel } from "./GitChangesPanel";
 import {
+  gitBranches,
   gitDiffIndex,
+  gitIsAncestor,
   gitPrCreate,
+  gitPrStatus,
   gitPull,
   gitPush,
   gitRangeContext,
@@ -75,6 +87,7 @@ import {
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { recordPrUrl } from "../../pr-tracking/data/prTracking";
 import type { GitChangedFile, GitDiffIndex } from "../../../platform/tauri/fs";
+import type { PrEntry } from "../../pr-tracking/model/types";
 
 function index(overrides: Partial<GitDiffIndex> = {}): GitDiffIndex {
   return {
@@ -115,6 +128,7 @@ beforeEach(() => {
   vi.mocked(notifyGitChanged).mockClear();
   vi.mocked(generateCommitMessage).mockReset();
   invalidateWatchedFiles.mockReset();
+  prState.view = null;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -557,5 +571,203 @@ describe("GitChangesPanel pull request attribution", () => {
   it("records nothing without a chat", async () => {
     await createLocalPr(undefined);
     expect(recordPrUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe("GitChangesPanel chat pull requests", () => {
+  const REPO = "acme/web";
+  function prEntry(
+    number: number,
+    headRef: string,
+    over: Partial<PrEntry> = {},
+  ): PrEntry {
+    return {
+      snapshot: {
+        repo: REPO,
+        number,
+        url: `https://github.com/${REPO}/pull/${number}`,
+        title: `PR ${number}`,
+        state: "open",
+        isDraft: false,
+        headRef,
+        baseRef: "main",
+        originalBaseRef: "main",
+        headOid: `oid-${number}`,
+        author: "maya",
+        checks: "none",
+        review: "none",
+        mergeable: "mergeable",
+        behindBy: null,
+        fetchedAt: Date.now(),
+      },
+      relation: "owned",
+      ownerSessionId: "s1",
+      onLiveBranch: false,
+      parent: null,
+      attention: "none",
+      attentionReason: null,
+      dismissed: false,
+      error: null,
+      ...over,
+    };
+  }
+  function setView(entries: PrEntry[]) {
+    prState.view = {
+      sessionId: "s1",
+      entries,
+      stacks: [],
+      tracking: "full",
+      status: "ok",
+      refreshedAt: Date.now(),
+    };
+  }
+  const buttonText = (text: string) =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent?.trim() === text,
+    );
+
+  beforeEach(() => {
+    vi.mocked(gitPrCreate).mockReset().mockResolvedValue(
+      "https://github.com/acme/web/pull/490",
+    );
+    vi.mocked(gitIsAncestor).mockReset().mockResolvedValue(false);
+    vi.mocked(gitBranches).mockClear();
+    vi.mocked(gitPrStatus).mockReset().mockResolvedValue(null);
+    vi.mocked(generatePrContent).mockResolvedValue({
+      title: "Next",
+      body: "Body",
+      base: "main",
+      head: "mc/next",
+    });
+  });
+
+  function readyToCreate() {
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        branch: "mc/next",
+        remote: "origin",
+        upstream: "origin/mc/next",
+        aheadOfDefault: 1,
+      }),
+    );
+  }
+
+  it("adds nothing with an empty set or without a chat", async () => {
+    readyToCreate();
+    setView([]);
+    await renderPanel("/repo", "s1");
+    expect(container.querySelector(".pr-section")).toBeNull();
+    expect(container.querySelector("[data-pr-base-field]")).toBeNull();
+    expect(buttonText("Create PR")).toBeDefined();
+
+    setView([prEntry(482, "mc/tasks-panel-keyboard")]);
+    await renderPanel("/repo", undefined);
+    expect(container.querySelector(".pr-section")).toBeNull();
+    expect(container.querySelector("[data-pr-base-field]")).toBeNull();
+    expect(gitIsAncestor).not.toHaveBeenCalled();
+  });
+
+  it("lists the chat's PRs under the sync actions and moves View into the split button", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        branch: "mc/tasks-panel-keyboard",
+        remote: "origin",
+        upstream: "origin/mc/tasks-panel-keyboard",
+      }),
+    );
+    vi.mocked(gitPrStatus).mockResolvedValue({
+      number: 482,
+      title: "PR 482",
+      url: `https://github.com/${REPO}/pull/482`,
+      state: "open",
+    });
+    setView([
+      prEntry(480, "mc/tasks-panel-virtual"),
+      prEntry(482, "mc/tasks-panel-keyboard", { onLiveBranch: true }),
+    ]);
+    await renderPanel("/repo", "s1");
+    const section = container.querySelector(".pr-section");
+    expect(section).not.toBeNull();
+    expect(section!.querySelectorAll("[data-pr-row]")).toHaveLength(2);
+    expect(buttonText("View #482")).toBeDefined();
+    expect(buttonText("View PR #482")).toBeUndefined();
+  });
+
+  it("preselects a stacked base and creates the PR against it", async () => {
+    readyToCreate();
+    setView([
+      prEntry(480, "mc/tasks-panel-virtual"),
+      prEntry(482, "mc/tasks-panel-keyboard", { parent: 480 }),
+    ]);
+    vi.mocked(gitIsAncestor).mockImplementation(async (_cwd, ref) =>
+      ref === "mc/tasks-panel-keyboard" || ref === "mc/tasks-panel-virtual",
+    );
+    await renderPanel("/repo", "s1");
+    await act(async () => {});
+
+    const field = container.querySelector("[data-pr-base-field]");
+    expect(field).not.toBeNull();
+    const label = field!.querySelector("label");
+    expect(label?.textContent).toBe("Base");
+    const select = field!.querySelector("select")!;
+    expect(label?.htmlFor).toBe(select.id);
+    expect(field!.querySelector(".pr-base-value")?.textContent).toBe(
+      "#482 · mc/tasks-panel-keyboard",
+    );
+    expect(field!.querySelector(".pr-tag")?.textContent).toBe("Stacked");
+    expect(gitIsAncestor).toHaveBeenCalledWith(
+      "/repo",
+      "mc/tasks-panel-keyboard",
+      "HEAD",
+    );
+
+    await act(async () => {
+      buttonText("Create PR")!.click();
+      await Promise.resolve();
+    });
+    await act(async () => {});
+    expect(gitPrCreate).toHaveBeenCalledWith(
+      "/repo",
+      "Next",
+      "Body",
+      "mc/tasks-panel-keyboard",
+      "mc/next",
+    );
+  });
+
+  it("lets the user override the base", async () => {
+    readyToCreate();
+    setView([prEntry(482, "mc/tasks-panel-keyboard")]);
+    vi.mocked(gitIsAncestor).mockResolvedValue(true);
+    await renderPanel("/repo", "s1");
+    await act(async () => {});
+    const select = container.querySelector<HTMLSelectElement>(
+      "[data-pr-base-field] select",
+    )!;
+    expect([...select.options].map((o) => o.value)).toEqual([
+      "mc/tasks-panel-keyboard",
+      "main",
+    ]);
+    await act(async () => {
+      select.value = "main";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector(".pr-base-value")?.textContent).toBe("main");
+    expect(container.querySelector("[data-pr-base-field] .pr-tag")).toBeNull();
+    await act(async () => {
+      buttonText("Create PR")!.click();
+      await Promise.resolve();
+    });
+    await act(async () => {});
+    expect(gitPrCreate).toHaveBeenCalledWith("/repo", "Next", "Body", "main", "mc/next");
+  });
+
+  it("targets the default branch when no chat PR is an ancestor", async () => {
+    readyToCreate();
+    setView([prEntry(482, "mc/tasks-panel-keyboard")]);
+    await renderPanel("/repo", "s1");
+    await act(async () => {});
+    expect(container.querySelector(".pr-base-value")?.textContent).toBe("main");
+    expect(container.querySelector("[data-pr-base-field] .pr-tag")).toBeNull();
   });
 });

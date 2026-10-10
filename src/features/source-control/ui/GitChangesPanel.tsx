@@ -62,7 +62,7 @@ import {
   type GitHistoryCommit,
   type GitPr,
 } from "../../../platform/tauri/fs";
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId, LinkedWorkItem } from "../../sessions/model/session";
 import { recordInboxSelfActivity } from "../../inbox/model/inboxSelfActivity";
 import {
   loadChangesView,
@@ -79,7 +79,11 @@ import { applyProjectDiffStats } from "../hooks/useProjectDiffStats";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { confirmNative, reportError } from "../../../shared/lib/confirm";
 import { isRemoteProjectPath } from "../../projects/model/recents";
-import { recordPrUrl } from "../../pr-tracking/data/prTracking";
+import { recordPrUrl, usePrSet } from "../../pr-tracking/data/prTracking";
+import { baseOptions } from "../../pr-tracking/model/baseSuggestion";
+import { PrBaseField, useBaseSuggestion } from "../../pr-tracking/ui/PrBaseField";
+import { PrSection } from "../../pr-tracking/ui/PrSection";
+import { useProjectBranches } from "../hooks/useProjectBranches";
 
 const GIT_POLL_MS = 2000;
 
@@ -98,6 +102,8 @@ type Props = {
   cwd: string;
   /** The chat a PR created here is attributed to, when the checkout is its own. */
   sessionId?: string;
+  /** Opens one of the chat's PRs in the Inbox panel; without it PRs open on GitHub. */
+  onOpenInbox?: (item: LinkedWorkItem) => void;
   enabled: boolean;
   textHarness?: HarnessId;
   selectedPath?: string;
@@ -111,6 +117,7 @@ type Props = {
 export function GitChangesPanel({
   cwd,
   sessionId,
+  onOpenInbox,
   enabled,
   textHarness,
   selectedPath,
@@ -269,6 +276,7 @@ export function GitChangesPanel({
       <ChangedFiles
         cwd={cwd}
         sessionId={sessionId}
+        onOpenInbox={onOpenInbox}
         textHarness={textHarness}
         index={index}
         files={files}
@@ -327,6 +335,7 @@ export function GitChangesPanel({
 function ChangedFiles({
   cwd,
   sessionId,
+  onOpenInbox,
   textHarness,
   index,
   files,
@@ -342,6 +351,7 @@ function ChangedFiles({
 }: {
   cwd: string;
   sessionId?: string;
+  onOpenInbox?: (item: LinkedWorkItem) => void;
   textHarness?: HarnessId;
   index: GitDiffIndex | null;
   files: GitChangedFile[];
@@ -402,6 +412,51 @@ function ChangedFiles({
     canCommit && hasRemote && !diverged && (!amend || !index?.headPushed);
   const canCommitPushPr = canCommitPush && !hasOpenPr && !onDefault;
   const canEditMessage = !busy;
+
+  // The chat's PRs (local checkouts only). With none, the panel is exactly
+  // as before: no list, no Base field, the base `generatePrContent` picks.
+  const prSessionId =
+    sessionId && !isRemoteProjectPath(cwd) ? sessionId : undefined;
+  const prView = usePrSet(prSessionId);
+  const hasChatPrs = !!prView?.entries.some((entry) => !entry.dismissed);
+  const showBaseField =
+    hasChatPrs &&
+    hasRemote &&
+    !hasOpenPr &&
+    !onDefault &&
+    !!index?.branch &&
+    !!index.defaultBranch;
+  const suggestion = useBaseSuggestion({
+    view: showBaseField ? prView : null,
+    cwd,
+    headBranch: index?.branch,
+    head: index?.head,
+    defaultBase: index?.defaultBranch,
+    remote: index?.remote,
+  });
+  const localBranches = useProjectBranches(cwd, enabled && showBaseField);
+  const [baseChoice, setBaseChoice] = useState<{
+    branch: string;
+    ref: string;
+  } | null>(null);
+  const chosenBase =
+    showBaseField && index?.branch && index.defaultBranch
+      ? (baseChoice?.branch === index.branch ? baseChoice.ref : null) ??
+        suggestion?.ref ??
+        index.defaultBranch
+      : null;
+  const baseChoices =
+    showBaseField && index?.branch && index.defaultBranch
+      ? baseOptions({
+          view: prView,
+          headBranch: index.branch,
+          defaultBase: index.defaultBranch,
+          suggestion,
+          localBranches: (localBranches?.branches ?? [])
+            .filter((branch) => branch.remote == null)
+            .map((branch) => branch.name),
+        })
+      : [];
 
   useEffect(() => {
     if (!amendTarget) return;
@@ -666,7 +721,7 @@ function ChangedFiles({
       cwd,
       content.title,
       content.body,
-      content.base,
+      chosenBase ?? content.base,
       content.head,
     );
     const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);
@@ -842,11 +897,33 @@ function ChangedFiles({
             canPublish={canPublish}
             canCreatePr={canCreatePr}
             canViewPr={canViewPr}
+            baseRef={chosenBase ?? undefined}
+            hideViewPr={hasChatPrs}
+            baseField={
+              chosenBase ? (
+                <PrBaseField
+                  value={chosenBase}
+                  options={baseChoices}
+                  disabled={!!busy}
+                  onChange={(ref) =>
+                    setBaseChoice({ branch: index.branch ?? "", ref })
+                  }
+                />
+              ) : null
+            }
             onSync={() => void sync()}
             onCreatePr={() => void createPr()}
             onViewPr={() => {
               if (pr?.url) void openUrl(pr.url);
             }}
+          />
+        ) : null}
+        {prSessionId && hasChatPrs ? (
+          <PrSection
+            sessionId={prSessionId}
+            pr={pr}
+            busy={!!busy}
+            onOpenInbox={onOpenInbox}
           />
         ) : null}
       </div>
@@ -1023,6 +1100,9 @@ export function GitSyncActions({
   canPublish,
   canCreatePr,
   canViewPr,
+  baseRef,
+  hideViewPr = false,
+  baseField,
   onSync,
   onCreatePr,
   onViewPr,
@@ -1037,6 +1117,12 @@ export function GitSyncActions({
   canPublish: boolean;
   canCreatePr: boolean;
   canViewPr: boolean;
+  /** The chosen base, when it is not the default branch's. */
+  baseRef?: string;
+  /** The chat's PR list owns the View action. */
+  hideViewPr?: boolean;
+  /** Rendered under Create PR: the labelled Base field. */
+  baseField?: ReactNode;
   onSync: () => void;
   onCreatePr: () => void;
   onViewPr: () => void;
@@ -1058,8 +1144,9 @@ export function GitSyncActions({
         : behind > 0
           ? `Pull ${behind} commit${behind === 1 ? "" : "s"} from ${dest}`
           : `Push ${ahead} commit${ahead === 1 ? "" : "s"} to ${dest}`;
-  const createTitle = index.defaultBranch
-    ? `Create a pull request into ${index.defaultBranch}`
+  const into = baseRef ?? index.defaultBranch;
+  const createTitle = into
+    ? `Create a pull request into ${into}`
     : "Create pull request";
   const viewTitle = pr?.title
     ? `View PR #${pr.number}: ${pr.title}`
@@ -1068,7 +1155,7 @@ export function GitSyncActions({
     "flex h-7 w-full min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-[12px] font-medium disabled:opacity-40";
   const secondary = `${btn} bg-content/10 text-content hover:bg-content/15`;
   const showCreatePr = !hasOpenPr && !onDefault;
-  const showViewPr = hasOpenPr;
+  const showViewPr = hasOpenPr && !hideViewPr;
   if (!canPublish && !canSync && !showCreatePr && !showViewPr) return null;
 
   return (
@@ -1131,6 +1218,7 @@ export function GitSyncActions({
           Create PR
         </button>
       ) : null}
+      {showCreatePr ? baseField : null}
       {showViewPr ? (
         <button
           type="button"
