@@ -381,7 +381,8 @@ export function buildGraph({ section, gaps, ship, expanded, filter, now, workers
     refs: [],
     meta: ship.ready ? "Ready to ship" : `${plural(ship.left, "thing", "things")} before ship`,
     shas: [],
-    expandable: true,
+    // The verdict only: its checklist sits under the tree (ShipNode), so the row opens nothing here.
+    expandable: false,
     now: false,
   });
 

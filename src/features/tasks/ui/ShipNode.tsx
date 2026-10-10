@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type Ref } from "react";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import type { Ship, ShipItem } from "../model/ship";
 import { TaskGlyph, type GlyphKind } from "./TaskGlyph";
@@ -10,6 +10,8 @@ type Props = {
   steps?: number;
   open: boolean;
   onToggle: () => void;
+  /** The checklist toggle, so the graph's Ship row can hand focus to it. */
+  toggleRef?: Ref<HTMLButtonElement>;
   /** An unmet item was pressed: bring its row into view. */
   onReveal: (id: string) => void;
   onCopySummary: () => void;
@@ -35,13 +37,14 @@ function glyphOf(item: ShipItem): [GlyphKind, string] {
  * passing tests, no gaps. An unmet item with a row is a button that reveals that row.
  * Deferred items are counted but never block.
  */
-export function ShipNode({ ship, tasks, steps, open, onToggle, onReveal, onCopySummary, copied = false }: Props) {
+export function ShipNode({ ship, tasks, steps, open, onToggle, toggleRef, onReveal, onCopySummary, copied = false }: Props) {
   const listId = useId();
   const met = ship.items.filter((i) => i.met === true).length;
   const totals = ["Ready to ship", plural(tasks, "task", "tasks"), ...(steps !== undefined ? [plural(steps, "step", "steps")] : []), plural(ship.commits, "commit", "commits")];
   return (
     <div data-ship className="pt-0.5">
       <button
+        ref={toggleRef}
         type="button"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}

@@ -196,6 +196,47 @@ describe("buildGraph", () => {
     expect(ids(graph(section, { expanded: ["task-3"] }).rows)).toContain("task-3:step:0");
   });
 
+  it("problems filter leaves workers out", () => {
+    const section = plan([task(1, "done"), task(2, "running"), task(3, "blocked")]);
+    const worker: BoardNode = { id: "w1", title: "Worker", status: "running", startedAt: NOW - MIN };
+    const g = graph(section, { filter: "problems", workers: [worker] });
+    expect(ids(g.rows)).toEqual(["hidden:task-1", "task-3", "ship"]);
+    expect(g.rows.some((r) => r.kind === "lane")).toBe(false);
+    expect(g.width).toBe(1);
+    // Under "all" and "left" the same worker shows beside the now task.
+    expect(ids(graph(section, { filter: "left", workers: [worker] }).rows)).toEqual(["hidden:task-1", "task-2", "worker:w1", "task-3", "ship"]);
+  });
+
+  it("filter left keeps a forked expanded task on its side lane, unmerged, with only its unticked steps", () => {
+    const steps = [
+      { text: "a", done: true, ticked: true },
+      { text: "b", done: false, ticked: false },
+    ];
+    const forked = task(2, "running", {
+      steps,
+      stages: [
+        stage("implement", "done", { sha: "2222222" }),
+        stage("review", "attention", { verdict: "2 issues" }),
+        stage("fix", "running", { label: "fix 1" }),
+      ],
+    });
+    const g = graph(plan([task(1, "done"), forked, task(3, "pending")]), { filter: "left", expanded: ["task-2"] });
+    expect(ids(g.rows)).toEqual(["hidden:task-1", "task-2", "task-2:stage:0", "task-2:stage:1", "task-2:stage:2", "task-2:step:1", "task-3", "ship"]);
+    expect(g.width).toBe(2);
+    expect(cells(g.rows)).toEqual([
+      ["dashed", "none"],
+      ["node", "none"],
+      ["node", "none"],
+      ["line", "fork"],
+      ["line", "node"],
+      ["line", "none"],
+      ["node", "none"],
+      ["node", "none"],
+    ]);
+    // A forked task never claims "review clean".
+    expect(refs(g.rows[1])).toEqual([]);
+  });
+
   it("problems filter keeps gap rows", () => {
     const { commits: _c, ...noCommit } = task(2, "done");
     const section = plan(
@@ -298,12 +339,19 @@ describe("buildGraph", () => {
         refs: [],
         meta: "3 things before ship",
         shas: [],
-        expandable: true,
+        expandable: false,
         now: false,
       },
     ]);
     expect(g.width).toBe(1);
     expect(g.counts).toEqual({ all: 0, left: 0, problems: 0 });
+  });
+
+  it("the Ship row is never expandable: its checklist lives outside the tree", () => {
+    const done = plan([task(1, "done")], { finalReview: { id: "final-review", title: "Final review", status: "done" } });
+    for (const ship of [notReady, { ...notReady, ready: true, left: 0 }]) {
+      expect(graph(done, { ship, expanded: ["ship"] }).rows.at(-1)).toMatchObject({ id: "ship", expandable: false });
+    }
   });
 
   it("ship row says how far it is", () => {

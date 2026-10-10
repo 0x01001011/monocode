@@ -15,6 +15,10 @@ type Props = {
   onOpen: (row: GraphRow) => void;
   onOpenCommit: (row: GraphRow, sha: string) => void;
   onCopySha: (sha: string) => void;
+  /** Enter or a click on the Ship row: its checklist lives outside the tree, so the parent takes focus there. */
+  onShip?: () => void;
+  /** Enter or a click on an "N hidden" row: the parent shows every row again. */
+  onShowHidden?: (row: GraphRow) => void;
   /** Panel-side request: a new `token` opens the way to row `id`, scrolls it into view and focuses it. */
   reveal?: TreeReveal;
   /** The rows the parent holds open. Without it a row reads open while its children show. */
@@ -124,7 +128,7 @@ const stop = (event: MouseEvent, run: () => void) => {
   run();
 };
 
-export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopySha, reveal, expandedIds }: Props) {
+export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopySha, onShip, onShowHidden, reveal, expandedIds }: Props) {
   const { rows } = graph;
   const [active, setActive] = useState<{ id: string; parentId?: string }>();
   const items = useRef(new Map<string, HTMLElement>());
@@ -195,7 +199,9 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
         else focusRow(row.parentId === undefined ? undefined : byId.get(row.parentId));
         break;
       case "Enter":
-        if (row.node) onOpen(row);
+        if (row.kind === "ship") onShip?.();
+        else if (row.kind === "hidden") onShowHidden?.(row);
+        else if (row.node?.target) onOpen(row);
         else if (row.expandable) onToggle(row.id);
         break;
       // The letter keys only claim the event when they do something.
@@ -299,9 +305,12 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
     const above = rows[index - 1]?.cells;
     const below = rows[index + 1]?.cells;
     const onRowClick = () => {
-      if (row.expandable) onToggle(row.id);
+      if (row.kind === "ship") onShip?.();
+      else if (hidden) onShowHidden?.(row);
+      else if (row.expandable) onToggle(row.id);
       else if (row.node) onOpen(row);
     };
+    const pressable = row.expandable || row.node !== undefined || (row.kind === "ship" && onShip) || (hidden && onShowHidden);
     const level = levelOf(row);
     const parent = level === 2 && row.parentId !== undefined && byId.has(row.parentId) ? row.parentId : undefined;
     return (
@@ -332,7 +341,7 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
           onClick={onRowClick}
           className={`mx-1 grid grid-rows-[1fr] rounded-md hover:bg-selection-subtle ${
             level === 2 ? "motion-safe:transition-[grid-template-rows] motion-safe:duration-150 motion-safe:ease-out motion-safe:starting:grid-rows-[0fr]" : ""
-          } ${row.expandable || row.node ? "cursor-pointer" : ""} ${running ? "bg-accent/11" : glyph === "struggling" ? "bg-warning/4" : ""} ${
+          } ${pressable ? "cursor-pointer" : ""} ${running ? "bg-accent/11" : glyph === "struggling" ? "bg-warning/4" : ""} ${
             hidden ? "text-muted" : ""
           }`}
         >

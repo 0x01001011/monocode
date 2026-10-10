@@ -490,6 +490,25 @@ describe("TasksPanel filter", () => {
     expect(rowIds()).toContain("task-1");
   });
 
+  it("a hidden row brings every row back and focuses the first row it hid", () => {
+    render({ board: board({ plan: plan() }) });
+    click(radio("Left"));
+    const hidden = () => container.querySelector<HTMLElement>("[data-row-id='hidden:task-1']");
+    act(() => hidden()!.focus());
+    act(() => {
+      hidden()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    expect(radio("All")?.getAttribute("aria-checked")).toBe("true");
+    expect(rowIds()).toContain("task-1");
+    expect(document.activeElement?.getAttribute("data-row-id")).toBe("task-1");
+    // A click does the same, and the first done task does not open by itself.
+    click(radio("Left"));
+    click(hidden()?.querySelector("[data-row]") ?? undefined);
+    expect(radio("All")?.getAttribute("aria-checked")).toBe("true");
+    expect(document.activeElement?.getAttribute("data-row-id")).toBe("task-1");
+    expect(rowIds().filter((id) => id?.startsWith("task-1:"))).toEqual([]);
+  });
+
   it("is kept per plan for the session", () => {
     const alpha = { workspaces: [{ slug: "alpha" }, { slug: "beta" }] as TaskBoard["workspaces"], plan: plan() };
     render({ board: board({ ...alpha, selectedWorkspace: "alpha" }) });
@@ -624,12 +643,24 @@ describe("TasksPanel ship node", () => {
     expect(shipToggle()?.textContent).toBe("Ship checklist · 0 of 4 met");
     expect(container.querySelector("[data-row-id=ship]")?.textContent).toContain("4 things before ship");
     expect(shipToggle()?.getAttribute("aria-expanded")).toBe("false");
-    // The graph's own Ship row is the same disclosure.
-    const shipRow = container.querySelector("[data-row-id=ship]");
-    expect(shipRow?.getAttribute("aria-expanded")).toBe("false");
-    click(shipRow?.querySelector("[data-row]") ?? undefined);
+  });
+
+  it("the graph's Ship row is the verdict, not a second disclosure: it opens the checklist and moves focus to its toggle", () => {
+    const p = plan();
+    render({ board: board({ plan: p, ship: shipReadiness(p, undefined) }) });
+    const shipRow = () => container.querySelector<HTMLElement>("[data-row-id=ship]")!;
+    expect(shipRow().hasAttribute("aria-expanded")).toBe(false);
+    act(() => shipRow().focus());
+    act(() => {
+      shipRow().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
     expect(shipToggle()?.getAttribute("aria-expanded")).toBe("true");
-    expect(container.querySelector("[data-row-id=ship]")?.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(shipToggle());
+    // Already open: a click keeps it open and still lands on the toggle.
+    act(() => shipRow().focus());
+    click(shipRow().querySelector("[data-row]") ?? undefined);
+    expect(shipToggle()?.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(shipToggle());
   });
 
   it("an unmet item reveals its row", () => {
@@ -673,6 +704,21 @@ describe("TasksPanel ship node", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("Copy summary says Copied only for its own copy, not a sha or the menu's", () => {
+    const p = allDone();
+    const ship = shipReadiness(p, { status: "passed", command: "npx vitest run" });
+    render({ board: board({ plan: p, ship }), onCopy: vi.fn() });
+    const copyButton = () => Array.from(shipBlock()?.querySelectorAll("button") ?? []).find((b) => /^Cop/.test(b.textContent ?? ""));
+    click(container.querySelector("button[aria-label='Copy 1111111']") ?? undefined);
+    expect(container.querySelector("[aria-live=polite]")?.textContent).toBe("Copied");
+    expect(copyButton()?.textContent).toBe("Copy summary");
+    click(container.querySelector("button[aria-haspopup=menu]") ?? undefined);
+    click(container.querySelector("[role=menu] [role=menuitem]") ?? undefined);
+    expect(copyButton()?.textContent).toBe("Copy summary");
+    click(copyButton());
+    expect(copyButton()?.textContent).toBe("Copied");
   });
 });
 

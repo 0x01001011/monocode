@@ -78,26 +78,29 @@ function useInView(ref: RefObject<HTMLElement | null>): boolean {
   return inView;
 }
 
+/** Which control asked for a copy, so only that control says "Copied". */
+type CopySource = "ship" | "menu" | "sha";
+
 /** Copies through `onCopy` (else the clipboard) and says how it went for two seconds. */
 function useCopy(onCopy: Props["onCopy"]) {
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<{ text: string; source?: CopySource }>({ text: "" });
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
-  const show = (text: string) => {
-    setNotice(text);
+  const show = (text: string, source: CopySource) => {
+    setNotice({ text, source });
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setNotice(""), COPIED_MS);
+    timer.current = setTimeout(() => setNotice({ text: "" }), COPIED_MS);
   };
-  const copy = (text: string) => {
+  const copy = (text: string, source: CopySource) => {
     try {
       const result = onCopy ? onCopy(text) : navigator.clipboard.writeText(text);
-      if (result instanceof Promise) result.then(() => show(COPIED), () => show("Could not copy"));
-      else show(COPIED);
+      if (result instanceof Promise) result.then(() => show(COPIED, source), () => show("Could not copy", source));
+      else show(COPIED, source);
     } catch {
-      show("Could not copy");
+      show("Could not copy", source);
     }
   };
-  return { notice, copy };
+  return { notice: notice.text, copiedBy: notice.text === COPIED ? notice.source : undefined, copy };
 }
 
 function Legend() {
@@ -137,7 +140,8 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
   const menuButton = useRef<HTMLButtonElement>(null);
   const menuItem = useRef<HTMLButtonElement>(null);
   const groupsRef = useRef<HTMLDivElement>(null);
-  const { notice, copy } = useCopy(onCopy);
+  const shipToggle = useRef<HTMLButtonElement>(null);
+  const { notice, copiedBy, copy } = useCopy(onCopy);
 
   const finished = plan.total > 0 && plan.done >= plan.total;
   const final = plan.finalReview;
@@ -181,7 +185,17 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
     const node = row.node ?? graph.rows.find((r) => r.id === row.parentId)?.node ?? final;
     if (node) onOpenNode?.({ ...node, target: { kind: "commit", ref: sha } }, sectionOf(node));
   };
-  const copySummary = () => copy(planSummaryMarkdown(plan, ship, board.gaps));
+  const copySummary = (source: CopySource) => copy(planSummaryMarkdown(plan, ship, board.gaps), source);
+  // The graph's Ship row is the verdict; its checklist is the disclosure, so focus moves there.
+  const onShip = () => {
+    if (!isExpanded(SHIP_ID)) onToggle(SHIP_ID);
+    shipToggle.current?.focus();
+  };
+  // An "N hidden" row brings every row back and lands on the first row it hid, left closed.
+  const onShowHidden = (row: GraphRow) => {
+    onFilter("all");
+    setReveal((prev) => ({ id: row.id.replace(/^hidden:/, ""), token: (prev?.token ?? 0) + 1 }));
+  };
 
   const closeMenu = () => {
     setMenu(false);
@@ -311,7 +325,7 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
             type="button"
             role="menuitem"
             onClick={() => {
-              copySummary();
+              copySummary("menu");
               closeMenu();
             }}
             className={`min-h-6 rounded-[5px] px-2 text-left text-[12.5px] text-content hover:bg-selection ${FOCUS}`}
@@ -357,7 +371,9 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
         onToggle={onToggle}
         onOpen={onOpenRow}
         onOpenCommit={onOpenCommit}
-        onCopySha={copy}
+        onCopySha={(sha) => copy(sha, "sha")}
+        onShip={onShip}
+        onShowHidden={onShowHidden}
         expandedIds={expandedIds}
         {...(reveal ? { reveal } : {})}
       />
@@ -367,9 +383,10 @@ function PlanBlock({ board, plan, now, filter, onFilter, request, onOpenNode, on
         {...(plan.steps ? { steps: plan.steps.total } : {})}
         open={isExpanded(SHIP_ID)}
         onToggle={() => onToggle(SHIP_ID)}
+        toggleRef={shipToggle}
         onReveal={onReveal}
-        onCopySummary={copySummary}
-        copied={notice === COPIED}
+        onCopySummary={() => copySummary("ship")}
+        copied={copiedBy === "ship"}
       />
       <div ref={groupsRef} className="mt-2">
         <NoteGroups

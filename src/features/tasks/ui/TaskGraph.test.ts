@@ -265,13 +265,50 @@ describe("TaskGraph", () => {
     expect(item("task-3").tabIndex).toBe(0);
   });
 
-  it("Enter opens a row that stands for a node; a stage does nothing", () => {
+  it("Enter opens a row with a target, toggles an expandable row without one, and a stage does nothing", () => {
     const props = render({ graph: graphOf(fixture(), ["task-2"]) });
-    focus(item("task-2"));
+    focus(item("task-3"));
+    press(item("task-3"), "Enter");
+    expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: "task-3" }));
+    expect(props.onToggle).not.toHaveBeenCalled();
+    // Task 2 has no target: Enter opens or closes it instead of doing nothing.
     press(item("task-2"), "Enter");
-    expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: "task-2" }));
+    expect(props.onToggle).toHaveBeenCalledWith("task-2");
+    expect(props.onOpen).toHaveBeenCalledTimes(1);
     press(item("task-2:stage:0"), "Enter");
     expect(props.onOpen).toHaveBeenCalledTimes(1);
+    expect(props.onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("the Ship row is not a disclosure: Enter and click ask for the Ship checklist, Right Arrow does nothing", () => {
+    const onShip = vi.fn();
+    const props = render({ onShip });
+    const ship = item("ship");
+    expect(ship.hasAttribute("aria-expanded")).toBe(false);
+    focus(ship);
+    press(ship, "ArrowRight");
+    expect(props.onToggle).not.toHaveBeenCalled();
+    press(ship, "Enter");
+    expect(onShip).toHaveBeenCalledTimes(1);
+    click(ship.querySelector("[data-row]")!);
+    expect(onShip).toHaveBeenCalledTimes(2);
+    expect(props.onToggle).not.toHaveBeenCalled();
+    expect(props.onOpen).not.toHaveBeenCalled();
+    expect(ship.querySelector("[data-row]")?.className).toContain("cursor-pointer");
+  });
+
+  it("Enter or click on a hidden row asks to show every row", () => {
+    const onShowHidden = vi.fn();
+    const rows = [row({ id: "hidden:task-1", kind: "hidden", cells: ["dashed"], title: "3 done hidden" }), row({ id: "task-4" })];
+    const props = render({ graph: { rows, width: 1, counts: { all: 4, left: 1, problems: 0 } }, onShowHidden });
+    const hidden = item("hidden:task-1");
+    focus(hidden);
+    press(hidden, "Enter");
+    expect(onShowHidden).toHaveBeenCalledWith(expect.objectContaining({ id: "hidden:task-1" }));
+    click(hidden.querySelector("[data-row]")!);
+    expect(onShowHidden).toHaveBeenCalledTimes(2);
+    expect(props.onOpen).not.toHaveBeenCalled();
+    expect(hidden.querySelector("[data-row]")?.className).toContain("cursor-pointer");
   });
 
   it("o opens the row's target only when it has one", () => {
@@ -515,7 +552,7 @@ describe("TaskGraph", () => {
     expect(nows[0]?.closest("[role=treeitem]")).toBe(item("b"));
   });
 
-  it("clicking an expandable row asks to toggle; a hidden row is a plain muted item", () => {
+  it("clicking an expandable row asks to toggle; a hidden row is a muted item", () => {
     const rows = [row({ id: "a", expandable: true }), row({ id: "hidden:x", kind: "hidden", cells: ["dashed"], title: "3 done hidden" })];
     const props = render({ graph: { rows, width: 1, counts: { all: 4, left: 0, problems: 0 } } });
     click(item("a").querySelector("[data-row]")!);
@@ -525,6 +562,7 @@ describe("TaskGraph", () => {
     expect(hidden.querySelector("[data-row]")?.className).toContain("text-muted");
     click(hidden.querySelector("[data-row]")!);
     expect(props.onOpen).not.toHaveBeenCalled();
+    expect(props.onToggle).toHaveBeenCalledTimes(1);
   });
 
   describe("reveal", () => {
