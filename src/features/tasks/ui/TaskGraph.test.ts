@@ -19,7 +19,7 @@ function task(n: number, status: BoardStatus, over: Partial<BoardNode> = {}): Bo
   return { id: `task-${n}`, title: `Task ${n}`, index: n, status, ...over };
 }
 
-function plan(nodes: BoardNode[]): BoardSection {
+function plan(nodes: BoardNode[], over: Partial<BoardSection> = {}): BoardSection {
   return {
     source: "sdd",
     id: "sdd:p",
@@ -27,6 +27,7 @@ function plan(nodes: BoardNode[]): BoardSection {
     done: nodes.filter((n) => n.status === "done").length,
     total: nodes.length,
     nodes,
+    ...over,
   };
 }
 
@@ -176,8 +177,33 @@ describe("TaskGraph", () => {
   });
 
   it("adds the task number when the title does not carry it", () => {
-    render({ graph: { rows: [row({ id: "a", index: 4, title: "Graph view", meta: "1m" })], width: 1, counts: { all: 1, left: 0, problems: 0 } } });
+    const rows = [
+      row({ id: "a", index: 4, title: "Graph view", meta: "1m" }),
+      row({ id: "b", index: 1, title: "Task 10" }),
+    ];
+    render({ graph: { rows, width: 1, counts: { all: 2, left: 0, problems: 0 } } });
     expect(item("a").getAttribute("aria-label")).toBe("Task 4, Graph view, done, 1m");
+    expect(item("b").getAttribute("aria-label")).toBe("Task 1, Task 10, done");
+  });
+
+  it("gives the final review, worker lanes and hidden runs level 1", () => {
+    const section = plan(
+      [task(1, "done", { commits: "abcdef0" }), task(2, "running", { startedAt: NOW - MIN })],
+      { finalReview: { id: "final-review", title: "Final review", status: "pending" } },
+    );
+    const graph = buildGraph({
+      section,
+      gaps: gapsFor(section),
+      ship: shipReadiness(section, undefined),
+      expanded: new Set(),
+      filter: "left",
+      now: NOW,
+      workers: [{ id: "w1", title: "Worker", status: "running", startedAt: NOW - MIN }],
+    });
+    render({ graph });
+    expect(item("final-review").getAttribute("aria-level")).toBe("1");
+    expect(item("worker:w1").getAttribute("aria-level")).toBe("1");
+    expect(item("hidden:task-1").getAttribute("aria-level")).toBe("1");
   });
 
   it("labels an unticked step as not ticked", () => {
@@ -265,6 +291,19 @@ describe("TaskGraph", () => {
     expect(props.onCopySha).toHaveBeenCalledTimes(1);
   });
 
+  it("o, c and n leave the event alone when they do nothing", () => {
+    const rows = [row({ id: "a" })];
+    render({ graph: { rows, width: 1, counts: { all: 1, left: 0, problems: 0 } } });
+    const a = item("a");
+    for (const key of ["o", "c", "n"]) {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      act(() => {
+        a.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented, key).toBe(false);
+    }
+  });
+
   it("n jumps to the now row", () => {
     render();
     focus(item("task-1"));
@@ -315,14 +354,76 @@ describe("TaskGraph", () => {
     expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: "task-3" }));
   });
 
-  it("row actions show on hover and focus and are tabbable only on the active row", () => {
+  it("row actions show on hover or with focus inside them, and are tabbable only on the active row", () => {
     render();
     const actions = item("task-1").querySelector<HTMLElement>("[data-actions]")!;
     expect(actions.className).toContain("opacity-0");
-    expect(actions.className).toContain("group-hover:opacity-100");
-    expect(actions.className).toContain("group-focus-within:opacity-100");
+    expect(actions.className).toContain("group-hover/row:opacity-100");
+    expect(actions.className).toContain("group-has-[[data-actions]:focus-within]/row:opacity-100");
+    // Zero-width rather than display:none, so Tab from the focused row still reaches the buttons.
+    expect(actions.className).toContain("max-w-0");
+    expect(actions.className.split(" ")).not.toContain("hidden");
     expect(Array.from(actions.querySelectorAll("button")).map((b) => b.tabIndex)).toEqual([0, 0, 0]);
     expect(Array.from(item("task-2").querySelectorAll("button")).every((b) => b.tabIndex === -1)).toBe(true);
+  });
+
+  it("actions sit in the row's flow and replace the meta, never the title", () => {
+    render();
+    const t1 = item("task-1");
+    const title = t1.querySelector<HTMLElement>("[title='Task 1']")!;
+    const actions = t1.querySelector<HTMLElement>("[data-actions]")!;
+    expect(actions.parentElement).toBe(title.parentElement);
+    const meta = t1.querySelector<HTMLElement>("[data-meta]")!;
+    expect(meta.className).toContain("group-hover/row:hidden");
+    expect(meta.className).toContain("group-has-[[data-actions]:focus-within]/row:hidden");
+    expect(t1.querySelector("[data-ref]")?.className).toContain("group-hover/row:hidden");
+    // A row with nothing to offer keeps its meta on hover.
+    expect(item("ship").querySelector("[data-meta]")?.className).not.toContain("group-hover/row:hidden");
+  });
+
+  it("focusing a row does not hide its title or anything else", () => {
+    render();
+    const t1 = item("task-1");
+    focus(t1);
+    expect(document.activeElement).toBe(t1);
+    const title = t1.querySelector<HTMLElement>("[title='Task 1']")!;
+    expect(title.textContent).toBe("Task 1");
+    // Nothing in the row reacts to the treeitem's own focus; only hover or focus inside the actions.
+    for (const el of t1.querySelectorAll<HTMLElement>("*")) {
+      expect(el.getAttribute("class") ?? "").not.toMatch(/group-focus(-within|-visible)?:/);
+    }
+    expect(title.className).toContain("min-w-16");
+  });
+
+  it("refs shrink before the title, and a narrow tab drops the second", () => {
+    const rows = [
+      row({
+        id: "a",
+        refs: [
+          { text: "fix 3 of 5", tone: "warn" },
+          { text: "no commit", tone: "warn" },
+        ],
+      }),
+    ];
+    render({ graph: { rows, width: 1, counts: { all: 1, left: 1, problems: 1 } } });
+    expect(container.querySelector("[role=tree]")?.className).toContain("@container");
+    const [first, second] = Array.from(item("a").querySelectorAll<HTMLElement>("[data-ref]"));
+    expect(first!.className).toContain("min-w-0");
+    expect(first!.className).toContain("truncate");
+    expect(first!.className).not.toContain("@max-[300px]:hidden");
+    expect(second!.className).toContain("@max-[300px]:hidden");
+    expect(item("a").querySelector("[title='a']")?.className).toContain("min-w-16");
+  });
+
+  it("draws a review stage hollow and an implement stage solid", () => {
+    render({ graph: graphOf(fixture(), ["task-1", "task-2"]) });
+    const node = (id: string) => item(id).querySelector("[data-node]")!.getAttribute("class") ?? "";
+    // A clean review is hollow too, outlined in the done colour.
+    expect(node("task-1:stage:1")).toContain("fill-background-base");
+    expect(node("task-1:stage:1")).toContain("stroke-success");
+    expect(node("task-2:stage:1")).toContain("fill-background-base");
+    expect(node("task-2:stage:1")).toContain("stroke-warning");
+    expect(node("task-2:stage:0")).toContain("fill-success");
   });
 
   it("expanded stage rows always show their sha links", () => {
@@ -471,6 +572,16 @@ describe("GraphGutter", () => {
     gutter({ cells: ["node", "merge"], above: ["line", "node"], below: ["node", "none"] });
     expect(container.querySelectorAll("[data-curve]")).toHaveLength(1);
     expect(container.querySelectorAll("[data-node]")).toHaveLength(1);
+  });
+
+  it("draws a hollow node in the status colour", () => {
+    gutter({ kind: "stage", status: "done", hollow: true });
+    const node = container.querySelector("[data-node]")!;
+    expect(node.tagName.toLowerCase()).toBe("circle");
+    expect(node.getAttribute("class")).toContain("fill-background-base");
+    expect(node.getAttribute("class")).toContain("stroke-success");
+    gutter({ kind: "stage", status: "pending", hollow: true });
+    expect(container.querySelector("[data-node]")?.getAttribute("stroke")).toBe("currentColor");
   });
 
   it("draws a dashed rail for hidden rows", () => {

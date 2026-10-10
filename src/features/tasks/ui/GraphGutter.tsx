@@ -12,6 +12,8 @@ type Props = {
   status: BoardStatus;
   kind: GraphRow["kind"];
   now: boolean;
+  /** A review stage: drawn as a hollow circle, its outline still coloured by status. */
+  hollow?: boolean;
   /** The previous and next rows' cells; a node only draws half lines toward lanes that go on. */
   above?: LaneCell[];
   below?: LaneCell[];
@@ -23,8 +25,30 @@ const center = (column: number) => column * LANE + LANE / 2;
 
 const lineProps = { stroke: "currentColor", strokeWidth: STROKE } as const;
 
-/** Solid dot = done, ring = not started, ringed dot = running, hollow = review found issues, diamond = Ship. */
-function NodeShape({ status, kind }: { status: BoardStatus; kind: GraphRow["kind"] }): ReactElement {
+const HOLLOW_STROKE: Record<BoardStatus, string | undefined> = {
+  done: "stroke-success",
+  running: "stroke-focus",
+  attention: "stroke-warning",
+  failed: "stroke-danger",
+  blocked: "stroke-danger",
+  pending: undefined,
+  cancelled: undefined,
+};
+
+/** Solid dot = done, ring = not started, ringed dot = running, hollow = review, diamond = Ship. */
+function NodeShape({ status, kind, hollow }: { status: BoardStatus; kind: GraphRow["kind"]; hollow: boolean }): ReactElement {
+  if (hollow) {
+    const tone = HOLLOW_STROKE[status];
+    return (
+      <circle
+        data-node
+        r={3.5}
+        className={`fill-background-base ${tone ?? ""}`}
+        stroke={tone ? undefined : "currentColor"}
+        strokeWidth={2}
+      />
+    );
+  }
   if (kind === "ship") {
     const points = "0,-4.5 4.5,0 0,4.5 -4.5,0";
     if (status === "done") return <polygon data-node points={points} className="fill-success" />;
@@ -77,7 +101,7 @@ function Curve({ from, to, width }: { from: number; to: number; width: number })
   );
 }
 
-export function GraphGutter({ cells, status, kind, now, above, below }: Props) {
+export function GraphGutter({ cells, status, kind, now, hollow = false, above, below }: Props) {
   const width = cells.length * LANE;
   const parts: ReactElement[] = [];
   cells.forEach((cell, c) => {
@@ -114,7 +138,7 @@ export function GraphGutter({ cells, status, kind, now, above, below }: Props) {
   // Nodes go last so they sit on top of the lines through them.
   const nodeColumn = kind === "step" || kind === "hidden" ? -1 : cells.findIndex((cell) => cell === "node" || cell === "fork");
   if (nodeColumn >= 0) {
-    const shape = <NodeShape status={status} kind={kind} />;
+    const shape = <NodeShape status={status} kind={kind} hollow={hollow} />;
     parts.push(
       <svg key="node" x={center(nodeColumn)} y="50%" overflow="visible">
         {now ? <g className="motion-safe:animate-pulse">{shape}</g> : shape}

@@ -30,7 +30,7 @@ const REF_TONE: Record<RefTone, string> = {
   muted: "bg-content/8 text-muted",
   now: "bg-accent/22 text-focus",
 };
-const PILL = "shrink-0 rounded-full px-1.5 text-[11px] leading-4 whitespace-nowrap";
+const PILL = "rounded-full px-1.5 text-[11px] leading-4 whitespace-nowrap";
 const ICON_BUTTON =
   "grid size-6 shrink-0 place-items-center rounded-md text-muted hover:bg-content/10 hover:text-content focus-visible:focus-ring-inset";
 
@@ -45,6 +45,15 @@ const TARGET_LABEL: Record<BoardTarget["kind"], string> = {
 
 /** A child row id the graph is not showing yet: `<task>:stage:N`, `<task>:step:N` or `<task>:merge`. */
 const CHILD_ID = /^(.+):(?:stage:\d+|step:\d+|merge)$/;
+const STAGE_ID = /:stage:(\d+)$/;
+
+/**
+ * While the row is hovered or focus is inside its actions, the actions take the place of the
+ * meta, refs and NOW pill, so the title truncates instead of being covered. A focused row alone
+ * keeps its normal look (keyboard users have `o` and `c`).
+ */
+const ACTIONS_SHOWN = "group-has-[[data-actions]:focus-within]/row";
+const GIVES_WAY = `group-hover/row:hidden ${ACTIONS_SHOWN}:hidden`;
 
 const levelOf = (row: GraphRow) => (row.kind === "stage" || row.kind === "step" ? 2 : 1);
 
@@ -61,7 +70,7 @@ function glyphText(row: GraphRow): string | undefined {
 
 /** "Task 3, done, fixed in 1 round, 8m": title (with its number when the title lacks it), status, refs, meta. */
 function accessibleName(row: GraphRow, status: string | undefined): string {
-  const numbered = row.index !== undefined && !row.title.startsWith(`Task ${row.index}`);
+  const numbered = row.index !== undefined && !new RegExp(`^Task ${row.index}\\b`).test(row.title);
   const parts = [numbered ? `Task ${row.index}, ${row.title}` : row.title];
   if (status !== undefined) parts.push(status);
   if (row.now) parts.push("now");
@@ -149,24 +158,30 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
         if (row.node) onOpen(row);
         else if (row.expandable) onToggle(row.id);
         break;
+      // The letter keys only claim the event when they do something.
       case "o":
-        if (row.node?.target) onOpen(row);
+        if (!row.node?.target) return;
+        onOpen(row);
         break;
       case "c": {
         const sha = row.shas[row.shas.length - 1];
-        if (sha !== undefined) onCopySha(sha);
+        if (sha === undefined) return;
+        onCopySha(sha);
         break;
       }
-      case "n":
-        focusRow(rows.find((r) => r.now));
+      case "n": {
+        const now = rows.find((r) => r.now);
+        if (!now) return;
+        focusRow(now);
         break;
+      }
       default:
         return;
     }
     event.preventDefault();
   };
 
-  const shaLink = (row: GraphRow, sha: string, tabIndex: number) => (
+  const shaLink = (row: GraphRow, sha: string, tabIndex: number, extra = "") => (
     <button
       key={`open-${sha}`}
       type="button"
@@ -174,12 +189,12 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
       tabIndex={tabIndex}
       aria-label={`Open commit ${sha}`}
       onClick={(e) => stop(e, () => onOpenCommit(row, sha))}
-      className="min-h-6 shrink-0 rounded-md px-1 font-mono text-[11px] text-focus hover:underline focus-visible:focus-ring-inset"
+      className={`min-h-6 shrink-0 rounded-md px-1 font-mono text-[11px] text-focus hover:underline focus-visible:focus-ring-inset ${extra}`}
     >
       {sha}
     </button>
   );
-  const copyButton = (sha: string, tabIndex: number) => (
+  const copyButton = (sha: string, tabIndex: number, extra = "") => (
     <button
       key={`copy-${sha}`}
       type="button"
@@ -187,7 +202,7 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
       aria-label={`Copy ${sha}`}
       title={`Copy ${sha}`}
       onClick={(e) => stop(e, () => onCopySha(sha))}
-      className={ICON_BUTTON}
+      className={`${ICON_BUTTON} ${extra}`}
     >
       <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
     </button>
@@ -228,11 +243,19 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
         </button>,
       );
     }
-    for (const sha of row.shas) {
+    row.shas.forEach((sha, i) => {
+      // Below 340 px a range offers only its last commit, so the actions fit beside the title.
+      const narrow = i < row.shas.length - 1 ? "@max-[340px]:hidden" : "";
       // A stage shows its commit links on the row itself; only the copy buttons wait for hover.
-      if (!isStage) actions.push(shaLink(row, sha, actionTab));
-      actions.push(copyButton(sha, actionTab));
-    }
+      if (!isStage) actions.push(shaLink(row, sha, actionTab, narrow));
+      actions.push(copyButton(sha, actionTab, narrow));
+    });
+    const givesWay = actions.length > 0 ? GIVES_WAY : "";
+    const stageKind =
+      isStage && row.parentId !== undefined
+        ? byId.get(row.parentId)?.node?.stages?.[Number(STAGE_ID.exec(row.id)?.[1] ?? -1)]?.kind
+        : undefined;
+    const hollow = stageKind === "review" || stageKind === "final-review";
     const above = rows[index - 1]?.cells;
     const below = rows[index + 1]?.cells;
     const onRowClick = () => {
@@ -261,7 +284,8 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
           if (e.target === e.currentTarget) setActiveId(row.id);
         }}
         // The li draws no ring itself; its row does, inset so the tab's scroll frame cannot clip it.
-        className="group relative list-none outline-none [&:focus-visible>[data-row]]:focus-ring-inset"
+        // A named group: an outer `group` (the sidebar has some) must not open every row's actions.
+        className="group/row list-none outline-none [&:focus-visible>[data-row]]:focus-ring-inset"
       >
         <div
           data-row
@@ -273,7 +297,15 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
           }`}
         >
           <div className="flex min-h-0 gap-2 overflow-hidden pr-2 pl-1.5 text-[12.5px]">
-            <GraphGutter cells={row.cells} status={row.status} kind={row.kind} now={row.now} above={above} below={below} />
+            <GraphGutter
+              cells={row.cells}
+              status={row.status}
+              kind={row.kind}
+              now={row.now}
+              hollow={hollow}
+              above={above}
+              below={below}
+            />
             <div className={`flex min-w-0 flex-1 gap-2 ${isStep ? "min-h-6 items-start py-1" : `items-center py-0.5 ${level === 2 ? "min-h-6" : "min-h-6.5"}`}`}>
               {hidden ? null : (
                 <TaskGlyph kind={glyph} small={level === 2} label={glyphText(row)} />
@@ -283,43 +315,57 @@ export function TaskGraph({ graph, label, onToggle, onOpen, onOpenCommit, onCopy
               ) : null}
               <span
                 title={row.title}
-                className={`min-w-0 flex-1 ${isStep ? "line-clamp-2 leading-4 break-words" : "truncate"} ${titleTone}`}
+                // At least 64 px of title beside the refs; it may give that up only while the actions show.
+                className={`min-w-16 flex-1 ${actions.length > 0 ? `group-hover/row:min-w-0 ${ACTIONS_SHOWN}:min-w-0` : ""} ${
+                  isStep ? "line-clamp-2 leading-4 break-words" : "truncate"
+                } ${titleTone}`}
               >
                 {row.title}
               </span>
               {row.now ? (
-                <span data-now-pill className={`${PILL} font-semibold ${REF_TONE.now}`}>
+                <span data-now-pill className={`${PILL} shrink-0 font-semibold ${REF_TONE.now} ${givesWay}`}>
                   NOW
                 </span>
               ) : null}
-              {row.refs.slice(0, MAX_REFS).map((ref) => (
-                <span key={ref.text} data-ref className={`${PILL} ${REF_TONE[ref.tone]}`}>
+              {row.refs.slice(0, MAX_REFS).map((ref, i) => (
+                <span
+                  key={`${ref.tone}:${ref.text}:${i}`}
+                  data-ref
+                  title={ref.text}
+                  // Refs shrink before the title does, and a narrow tab keeps only the first.
+                  className={`${PILL} max-w-[45%] min-w-0 truncate ${REF_TONE[ref.tone]} ${i > 0 ? "@max-[300px]:hidden" : ""} ${givesWay}`}
+                >
                   {ref.text}
                 </span>
               ))}
               {isStage ? row.shas.map((sha) => shaLink(row, sha, actionTab)) : null}
               {row.meta !== undefined ? (
-                <span className={`shrink-0 text-[11.5px] whitespace-nowrap tabular-nums ${running ? "text-content" : "text-muted"}`}>
+                <span
+                  data-meta
+                  className={`shrink-0 text-[11.5px] whitespace-nowrap tabular-nums ${running ? "text-content" : "text-muted"} ${givesWay}`}
+                >
                   {row.meta}
+                </span>
+              ) : null}
+              {actions.length > 0 ? (
+                // In flow and zero-width until shown; the buttons stay focusable, so Tab from the
+                // focused row walks into them and focus inside opens them.
+                <span
+                  data-actions
+                  className={`pointer-events-none flex max-w-0 shrink-0 items-center gap-px overflow-hidden opacity-0 group-hover/row:pointer-events-auto group-hover/row:max-w-none group-hover/row:opacity-100 ${ACTIONS_SHOWN}:pointer-events-auto ${ACTIONS_SHOWN}:max-w-none ${ACTIONS_SHOWN}:opacity-100`}
+                >
+                  {actions}
                 </span>
               ) : null}
             </div>
           </div>
-          {actions.length > 0 ? (
-            <span
-              data-actions
-              className="pointer-events-none absolute inset-y-0 right-1 flex items-center gap-px rounded-md bg-background-base pl-1 opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
-            >
-              {actions}
-            </span>
-          ) : null}
         </div>
       </li>
     );
   };
 
   return (
-    <ul ref={treeRef} role="tree" aria-label={label} className="m-0 list-none p-0" {...keepFocus}>
+    <ul ref={treeRef} role="tree" aria-label={label} className="@container m-0 list-none p-0" {...keepFocus}>
       {rows.map(renderRow)}
     </ul>
   );
