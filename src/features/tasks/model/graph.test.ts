@@ -168,6 +168,12 @@ describe("buildGraph", () => {
     expect(one.width).toBe(3);
   });
 
+  it("workers sit beside an attention task", () => {
+    const section = plan([task(1, "done"), task(2, "attention", { fixRounds: 2 }), task(3, "pending")]);
+    const worker: BoardNode = { id: "w1", title: "Worker", status: "running", startedAt: NOW - MIN };
+    expect(ids(graph(section, { workers: [worker] }).rows)).toEqual(["task-1", "task-2", "worker:w1", "task-3", "ship"]);
+  });
+
   it("filter left on done plan", () => {
     const section = plan([1, 2, 3, 4, 5, 6].map((n) => task(n, "done")));
     const g = graph(section, { filter: "left", ship: { ...notReady, ready: true, left: 0 } });
@@ -241,7 +247,10 @@ describe("buildGraph", () => {
       task(6, "pending"),
     ]);
     const g = graph(section);
-    expect(g.rows.slice(0, 6).map((r) => r.meta)).toEqual(["8m", "2/5", "1m 5s", "4 steps", "1 step", undefined]);
+    expect(g.rows.slice(0, 6).map((r) => r.meta)).toEqual(["8m", "2/5 · 1m 0s", "1m 5s", "4 steps", "1 step", undefined]);
+    // With no known start there is no duration to add, so the step count stands alone.
+    const unknown = graph(plan([task(1, "attention", { steps: steps(1, 3) })]));
+    expect(unknown.rows[0]?.meta).toBe("1/3");
   });
 
   it("now marks the first running or attention task", () => {

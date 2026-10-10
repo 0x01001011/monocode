@@ -8,8 +8,8 @@
  *     fix round, to the end of its stages) and the final fix wave. Drawn only while the task
  *     is expanded; a collapsed task is one dot on lane 0.
  *   - lanes 2 and 3: running workers from other sections, one row each, placed after the
- *     running plan task (or after the last task when none runs). A third worker and beyond
- *     fold into one `lane` row on lane 3 titled "+N lanes".
+ *     `now` task (the first running or attention one), or after the last task when there is
+ *     none. A third worker and beyond fold into one `lane` row on lane 3 titled "+N lanes".
  * `width` is the highest lane used + 1 (at most 4); every row's `cells` has exactly `width`
  * entries, one per column, left to right.
  *
@@ -60,7 +60,7 @@ export type GraphRow = {
   index?: number;
   /** At most 2, in the spec's priority order. */
   refs: GraphRef[];
-  /** One value: "8m", "2/5", "4 steps". */
+  /** "8m" (done), "2/5 · 1m" (running or attention with steps), "4 steps" (not started). */
   meta?: string;
   /** Short shas for links. */
   shas: string[];
@@ -136,10 +136,13 @@ function metaFor(node: BoardNode, now: number): string | undefined {
     case "pending":
       return steps.length > 0 ? plural(steps.length, "step", "steps") : undefined;
     case "running":
-    case "attention":
-      // One value: ticked steps when the task has any, else how long it has run.
-      if (steps.length > 0) return `${steps.filter((s) => s.done).length}/${steps.length}`;
-      return durationLabel(node, now);
+    case "attention": {
+      // Ticked steps then how long it has run; an unknown start adds no dash.
+      const duration = node.startedAt !== undefined ? durationLabel(node, now) : undefined;
+      if (steps.length === 0) return durationLabel(node, now);
+      const ticked = `${steps.filter((s) => s.done).length}/${steps.length}`;
+      return duration !== undefined ? `${ticked} · ${duration}` : ticked;
+    }
     default:
       return durationLabel(node, now);
   }
@@ -176,7 +179,6 @@ export function buildGraph({ section, gaps, ship, expanded, filter, now, workers
   }
 
   const nowId = (section.nodes.find(isActive) ?? (final && isActive(final) ? final : undefined))?.id;
-  const runningId = section.nodes.find((n) => n.status === "running")?.id;
 
   function refsFor(node: BoardNode, forked: boolean): GraphRef[] {
     const refs: GraphRef[] = [];
@@ -340,7 +342,7 @@ export function buildGraph({ section, gaps, ship, expanded, filter, now, workers
     }
     flushHidden();
     pushNode(node, "task");
-    if (!workersPlaced && node.id === runningId) {
+    if (!workersPlaced && node.id === nowId) {
       pushWorkers();
       workersPlaced = true;
     }
