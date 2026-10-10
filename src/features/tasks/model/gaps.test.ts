@@ -62,6 +62,26 @@ describe("gapsFor", () => {
     expect(gapsFor(plan([node], { steps: { done: 2, total: 2 } }))[0]?.text).toBe("1 step not ticked");
   });
 
+  it("raises no unticked gap when the plan ticks no step anywhere (the executor does not tick)", () => {
+    const nodes = [
+      task(1, "done", { steps: [step(false), step(false)] }),
+      task(2, "done", { steps: [step(false)] }),
+      task(3, "running", { steps: [{ text: "s", done: false, ticked: false }] }),
+    ];
+    expect(gapsFor(plan(nodes, { steps: { done: 3, total: 4 } }))).toEqual([]);
+  });
+
+  it("raises the unticked gap for done tasks once any step in the plan is ticked", () => {
+    const nodes = [
+      task(1, "done", { steps: [step(false), step(false)] }),
+      task(2, "done", { steps: [step(true)] }),
+      task(3, "running", { steps: [{ text: "s", done: true, ticked: true }, { text: "s", done: false, ticked: false }] }),
+    ];
+    expect(gapsFor(plan(nodes, { steps: { done: 4, total: 5 } }))).toEqual([
+      { kind: "unticked-at-finish", nodeId: "task-1", label: "Task 1", text: "2 steps not ticked" },
+    ]);
+  });
+
   it("ignores brief steps when there is no plan file", () => {
     const node = task(1, "done", { steps: [step(false), step(false)] });
     expect(gapsFor(plan([node]))).toEqual([]);

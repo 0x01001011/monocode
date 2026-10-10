@@ -26,12 +26,14 @@ function hasCommit(node: BoardNode): boolean {
  */
 export function gapsFor(section: BoardSection): Gap[] {
   const gaps: Gap[] = [];
+  // Only a plan file ticks its steps: brief steps are never ticked, so they are no evidence. And
+  // many executors never tick at all, so an unticked step only counts once the plan shows a tick.
+  const ticks = section.steps !== undefined && section.nodes.some((n) => n.steps?.some((s) => s.ticked));
   for (const node of section.nodes) {
     const gap = (kind: GapKind, text: string) => gaps.push({ kind, nodeId: node.id, label: labelFor(node), text });
     if (node.status === "done" && !hasCommit(node)) gap("no-commit", "no commit recorded");
     if ((node.parkedAtClose ?? 0) > 0) gap("closed-with-parked", `closed with ${node.parkedAtClose} parked`);
-    // Only a plan file ticks its steps: brief steps are never ticked, so they are no evidence.
-    if (node.status === "done" && section.steps) {
+    if (node.status === "done" && ticks) {
       const unticked = node.steps?.filter((s) => !s.ticked).length ?? 0;
       if (unticked > 0) gap("unticked-at-finish", `${unticked} ${unticked === 1 ? "step" : "steps"} not ticked`);
     }
