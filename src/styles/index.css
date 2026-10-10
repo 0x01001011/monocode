@@ -4390,8 +4390,11 @@ html.theme-light .btw-burst {
 }
 /* The floor sits on the wrapper, the row's flex item (`cqi` resolves
    against the row), so it still shrinks to the floor and no further. The
-   button fills it, so a short name leaves no dead gap, and truncates. */
+   button fills it, so a short name leaves no dead gap, and truncates. The
+   wrapper takes the label's 12px so `14ch` is 14 label characters, not
+   the inherited 16px (which pushed the row past its edge at 360px). */
 .composer-head > [data-branch-trigger] {
+  font-size: 12px;
   min-width: min(14ch, 45cqi);
 }
 .composer-head > [data-branch-trigger] > button {

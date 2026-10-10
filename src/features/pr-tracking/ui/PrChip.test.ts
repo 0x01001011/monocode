@@ -314,9 +314,10 @@ describe("PrChip narrow composers", () => {
       ".composer-head { container: composer-head / inline-size; }",
     );
     // The floor sits on the wrapper (the row's flex item), sized against the
-    // row through container units; the button fills it and truncates.
+    // row through container units; the button fills it and truncates. `ch`
+    // resolves at the label's 12px, not the inherited 16px.
     expect(css).toContain(
-      ".composer-head > [data-branch-trigger] { min-width: min(14ch, 45cqi); }",
+      ".composer-head > [data-branch-trigger] { font-size: 12px; min-width: min(14ch, 45cqi); }",
     );
     expect(css).toContain(
       ".composer-head > [data-branch-trigger] > button { flex: 1 1 auto; }",
