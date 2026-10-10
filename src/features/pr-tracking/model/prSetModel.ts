@@ -3,11 +3,13 @@ import {
   type PrEntry,
   type PrSetView,
   type PrStackGroup,
+  type PrState,
   type TrackerStatus,
 } from "./types";
 
 export type StripBarKind = "current" | "normal" | "merged" | "draft" | "other";
 export type StatusIcon = "open" | "draft" | "merged" | "closed";
+export type StripBar = { number: number; kind: StripBarKind; status: StatusIcon };
 export type TrackerNotice = {
   tone: "info" | "warn";
   text: string;
@@ -44,11 +46,15 @@ export function primaryEntry(view: PrSetView): PrEntry | null {
   return open ?? newest(eligible);
 }
 
-export function statusIcon(entry: PrEntry): StatusIcon {
-  const { state, isDraft } = entry.snapshot;
+/** Closed and merged win over draft: GitHub keeps `isDraft` on closed PRs. */
+export function statusIconFor(state: PrState, isDraft: boolean): StatusIcon {
   if (state === "merged") return "merged";
   if (state === "closed") return "closed";
   return isDraft ? "draft" : "open";
+}
+
+export function statusIcon(entry: PrEntry): StatusIcon {
+  return statusIconFor(entry.snapshot.state, entry.snapshot.isDraft);
 }
 
 function stackPosition(
@@ -92,9 +98,7 @@ export function ariaLabel(view: PrSetView, primary: PrEntry): string {
  * One bar per visible PR, base to tip following the stacks, then the PRs that
  * are in no stack.
  */
-export function stripBars(
-  view: PrSetView,
-): { number: number; kind: StripBarKind }[] {
+export function stripBars(view: PrSetView): StripBar[] {
   const visible = view.entries.filter(isVisible);
   const byKey = new Map(visible.map((e) => [key(e.snapshot.repo, e.snapshot.number), e]));
   const primary = primaryEntry(view);
@@ -125,7 +129,7 @@ export function stripBars(
     else if (entry.snapshot.state === "open" && entry.snapshot.isDraft)
       kind = "draft";
     else if (entry.relation === "other") kind = "other";
-    return { number: entry.snapshot.number, kind };
+    return { number: entry.snapshot.number, kind, status: statusIcon(entry) };
   });
 }
 
@@ -160,6 +164,16 @@ export function sections(view: PrSetView): {
       !e.dismissed && !stacked.has(key(e.snapshot.repo, e.snapshot.number)),
   );
   return { stack, other, hiddenCount };
+}
+
+/** A snapshot older than this shows a clock (never reduced opacity). */
+export const STALE_AFTER_MS = 10 * 60 * 1000;
+
+export function isSnapshotStale(
+  snapshot: Pick<PrEntry["snapshot"], "fetchedAt">,
+  now: number,
+): boolean {
+  return now - snapshot.fetchedAt > STALE_AFTER_MS;
 }
 
 export function freshnessLabel(

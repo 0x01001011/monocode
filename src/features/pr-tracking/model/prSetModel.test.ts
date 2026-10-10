@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ariaLabel,
   freshnessLabel,
+  isSnapshotStale,
   primaryEntry,
   sections,
   statusIcon,
@@ -209,12 +210,12 @@ describe("stripBars", () => {
       entry(99, { dismissed: true }),
     ];
     expect(stripBars(view(entries, [stack([10, 11, 12], 1)]))).toEqual([
-      { number: 10, kind: "merged" },
-      { number: 11, kind: "draft" },
-      { number: 12, kind: "current" },
-      { number: 500, kind: "merged" },
-      { number: 77, kind: "other" },
-      { number: 78, kind: "normal" },
+      { number: 10, kind: "merged", status: "merged" },
+      { number: 11, kind: "draft", status: "draft" },
+      { number: 12, kind: "current", status: "open" },
+      { number: 500, kind: "merged", status: "merged" },
+      { number: 77, kind: "other", status: "open" },
+      { number: 78, kind: "normal", status: "open" },
     ]);
   });
 
@@ -238,8 +239,8 @@ describe("stripBars", () => {
       ]),
     );
     expect(bars).toEqual([
-      { number: 1, kind: "normal" },
-      { number: 2, kind: "other" },
+      { number: 1, kind: "normal", status: "closed" },
+      { number: 2, kind: "other", status: "closed" },
     ]);
   });
 });
@@ -296,6 +297,14 @@ describe("sections", () => {
     expect(out.hiddenCount).toBe(0);
     expect(out.other[0]).toBe(entries[5]);
     expect(out.other[0].snapshot.title).toBe("🚀 修复登录 ".repeat(30));
+  });
+});
+
+describe("isSnapshotStale", () => {
+  it("turns stale after ten minutes", () => {
+    const now = 100 * 60_000;
+    expect(isSnapshotStale({ fetchedAt: now - 10 * 60_000 }, now)).toBe(false);
+    expect(isSnapshotStale({ fetchedAt: now - 10 * 60_000 - 1 }, now)).toBe(true);
   });
 });
 
