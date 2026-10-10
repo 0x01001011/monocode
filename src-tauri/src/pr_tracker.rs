@@ -710,6 +710,8 @@ pub fn pr_error(repo: &str, number: u32) -> Option<String> {
 struct RepoRequest {
     repo: String,
     targets: Vec<Target>,
+    /// `(head_oid, base_oid)` each compare target was planned for.
+    compare_oids: HashMap<u32, (String, String)>,
 }
 
 struct Plan {
@@ -876,14 +878,15 @@ fn plan_cycle(
                 timers.forced_targets.insert((repo.clone(), item));
             }
         }
-        for (_, _, item) in &items {
-            if let Due::Compare(number, ..) = item {
-                let key = (repo.clone(), *number);
-                if let Some((head, base)) = compare_pairs.remove(&key) {
-                    timers.compare_tried.insert(key, (head, base, now));
-                }
-            }
-        }
+        let compare_oids: HashMap<u32, (String, String)> = items
+            .iter()
+            .filter_map(|(_, _, item)| match item {
+                Due::Compare(number, ..) => compare_pairs
+                    .remove(&(repo.clone(), *number))
+                    .map(|oids| (*number, oids)),
+                _ => None,
+            })
+            .collect();
         let targets = items
             .into_iter()
             .enumerate()
@@ -910,7 +913,11 @@ fn plan_cycle(
                 },
             })
             .collect();
-        requests.push(RepoRequest { repo, targets });
+        requests.push(RepoRequest {
+            repo,
+            targets,
+            compare_oids,
+        });
     }
     let branch_sessions = branches
         .into_iter()
@@ -939,24 +946,28 @@ fn mark_attempted(tracker: &Tracker, request: &RepoRequest, now: i64) {
                     .refreshed
                     .insert((request.repo.clone(), *number), now);
             }
-            Target::Compare { .. } => {}
+            Target::Compare { number, .. } => {
+                if let Some((head, base)) = request.compare_oids.get(number) {
+                    timers.compare_tried.insert(
+                        (request.repo.clone(), *number),
+                        (head.clone(), base.clone(), now),
+                    );
+                }
+            }
         }
     }
 }
 
-/// Writes one fetched PR under the request's repo key. `behind_by` comes from
-/// the compare cache for the current head and base tips; otherwise it is kept
-/// while head and base are unchanged. Appends unseen base changes.
+/// Writes one fetched PR under the request's repo key. With a known base tip,
+/// `behind_by` is the cached count for the current (head, base) tips, or
+/// unknown until compared. Without one it is kept while head and base are
+/// unchanged. Appends unseen base changes.
 fn write_pr(conn: &Connection, repo: &str, pr: &ParsedPr, now: i64) -> rusqlite::Result<()> {
     let mut snapshot = pr.snapshot.clone();
     snapshot.repo = repo.to_string();
     snapshot.fetched_at = now;
-    let cached = pr
-        .base_oid
-        .as_deref()
-        .and_then(|base_oid| pr_store::load_compare(conn, repo, &snapshot.head_oid, base_oid));
-    if let Some(behind_by) = cached {
-        snapshot.behind_by = Some(behind_by);
+    if let Some(base_oid) = pr.base_oid.as_deref() {
+        snapshot.behind_by = pr_store::load_compare(conn, repo, &snapshot.head_oid, base_oid);
     } else if let Some(old) = pr_store::load_snapshot(conn, repo, snapshot.number) {
         if old.head_oid == snapshot.head_oid && old.base_ref == snapshot.base_ref {
             snapshot.behind_by = old.behind_by;
@@ -1042,10 +1053,16 @@ fn apply_batch(
                     touched.insert(pr.snapshot.number);
                 }
             }
-            Target::Compare { alias, number, .. } => {
+            Target::Compare {
+                alias,
+                number,
+                base,
+                ..
+            } => {
                 let Some(compare) = batch.compares.get(alias) else {
                     continue;
                 };
+                // True for its own tips whatever the PR does next.
                 pr_store::store_compare(
                     conn,
                     repo,
@@ -1053,17 +1070,22 @@ fn apply_batch(
                     &compare.base_oid,
                     compare.behind_by,
                 )?;
+                // A PR retargeted since planning (possibly by a refresh in
+                // this very batch) is no longer measured against `base`. A
+                // head that moved gets its count from the cache on refresh.
+                let Some(mut snapshot) = pr_store::load_snapshot(conn, repo, *number) else {
+                    continue;
+                };
+                if snapshot.base_ref != *base {
+                    continue;
+                }
                 base_oids.push((*number, compare.base_oid.clone()));
-                // A head that moved since the snapshot gets its count from
-                // the cache on its next refresh.
-                if let Some(mut snapshot) = pr_store::load_snapshot(conn, repo, *number) {
-                    if snapshot.head_oid == compare.head_oid
-                        && snapshot.behind_by != Some(compare.behind_by)
-                    {
-                        snapshot.behind_by = Some(compare.behind_by);
-                        pr_store::upsert_snapshot(conn, &snapshot)?;
-                        touched.insert(*number);
-                    }
+                if snapshot.head_oid == compare.head_oid
+                    && snapshot.behind_by != Some(compare.behind_by)
+                {
+                    snapshot.behind_by = Some(compare.behind_by);
+                    pr_store::upsert_snapshot(conn, &snapshot)?;
+                    touched.insert(*number);
                 }
             }
         }
@@ -2016,6 +2038,7 @@ mod tests {
         assert_eq!(tracker.status(), TrackerStatus::Idle);
     }
 
+    #[cfg(unix)] // spawns `sleep` and `sh`
     #[test]
     fn gh_child_past_deadline_is_killed_and_reads_as_offline() {
         let started = Instant::now();
@@ -2316,17 +2339,37 @@ mod tests {
         let mut timers = Timers::default();
         assert!(compare_targets(&plan_cycle(&conn, &mut timers, None, NOW).unwrap()).is_empty());
 
-        // Known base tip, uncached pair: one compare alias, attempted once.
-        let mut timers = Timers::default();
-        timers
-            .base_oids
-            .insert(key.clone(), ARTIFACT_CREATE_TIP.into());
-        let plan = plan_cycle(&conn, &mut timers, None, NOW).unwrap();
-        assert_eq!(compare_targets(&plan), wanted);
-        assert_eq!(plan.requests[0].targets.len(), 1);
-        assert!(
-            compare_targets(&plan_cycle(&conn, &mut timers, None, NOW + 1_000).unwrap()).is_empty()
-        );
+        // Known base tip, uncached pair: one compare alias. Planning alone
+        // (a cycle aborted before the request) does not suppress it; an
+        // attempt does, for the same tips.
+        let tracker = Tracker::new();
+        let plan = {
+            let mut timers = tracker.timers.lock().unwrap();
+            timers
+                .base_oids
+                .insert(key.clone(), ARTIFACT_CREATE_TIP.into());
+            let plan = plan_cycle(&conn, &mut timers, None, NOW).unwrap();
+            assert_eq!(compare_targets(&plan), wanted);
+            assert_eq!(plan.requests[0].targets.len(), 1);
+            let again = plan_cycle(&conn, &mut timers, None, NOW + 500).unwrap();
+            assert_eq!(compare_targets(&again), wanted);
+            plan
+        };
+        mark_attempted(&tracker, &plan.requests[0], NOW + 500);
+        {
+            let mut timers = tracker.timers.lock().unwrap();
+            assert!(
+                compare_targets(&plan_cycle(&conn, &mut timers, None, NOW + 1_000).unwrap())
+                    .is_empty()
+            );
+            // Ten minutes later it is asked again.
+            assert_eq!(
+                compare_targets(
+                    &plan_cycle(&conn, &mut timers, None, NOW + 500 + DISCOVERY_FLEET_MS).unwrap()
+                ),
+                wanted
+            );
+        }
 
         // Cached pair: skipped.
         pr_store::store_compare(&conn, "cli/cli", ARTIFACT_EDIT_TIP, ARTIFACT_CREATE_TIP, 2)
@@ -2401,5 +2444,112 @@ mod tests {
         assert_eq!(snapshot(&store).behind_by, Some(7));
         run_cycle(&store, &runner, &tracker, "t", NOW + 11_000);
         assert_eq!(runner.queries().len(), 3);
+    }
+
+    const TRUNK_TIP: &str = "ec5b512045db67e5a2a4ff4a1b02660b2fb24390";
+
+    #[test]
+    fn retarget_in_the_same_batch_does_not_take_the_old_base_count() {
+        let key = ("cli/cli".to_string(), 14571);
+        for compare_first in [true, false] {
+            let store = SessionStore::open_in_memory().unwrap();
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_pr(&conn, "s1", "cli/cli", 14571, Relation::Owned, "create", 1)
+                .unwrap();
+            let refreshed = parse_response(&refresh_with_base_oid()).unwrap().prs["p0"][0].clone();
+            let mut old = refreshed.snapshot.clone();
+            old.behind_by = Some(2);
+            old.fetched_at = NOW - 1;
+            pr_store::upsert_snapshot(&conn, &old).unwrap();
+
+            // The compare was planned against the old base; the refresh in the
+            // same batch shows the PR retargeted to trunk.
+            let compare = Target::Compare {
+                alias: "c0".into(),
+                owner: "cli".into(),
+                name: "cli".into(),
+                number: 14571,
+                base: "bagtoad/artifact-create".into(),
+                head: "bagtoad/artifact-edit".into(),
+            };
+            let refresh = Target::Pr {
+                alias: "p1".into(),
+                owner: "cli".into(),
+                name: "cli".into(),
+                number: 14571,
+            };
+            let targets = if compare_first {
+                vec![compare, refresh]
+            } else {
+                vec![refresh, compare]
+            };
+            let request = RepoRequest {
+                repo: "cli/cli".into(),
+                targets,
+                compare_oids: HashMap::new(),
+            };
+            let mut batch = ParsedBatch::default();
+            batch.compares.insert(
+                "c0".into(),
+                CompareResult {
+                    base_oid: ARTIFACT_CREATE_TIP.into(),
+                    head_oid: ARTIFACT_EDIT_TIP.into(),
+                    behind_by: 7,
+                    ahead_by: 3,
+                },
+            );
+            let mut retargeted = refreshed.clone();
+            retargeted.snapshot.base_ref = "trunk".into();
+            retargeted.base_oid = Some(TRUNK_TIP.into());
+            batch.prs.insert("p1".into(), vec![retargeted]);
+            let plan = Plan {
+                requests: Vec::new(),
+                branch_sessions: HashMap::new(),
+                tracking_anything: true,
+            };
+            let tracker = Tracker::new();
+            apply_batch(&conn, &tracker, &plan, &request, &batch, NOW).unwrap();
+
+            let snapshot = pr_store::load_snapshot(&conn, "cli/cli", 14571).unwrap();
+            assert_eq!(snapshot.base_ref, "trunk");
+            assert_eq!(snapshot.behind_by, None, "compare_first={compare_first}");
+            // The count is still true for its own tips, so it stays cached.
+            assert_eq!(
+                pr_store::load_compare(&conn, "cli/cli", ARTIFACT_EDIT_TIP, ARTIFACT_CREATE_TIP),
+                Some(7)
+            );
+            assert_eq!(
+                tracker.timers.lock().unwrap().base_oids[&key],
+                TRUNK_TIP,
+                "compare_first={compare_first}"
+            );
+        }
+    }
+
+    #[test]
+    fn refresh_drops_stale_behind_when_base_tip_is_uncached() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut refreshed = parse_response(&refresh_with_base_oid()).unwrap().prs["p0"][0].clone();
+        let mut old = refreshed.snapshot.clone();
+        old.behind_by = Some(4);
+        pr_store::upsert_snapshot(&conn, &old).unwrap();
+        let load = || pr_store::load_snapshot(&conn, "cli/cli", 14571).unwrap();
+
+        // Same head and base name, but no base tip: the old count is kept.
+        refreshed.base_oid = None;
+        write_pr(&conn, "cli/cli", &refreshed, NOW).unwrap();
+        assert_eq!(load().behind_by, Some(4));
+
+        // The base moved to a tip with no cached count: unknown until compared.
+        refreshed.base_oid = Some("moved".into());
+        write_pr(&conn, "cli/cli", &refreshed, NOW).unwrap();
+        assert_eq!(load().behind_by, None);
+
+        // A cached pair fills it in.
+        pr_store::store_compare(&conn, "cli/cli", ARTIFACT_EDIT_TIP, "moved", 6).unwrap();
+        write_pr(&conn, "cli/cli", &refreshed, NOW).unwrap();
+        assert_eq!(load().behind_by, Some(6));
     }
 }

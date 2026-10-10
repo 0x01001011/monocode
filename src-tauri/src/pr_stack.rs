@@ -137,10 +137,15 @@ pub fn attention_for(inputs: &PrEntryInputs) -> (Attention, Option<String>) {
         return block("Changes requested");
     }
     let behind = pr.behind_by.unwrap_or(0);
-    // The parent merged (GitHub moved this PR to the parent's base), or the
-    // parent's head gained commits this PR does not have.
+    // The parent merged and this PR still targets its head, or was retargeted
+    // but is not known to be up to date with the new base (a count of zero
+    // means the restack is done); or the parent's head gained commits this PR
+    // does not have.
     let restack = inputs.parent.is_some_and(|parent| {
-        parent.state == PrState::Merged || (behind > 0 && pr.base_ref == parent.head_ref)
+        let on_parent_head = pr.base_ref == parent.head_ref;
+        let merged_parent =
+            parent.state == PrState::Merged && (on_parent_head || pr.behind_by != Some(0));
+        merged_parent || (behind > 0 && on_parent_head)
     });
     if restack {
         return (Attention::Action, Some("Needs restack".into()));
@@ -415,6 +420,45 @@ mod tests {
     }
 
     #[test]
+    fn restack_clears_once_retargeted_child_is_up_to_date() {
+        let parent = pr("o/r", 1, "feat/a", "main", "main", PrState::Merged, 100);
+        // Retargeted to main and rebased: nothing left to do.
+        let mut child = pr("o/r", 2, "feat/b", "main", "feat/a", PrState::Open, 100);
+        child.behind_by = Some(0);
+        assert_eq!(attention(&child, Some(&parent)), (Attention::None, None));
+        // Retargeted but still behind main: the ladder puts restack above
+        // behind, so it reads "Needs restack", not "Behind main by 3".
+        child.behind_by = Some(3);
+        assert_eq!(
+            attention(&child, Some(&parent)),
+            (Attention::Action, reason("Needs restack"))
+        );
+        // Retargeted and the count is unknown: keep nagging.
+        child.behind_by = None;
+        assert_eq!(
+            attention(&child, Some(&parent)),
+            (Attention::Action, reason("Needs restack"))
+        );
+    }
+
+    #[test]
+    fn restack_while_child_still_targets_merged_parent_head() {
+        let parent = pr("o/r", 1, "feat/a", "main", "main", PrState::Merged, 100);
+        // Not retargeted yet: needs a restack even when up to date with it.
+        let mut child = pr("o/r", 2, "feat/b", "feat/a", "feat/a", PrState::Open, 100);
+        child.behind_by = Some(0);
+        assert_eq!(
+            attention(&child, Some(&parent)),
+            (Attention::Action, reason("Needs restack"))
+        );
+        child.behind_by = None;
+        assert_eq!(
+            attention(&child, Some(&parent)),
+            (Attention::Action, reason("Needs restack"))
+        );
+    }
+
+    #[test]
     fn restack_when_parent_head_moved() {
         let parent = open("o/r", 1, "feat/a", "main");
         let mut child = open("o/r", 2, "feat/b", "feat/a");
@@ -450,6 +494,16 @@ mod tests {
         assert_eq!(
             attention(&s, None),
             (Attention::Action, reason("Behind release/2.0 by 1"))
+        );
+        // The label comes from the caller, not from the snapshot's base ref.
+        let inputs = PrEntryInputs {
+            snapshot: &s,
+            parent: None,
+            base_ref_label: "upstream/release".into(),
+        };
+        assert_eq!(
+            attention_for(&inputs),
+            (Attention::Action, reason("Behind upstream/release by 1"))
         );
     }
 
