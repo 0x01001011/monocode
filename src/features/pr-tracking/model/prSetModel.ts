@@ -166,6 +166,7 @@ export function sections(view: PrSetView): {
   return { stack, other, hiddenCount };
 }
 
+// keep in sync with STALE_AFTER_MS in src-tauri/src/pr_store.rs
 /** A snapshot older than this shows a clock (never reduced opacity). */
 export const STALE_AFTER_MS = 10 * 60 * 1000;
 

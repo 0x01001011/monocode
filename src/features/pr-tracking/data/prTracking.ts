@@ -155,6 +155,9 @@ async function load<T>(source: Source<T>): Promise<void> {
         source.fresh = false;
         continue;
       }
+      // A queued refetch that succeeds after a failed one makes the cache
+      // current again.
+      source.fresh = true;
       if (JSON.stringify(next) === JSON.stringify(source.value)) continue;
       source.value = next;
       for (const listener of [...source.listeners]) listener();
@@ -167,7 +170,10 @@ async function load<T>(source: Source<T>): Promise<void> {
 /** Refetch now if somebody is watching, else remember to refetch on next use. */
 function invalidate<T>(source: Source<T>) {
   if (source.listeners.size > 0) void load(source);
-  else source.fresh = false;
+  else if (source.inFlight) {
+    // The running fetch may predate the change; let it go round once more.
+    source.dirty = true;
+  } else source.fresh = false;
 }
 
 function invalidateSessions(sessionIds: string[]) {

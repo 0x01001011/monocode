@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Check,
   CircleDashed,
   Clock,
   Copy,
@@ -17,7 +18,6 @@ import {
   TriangleAlert,
   UserCheck,
   UserRemove,
-  Check,
   X,
 } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
@@ -139,13 +139,35 @@ function signals(entry: PrEntry, stale: boolean, freshness: string): ReactNode[]
   return out;
 }
 
-function rowLabel(entry: PrEntry, stale: boolean, freshness: string): string {
-  const { number, title, state } = entry.snapshot;
-  const parts = [`PR ${number}`, title, PR_STATUS[statusIcon(entry)].label];
-  const reason = entry.attentionReason?.trim();
-  if (reason && state === "open") parts.push(reason.toLowerCase());
+/**
+ * The link's name, e.g. "PR 482 open, checks failing, HEAD, mc/a → main:
+ * Title". It carries the attention reason, so the mark beside it is hidden.
+ */
+function rowLabel(
+  entry: PrEntry,
+  tag: Tag | null,
+  stale: boolean,
+  freshness: string,
+): string {
+  const { number, title, state, checks, headRef, baseRef } = entry.snapshot;
+  const parts = [`PR ${number} ${PR_STATUS[statusIcon(entry)].label.toLowerCase()}`];
+  const checksShown = state === "open" && checks !== "none";
+  if (checksShown) parts.push(`checks ${checks}`);
+  if (state === "open") {
+    const reason =
+      entry.attentionReason?.trim().toLowerCase() ||
+      (entry.attention === "block"
+        ? "blocked"
+        : entry.attention === "action"
+          ? "needs action"
+          : "");
+    if (reason && !(checksShown && reason.startsWith("checks")))
+      parts.push(reason);
+  }
   if (stale) parts.push(`status may be out of date, ${freshness.toLowerCase()}`);
-  return parts.join(", ");
+  if (tag) parts.push(tag.text);
+  parts.push(`${headRef} → ${baseRef}`);
+  return `${parts.join(", ")}: ${title}`;
 }
 
 /**
@@ -202,13 +224,14 @@ export function PrRow({
           state={snapshot.state}
           isDraft={snapshot.isDraft}
           checks={snapshot.checks}
+          decorative
         />
         {attention ? (
           <span
             className="pr-att"
             data-kind={attention}
-            role="img"
-            aria-label={
+            aria-hidden="true"
+            title={
               entry.attentionReason?.trim() ||
               (attention === "block" ? "Blocked" : "Needs action")
             }
@@ -220,7 +243,7 @@ export function PrRow({
         href={snapshot.url}
         data-pr-row=""
         tabIndex={tabIndex}
-        aria-label={rowLabel(entry, stale, freshness)}
+        aria-label={rowLabel(entry, tag, stale, freshness)}
         onClick={activate}
         onAuxClick={(event) => {
           if (event.button !== 1) return;

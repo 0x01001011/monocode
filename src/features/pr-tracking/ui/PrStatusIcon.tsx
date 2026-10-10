@@ -33,6 +33,7 @@ export function PrStatusIcon({
   checks,
   size = 14,
   stale = false,
+  decorative = false,
 }: {
   state: PrState;
   isDraft: boolean;
@@ -41,6 +42,8 @@ export function PrStatusIcon({
   size?: number;
   /** Snapshot is old: add a clock. Contrast stays full. */
   stale?: boolean;
+  /** Hide from assistive tech when a neighbour already names the status. */
+  decorative?: boolean;
 }) {
   const status = statusIconFor(state, isDraft);
   const { Icon, color, label } = PR_STATUS[status];
@@ -53,6 +56,12 @@ export function PrStatusIcon({
       className="pr-status"
       data-status={status}
       title={stale ? `${title}, status may be out of date` : title}
+      {...(decorative
+        ? { "aria-hidden": true }
+        : {
+            role: "img",
+            "aria-label": stale ? `${title}, checks stale` : title,
+          })}
     >
       <Icon aria-hidden="true" size={size} className={color} />
       {stale ? (

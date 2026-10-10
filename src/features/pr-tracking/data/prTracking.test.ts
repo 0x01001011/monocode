@@ -348,6 +348,55 @@ describe("usePrSet", () => {
     });
   });
 
+  it("counts a failed fetch as fresh once a queued refetch succeeds", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ok = vi.mocked(invoke).getMockImplementation()!;
+    let rejectFirst: (error: Error) => void = () => undefined;
+    let setCalls = 0;
+    vi.mocked(invoke).mockImplementation(((command: string, args?: unknown) => {
+      if (command === "pr_session_set" && ++setCalls === 1) {
+        return new Promise((_, reject) => {
+          rejectFirst = reject;
+        });
+      }
+      return ok(command, args as never);
+    }) as never);
+    const m = await loadModule();
+    const first = mount(() =>
+      createElement(function P() {
+        m.usePrSet("s1");
+        return null;
+      }),
+    );
+    await first.render();
+    // The listener attaches while fetch 1 is in flight and queues a recheck.
+    await flush();
+    expect(calls("pr_session_set", "s1")).toHaveLength(1);
+    await act(async () => {
+      rejectFirst(new Error("down"));
+      await Promise.resolve();
+    });
+    await flush();
+    expect(calls("pr_session_set", "s1")).toHaveLength(2);
+
+    let latest: PrSetView | null = null;
+    const second = mount(() =>
+      createElement(function P() {
+        latest = m.usePrSet("s1");
+        return null;
+      }),
+    );
+    await second.render();
+    await flush();
+    // The recheck succeeded, so the cache is current: no third fetch.
+    expect(calls("pr_session_set", "s1")).toHaveLength(2);
+    expect(latest!.sessionId).toBe("s1");
+    act(() => {
+      first.root.unmount();
+      second.root.unmount();
+    });
+  });
+
   it("stops listening once the last consumer unmounts", async () => {
     const m = await loadModule();
     const a = mount(() =>

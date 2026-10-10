@@ -133,8 +133,12 @@ describe("PrRow", () => {
       "https://github.com/acme/web/pull/482",
     );
     expect(link.getAttribute("aria-label")).toBe(
-      "PR 482, Tasks panel: keyboard audit fixes, Open",
+      "PR 482 open, HEAD, mc/tasks-panel-keyboard → main: Tasks panel: keyboard audit fixes",
     );
+    // The link already names the status, so the icon beside it is decorative.
+    const status = container.querySelector(".pr-status")!;
+    expect(status.getAttribute("aria-hidden")).toBe("true");
+    expect(status.getAttribute("role")).toBeNull();
 
     const click = (init: MouseEventInit) => {
       const event = new MouseEvent("click", { bubbles: true, cancelable: true, ...init });
@@ -151,21 +155,37 @@ describe("PrRow", () => {
     expect(props.onCopyLink).toHaveBeenCalledWith(props.entry);
   });
 
-  it("labels the attention mark with the reason: dot for block, ring for action", () => {
+  it("draws the attention mark (dot for block, ring for action) and reads the reason once, in the link", () => {
     const blocked = renderRow(
-      entry(482, { attention: "block", attentionReason: "Checks failing" }),
+      entry(482, {
+        attention: "block",
+        attentionReason: "Checks failing",
+        snapshot: { checks: "failing" },
+      }),
     ).container;
-    const dot = blocked.querySelector('[aria-label="Checks failing"]');
-    expect(dot).not.toBeNull();
-    expect(dot!.getAttribute("role")).toBe("img");
-    expect(dot!.getAttribute("data-kind")).toBe("block");
+    const dot = blocked.querySelector(".pr-att")!;
+    expect(dot.getAttribute("data-kind")).toBe("block");
+    expect(dot.getAttribute("aria-hidden")).toBe("true");
+    expect(dot.getAttribute("role")).toBeNull();
+    expect(dot.getAttribute("title")).toBe("Checks failing");
+    expect(blocked.querySelector("a.pr-main")!.getAttribute("aria-label")).toBe(
+      "PR 482 open, checks failing, HEAD, mc/tasks-panel-keyboard → main: Tasks panel: keyboard audit fixes",
+    );
 
     const action = renderRow(
-      entry(483, { attention: "action", attentionReason: "Needs restack" }),
+      entry(483, {
+        attention: "action",
+        attentionReason: "Needs restack",
+        onLiveBranch: false,
+        snapshot: { headRef: "mc/a" },
+      }),
     ).container;
-    expect(
-      action.querySelector('[aria-label="Needs restack"]')?.getAttribute("data-kind"),
-    ).toBe("action");
+    expect(action.querySelector(".pr-att")?.getAttribute("data-kind")).toBe(
+      "action",
+    );
+    expect(action.querySelector("a.pr-main")!.getAttribute("aria-label")).toBe(
+      "PR 483 open, needs restack, Not checked out, mc/a → main: Tasks panel: keyboard audit fixes",
+    );
 
     const quiet = renderRow(entry(484, { attention: "pending" })).container;
     expect(quiet.querySelector(".pr-att")).toBeNull();
@@ -295,8 +315,37 @@ describe("PrStatusIcon", () => {
         c.label.toLowerCase(),
       );
       expect(container.firstElementChild!.getAttribute("title")).toBe(c.label);
+      expect(container.firstElementChild!.getAttribute("role")).toBe("img");
+      expect(container.firstElementChild!.getAttribute("aria-label")).toBe(
+        c.label,
+      );
     }
     expect(shapes.size).toBe(4);
+  });
+
+  it("folds checks and staleness into its label, or hides itself when decorative", () => {
+    const labelled = render(
+      createElement(PrStatusIcon, {
+        state: "open",
+        isDraft: false,
+        checks: "failing",
+        stale: true,
+      }),
+    ).firstElementChild!;
+    expect(labelled.getAttribute("aria-label")).toBe(
+      "Open, checks failing, checks stale",
+    );
+
+    const decorative = render(
+      createElement(PrStatusIcon, {
+        state: "merged",
+        isDraft: false,
+        decorative: true,
+      }),
+    ).firstElementChild!;
+    expect(decorative.getAttribute("aria-hidden")).toBe("true");
+    expect(decorative.getAttribute("role")).toBeNull();
+    expect(decorative.getAttribute("aria-label")).toBeNull();
   });
 
   it("adds a clock when stale", () => {
