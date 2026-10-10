@@ -57,12 +57,16 @@ import {
   type GitFileDiffKind,
 } from "../../../platform/tauri/fs";
 import { describeFileError } from "../model/fileErrors";
+import { MovedFileLinks } from "./MovedFileLinks";
 import { syncWatchedMtime, watchedMtime, watchFile } from "../model/fileWatch";
 import { filePreviewKind } from "../model/filePreview";
 import { HtmlFrame } from "../../html-preview/ui/HtmlFrame";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { displayPath } from "../../../shared/lib/paths";
-import type { EditorNavigation } from "../../search/model/search";
+import type {
+  EditorNavigation,
+  OpenFileFn,
+} from "../../search/model/search";
 import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
 import {
   DiffCommentComposer,
@@ -116,7 +120,7 @@ type Props = {
   navigation?: EditorNavigationRequest | null;
   onDirtyChange: (path: string, dirty: boolean) => void;
   onErrorCountChange?: (path: string, count: number) => void;
-  onOpenFile?: (path: string) => void;
+  onOpenFile?: OpenFileFn;
 };
 
 type LoadState =
@@ -473,6 +477,9 @@ export function FileEditor({
               </p>
             );
           })()}
+          {describeFileError(loadState.message).kind === "not-found" && (
+            <MovedFileLinks path={path} cwd={cwd} onOpenFile={onOpenFile} />
+          )}
           <button
             type="button"
             onClick={() => setReloadKey((value) => value + 1)}

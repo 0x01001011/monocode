@@ -549,10 +549,16 @@ impl WatchShared {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum PreviewSource {
-    Dir { path: String },
-    Artifact { id: String },
+    Dir {
+        path: String,
+    },
+    Artifact {
+        id: String,
+    },
     /// A page the app already holds, such as a file on a connected machine.
-    Html { html: String },
+    Html {
+        html: String,
+    },
 }
 
 /// Larger than any file the app opens as text, so a read page always fits.
@@ -677,7 +683,9 @@ mod page_tests {
     fn a_page_is_served_with_the_bootstrap_and_can_be_updated() {
         let registry = PreviewRegistry::default();
         let token = registry
-            .register(PreviewRoot::Page("<html><head></head><h1>One</h1></html>".into()))
+            .register(PreviewRoot::Page(
+                "<html><head></head><h1>One</h1></html>".into(),
+            ))
             .unwrap();
         for rel in ["", "index.html"] {
             let response = serve(&registry, &format!("/{token}/{rel}"), no_artifacts);
@@ -693,12 +701,16 @@ mod page_tests {
     #[test]
     fn a_page_serves_nothing_else_and_only_pages_update() {
         let registry = PreviewRegistry::default();
-        let token = registry.register(PreviewRoot::Page("<p>x</p>".into())).unwrap();
+        let token = registry
+            .register(PreviewRoot::Page("<p>x</p>".into()))
+            .unwrap();
         assert_eq!(
             serve(&registry, &format!("/{token}/secret.txt"), no_artifacts).status(),
             404
         );
-        let artifact = registry.register(PreviewRoot::Artifact("a".into())).unwrap();
+        let artifact = registry
+            .register(PreviewRoot::Artifact("a".into()))
+            .unwrap();
         assert!(!registry.update_page(&artifact, "<p>y</p>".into()));
         assert!(!registry.update_page("missing", "<p>y</p>".into()));
     }
