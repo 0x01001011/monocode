@@ -338,6 +338,21 @@ pub fn record_branch(
     Ok(before.is_none_or(|old| old != "trace2" && source == "trace2"))
 }
 
+/// `(repo, branch, last_seen)` rows, oldest first.
+pub fn session_branches_seen(
+    conn: &Connection,
+    session_id: &str,
+) -> rusqlite::Result<Vec<(String, String, i64)>> {
+    let mut stmt = conn.prepare(
+        "SELECT repo, branch, last_seen FROM session_branches
+         WHERE session_id = ?1 ORDER BY first_seen, repo, branch",
+    )?;
+    let rows = stmt.query_map([session_id], |row| {
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    })?;
+    rows.collect()
+}
+
 /// `(repo, branch)` pairs, oldest first.
 pub fn session_branches(
     conn: &Connection,
@@ -476,10 +491,11 @@ pub fn set_interest(
     Ok(())
 }
 
-/// `(session_id, level)` for every session that declared interest.
-pub fn interest_levels(conn: &Connection) -> rusqlite::Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare("SELECT session_id, level FROM pr_interest ORDER BY session_id")?;
-    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+/// `(session_id, level, updated_at)` for every session that declared interest.
+pub fn interest_levels(conn: &Connection) -> rusqlite::Result<Vec<(String, String, i64)>> {
+    let mut stmt =
+        conn.prepare("SELECT session_id, level, updated_at FROM pr_interest ORDER BY session_id")?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
     rows.collect()
 }
 
@@ -507,11 +523,12 @@ pub fn base_history(
     rows.collect()
 }
 
-/// Chats that still exist, are not archived and have a branch or PR on record.
+/// Chats that still exist, are neither archived nor hidden from the sidebar
+/// and have a branch or PR on record.
 pub fn tracked_sessions(conn: &Connection) -> rusqlite::Result<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT id FROM sessions
-         WHERE archived = 0
+         WHERE archived = 0 AND sidebar_hidden = 0
            AND (id IN (SELECT session_id FROM session_branches)
                 OR id IN (SELECT session_id FROM session_prs))
          ORDER BY id",
@@ -618,7 +635,11 @@ fn make_entry(
 /// Whether a `session_prs` row counts as "from this chat": every PR the chat
 /// created, and any other only when its head is a branch the chat worked on
 /// in that repo. A PR merely mentioned in a transcript stays out.
-fn is_attributed(relation: Relation, snapshot: &PrSnapshot, branches: &[(String, String)]) -> bool {
+pub(crate) fn is_attributed(
+    relation: Relation,
+    snapshot: &PrSnapshot,
+    branches: &[(String, String)],
+) -> bool {
     relation == Relation::Owned
         || branches
             .iter()
@@ -1097,8 +1118,8 @@ mod tests {
         assert_eq!(
             levels,
             vec![
-                ("s1".to_string(), "fleet".to_string()),
-                ("s2".to_string(), "off".to_string())
+                ("s1".to_string(), "fleet".to_string(), 2),
+                ("s2".to_string(), "off".to_string(), 3)
             ]
         );
     }

@@ -36,6 +36,13 @@ const LOW_BUDGET_MS: u64 = 600_000;
 const LOW_BUDGET: u32 = 500;
 const DISCOVERY_HOT_MS: i64 = 60_000;
 const DISCOVERY_FLEET_MS: i64 = 600_000;
+/// Discovery for a branch whose every known PR is merged or closed.
+const DISCOVERY_TERMINAL_MS: i64 = 24 * 60 * 60 * 1000;
+/// Branches the chat has not been seen on for this long get no discovery.
+const BRANCH_ACTIVE_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+/// A "hot" interest not re-asserted for this long (say the app crashed
+/// while a chat was focused) counts as "fleet".
+const HOT_TTL_MS: i64 = 10 * 60_000;
 /// Backoff assumed when GitHub reports a rate limit without a reset time.
 const RATE_LIMIT_FALLBACK_MS: i64 = 60_000;
 /// Longest a single `gh` child may run before it is killed.
@@ -731,7 +738,19 @@ struct Plan {
 struct Want {
     hot: bool,
     forced: bool,
+    /// Some chat created this PR (only meaningful for PR targets).
+    owned: bool,
     sessions: Vec<String>,
+}
+
+/// The interest level planning uses: a stale "hot" is "fleet", no row is
+/// "fleet".
+fn effective_interest(level: Option<&(String, i64)>, now: i64) -> &str {
+    match level {
+        Some((level, updated_at)) if level == "hot" && now - updated_at > HOT_TTL_MS => "fleet",
+        Some((level, _)) => level.as_str(),
+        None => "fleet",
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -744,34 +763,73 @@ enum Due {
 
 /// Picks this cycle's targets: per repo, forced first, then the most overdue,
 /// at most `MAX_ALIASES`. Consumes `timers.forced`.
+///
+/// Polling is bounded to what a chat can show: a PR is refreshed only when
+/// `pr_store::is_attributed` keeps it in some chat's set (a transcript hint
+/// with no snapshot yet gets one lookup to learn its head branch). Branches
+/// not seen for `BRANCH_ACTIVE_MS` get no discovery, and a branch whose
+/// every known PR is terminal is rediscovered once per
+/// `DISCOVERY_TERMINAL_MS`.
 fn plan_cycle(
     conn: &Connection,
     timers: &mut Timers,
     remaining: Option<u32>,
     now: i64,
 ) -> rusqlite::Result<Plan> {
-    let levels: HashMap<String, String> = pr_store::interest_levels(conn)?.into_iter().collect();
+    let levels: HashMap<String, (String, i64)> = pr_store::interest_levels(conn)?
+        .into_iter()
+        .map(|(session, level, at)| (session, (level, at)))
+        .collect();
     let forced = std::mem::take(&mut timers.forced);
     let carried = std::mem::take(&mut timers.forced_targets);
     let mut branches: BTreeMap<(String, String), Want> = BTreeMap::new();
     let mut prs: BTreeMap<(String, u32), Want> = BTreeMap::new();
+    let mut snapshots: HashMap<(String, u32), Option<PrSnapshot>> = HashMap::new();
     for session in pr_store::tracked_sessions(conn)? {
-        let level = levels.get(&session).map_or("fleet", String::as_str);
+        let level = effective_interest(levels.get(&session), now);
         if level == "off" {
             continue;
         }
         let hot = level == "hot";
         let is_forced = forced.contains(&session);
-        for key in pr_store::session_branches(conn, &session)? {
-            let want = branches.entry(key).or_default();
+        let rows = pr_store::session_branches_seen(conn, &session)?;
+        let tracked: Vec<(String, String)> = rows
+            .iter()
+            .map(|(repo, branch, _)| (repo.clone(), branch.clone()))
+            .collect();
+        for (repo, branch, last_seen) in rows {
+            if now - last_seen > BRANCH_ACTIVE_MS {
+                continue;
+            }
+            let want = branches.entry((repo, branch)).or_default();
             want.hot |= hot;
             want.forced |= is_forced;
             want.sessions.push(session.clone());
         }
-        for (repo, number, _, _) in pr_store::session_pr_keys(conn, &session)? {
-            let want = prs.entry((repo, number)).or_default();
+        for (repo, number, relation, _) in pr_store::session_pr_keys(conn, &session)? {
+            let key = (repo, number);
+            let snapshot = snapshots
+                .entry(key.clone())
+                .or_insert_with(|| pr_store::load_snapshot(conn, &key.0, number));
+            let shown = snapshot
+                .as_ref()
+                .is_none_or(|s| pr_store::is_attributed(relation, s, &tracked));
+            if !shown {
+                continue;
+            }
+            let want = prs.entry(key).or_default();
             want.hot |= hot;
             want.forced |= is_forced;
+            want.owned |= relation == Relation::Owned;
+        }
+    }
+    // Per (repo, head branch) of every known PR: true while all are terminal.
+    let mut terminal_heads: HashMap<(String, String), bool> = HashMap::new();
+    for ((repo, _), snapshot) in &snapshots {
+        if let Some(snapshot) = snapshot {
+            *terminal_heads
+                .entry((repo.clone(), snapshot.head_ref.clone()))
+                .or_insert(true) &= snapshot.state != PrState::Open;
         }
     }
 
@@ -797,7 +855,13 @@ fn plan_cycle(
     let mut due: BTreeMap<String, Vec<(bool, i64, Due)>> = BTreeMap::new();
     for ((repo, branch), want) in &branches {
         let low_budget = remaining.is_some_and(|left| left < LOW_BUDGET);
-        let interval = if want.hot && !low_budget {
+        let all_terminal = terminal_heads
+            .get(&(repo.clone(), branch.clone()))
+            .copied()
+            .unwrap_or(false);
+        let interval = if all_terminal {
+            DISCOVERY_TERMINAL_MS
+        } else if want.hot && !low_budget {
             DISCOVERY_HOT_MS
         } else {
             DISCOVERY_FLEET_MS
@@ -815,7 +879,13 @@ fn plan_cycle(
         }
     }
     for ((repo, number), want) in &prs {
-        let snapshot = pr_store::load_snapshot(conn, repo, *number);
+        let key = (repo.clone(), *number);
+        let snapshot = snapshots.get(&key).cloned().flatten();
+        // A hint nobody created has one lookup to learn its head branch.
+        if snapshot.is_none() && !want.owned && !want.forced && timers.refreshed.contains_key(&key)
+        {
+            continue;
+        }
         let state = snapshot.as_ref().map_or(PrState::Open, |s| s.state);
         let age = snapshot.as_ref().map_or(-1, |s| now - s.fetched_at);
         let interest = if want.hot { "hot" } else { "fleet" };
@@ -845,7 +915,7 @@ fn plan_cycle(
         let Some(base_oid) = timers.base_oids.get(&key).cloned() else {
             continue;
         };
-        let Some(snapshot) = pr_store::load_snapshot(conn, repo, *number) else {
+        let Some(snapshot) = snapshots.get(&key).cloned().flatten() else {
             continue;
         };
         if snapshot.state != PrState::Open || snapshot.head_oid.is_empty() {
@@ -1962,8 +2032,15 @@ mod tests {
         {
             let conn = store.lock_conn().unwrap();
             add_session(&conn, "s1");
-            pr_store::record_branch(&conn, "s1", "cli/cli", "bagtoad/artifact-edit", "trace2", 1)
-                .unwrap();
+            pr_store::record_branch(
+                &conn,
+                "s1",
+                "cli/cli",
+                "bagtoad/artifact-edit",
+                "trace2",
+                NOW,
+            )
+            .unwrap();
         }
         let runner = FakeRunner::new(vec![Ok(DISCOVERY_FOREIGN)]);
         let tracker = Tracker::new();
@@ -1998,7 +2075,7 @@ mod tests {
         {
             let conn = store.lock_conn().unwrap();
             add_session(&conn, "s1");
-            pr_store::record_branch(&conn, "s1", "cli/cli", "bagtoad/artifact-edit", "save", 1)
+            pr_store::record_branch(&conn, "s1", "cli/cli", "bagtoad/artifact-edit", "save", NOW)
                 .unwrap();
         }
         let forked = DISCOVERY_FOREIGN.replace(
@@ -2136,9 +2213,9 @@ mod tests {
         {
             let conn = store.lock_conn().unwrap();
             add_session(&conn, "s1");
-            pr_store::record_branch(&conn, "s1", "o/r", "feat/a", "save", 1).unwrap();
+            pr_store::record_branch(&conn, "s1", "o/r", "feat/a", "save", NOW).unwrap();
             pr_store::record_pr(&conn, "s1", "o/r", 3, Relation::Owned, "create", 1).unwrap();
-            pr_store::set_interest(&conn, "s1", "off", 1).unwrap();
+            pr_store::set_interest(&conn, "s1", "off", NOW).unwrap();
         }
         let runner = FakeRunner::new(vec![]);
         let tracker = Tracker::new();
@@ -2364,6 +2441,251 @@ mod tests {
         assert!(cycle(NOW + 15_000).is_empty());
         assert!(cycle(NOW + 10_000 + FRESHNESS_NOTICE_MS).contains("s1"));
         assert_eq!(runner.queries().len(), 5);
+    }
+
+    /// Answers every query from a fixed table of `o/r` PRs: a PR alias gets
+    /// its row (or `null` when unknown), a branch alias every row with that
+    /// head branch.
+    struct TableRunner {
+        prs: Vec<(u32, &'static str, PrState)>,
+        queries: Mutex<Vec<String>>,
+    }
+
+    impl TableRunner {
+        fn new(prs: Vec<(u32, &'static str, PrState)>) -> Self {
+            Self {
+                prs,
+                queries: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn queries(&self) -> Vec<String> {
+            self.queries.lock().unwrap().clone()
+        }
+
+        fn last(&self) -> String {
+            self.queries().last().cloned().unwrap_or_default()
+        }
+
+        fn node(&self, number: u32, head: &str, state: PrState) -> Value {
+            let state = match state {
+                PrState::Open => "OPEN",
+                PrState::Merged => "MERGED",
+                PrState::Closed => "CLOSED",
+            };
+            serde_json::json!({
+                "number": number, "url": format!("https://github.com/o/r/pull/{number}"),
+                "title": "t", "state": state, "isDraft": false, "isCrossRepository": false,
+                "headRepositoryOwner": {"login": "o"}, "headRefName": head,
+                "baseRefName": "main", "headRefOid": format!("oid{number}"),
+                "author": {"login": "o"}, "mergeable": "MERGEABLE", "reviewDecision": null,
+                "commits": {"nodes": []}, "timelineItems": {"nodes": []}
+            })
+        }
+    }
+
+    impl GhRunner for TableRunner {
+        fn graphql(&self, _cwd: &Path, query: &str) -> Result<String, String> {
+            self.queries.lock().unwrap().push(query.to_string());
+            let mut data = serde_json::Map::new();
+            data.insert("viewer".into(), serde_json::json!({"login": "o"}));
+            let pieces: Vec<&str> = query.split(": repository(").collect();
+            for i in 1..pieces.len() {
+                let alias = pieces[i - 1].rsplit(' ').next().unwrap().to_string();
+                let body = pieces[i];
+                let value = if let Some(rest) = body.split("pullRequest(number: ").nth(1) {
+                    let number: u32 = rest.split(')').next().unwrap().parse().unwrap();
+                    let pr = self
+                        .prs
+                        .iter()
+                        .find(|(n, _, _)| *n == number)
+                        .map_or(Value::Null, |(n, head, state)| self.node(*n, head, *state));
+                    serde_json::json!({"nameWithOwner": "o/r", "pullRequest": pr})
+                } else {
+                    let branch = body
+                        .split("headRefName: \"")
+                        .nth(1)
+                        .unwrap()
+                        .split('"')
+                        .next()
+                        .unwrap();
+                    let nodes: Vec<Value> = self
+                        .prs
+                        .iter()
+                        .filter(|(_, head, _)| *head == branch)
+                        .map(|(n, head, state)| self.node(*n, head, *state))
+                        .collect();
+                    serde_json::json!({"nameWithOwner": "o/r", "pullRequests": {"nodes": nodes}})
+                };
+                data.insert(alias, value);
+            }
+            Ok(serde_json::json!({ "data": data }).to_string())
+        }
+    }
+
+    const HOUR: i64 = 3_600_000;
+    const DAY: i64 = 24 * HOUR;
+
+    #[test]
+    fn hints_off_the_chats_branches_are_looked_up_once_then_dropped() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_branch(&conn, "s1", "o/r", "feat/a", "trace2", NOW).unwrap();
+            // #5: someone else's PR named in the transcript.
+            pr_store::record_pr(&conn, "s1", "o/r", 5, Relation::Existing, "hint", 1).unwrap();
+            // #6: a hint GitHub cannot resolve.
+            pr_store::record_pr(&conn, "s1", "o/r", 6, Relation::Existing, "hint", 1).unwrap();
+            // #7: a hint on the chat's own branch.
+            pr_store::record_pr(&conn, "s1", "o/r", 7, Relation::Existing, "hint", 1).unwrap();
+            // #8: created by the chat, lookup failing so far.
+            pr_store::record_pr(&conn, "s1", "o/r", 8, Relation::Owned, "create", 1).unwrap();
+        }
+        let runner = TableRunner::new(vec![
+            (5, "their/branch", PrState::Open),
+            (7, "feat/a", PrState::Open),
+        ]);
+        let tracker = Tracker::new();
+        run_cycle(&store, &runner, &tracker, "t", NOW);
+        let first = runner.last();
+        for n in [5, 6, 7, 8] {
+            assert!(first.contains(&format!("pullRequest(number: {n})")), "#{n}");
+        }
+        // An hour later: #5 is known to be off the chat's branches and #6
+        // had its one lookup; #7 and the created #8 keep polling.
+        run_cycle(&store, &runner, &tracker, "t", NOW + HOUR);
+        let later = runner.last();
+        assert_eq!(runner.queries().len(), 2);
+        assert!(!later.contains("pullRequest(number: 5)"), "{later}");
+        assert!(!later.contains("pullRequest(number: 6)"), "{later}");
+        assert!(later.contains("pullRequest(number: 7)"), "{later}");
+        assert!(later.contains("pullRequest(number: 8)"), "{later}");
+        // A forced refresh polls only what the chat can show, plus the
+        // unresolved hint (it may exist by now).
+        tracker.force("s1", NOW + 2 * HOUR);
+        run_cycle(&store, &runner, &tracker, "t", NOW + 2 * HOUR);
+        let forced = runner.last();
+        assert!(!forced.contains("pullRequest(number: 5)"), "{forced}");
+        assert!(forced.contains("pullRequest(number: 6)"), "{forced}");
+    }
+
+    #[test]
+    fn branches_unseen_for_thirty_days_get_no_discovery() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_branch(&conn, "s1", "o/r", "old", "trace2", NOW - 31 * DAY).unwrap();
+            pr_store::record_branch(&conn, "s1", "o/r", "recent", "trace2", NOW - 29 * DAY)
+                .unwrap();
+            // A PR found on the old branch back then still refreshes.
+            pr_store::record_pr(&conn, "s1", "o/r", 3, Relation::Existing, "branch", 1).unwrap();
+        }
+        let runner = TableRunner::new(vec![(3, "old", PrState::Open)]);
+        run_cycle(&store, &runner, &Tracker::new(), "t", NOW);
+        let query = runner.last();
+        assert!(query.contains("headRefName: \"recent\""), "{query}");
+        assert!(!query.contains("headRefName: \"old\""), "{query}");
+        // The snapshot arrives through the refresh; it stays attributed.
+        assert!(query.contains("pullRequest(number: 3)"), "{query}");
+        let conn = store.lock_conn().unwrap();
+        let view = pr_store::build_set_view(&conn, "s1", None, TrackerStatus::Ok, NOW);
+        assert_eq!(view.entries.len(), 1);
+    }
+
+    #[test]
+    fn branches_whose_prs_all_finished_are_rediscovered_daily() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            add_session(&conn, "s1");
+            pr_store::record_branch(&conn, "s1", "o/r", "done", "trace2", NOW).unwrap();
+            pr_store::record_branch(&conn, "s1", "o/r", "live", "trace2", NOW).unwrap();
+            pr_store::record_branch(&conn, "s1", "o/r", "none", "trace2", NOW).unwrap();
+        }
+        let runner = TableRunner::new(vec![
+            (9, "done", PrState::Merged),
+            (11, "done", PrState::Closed),
+            (10, "live", PrState::Open),
+        ]);
+        let tracker = Tracker::new();
+        run_cycle(&store, &runner, &tracker, "t", NOW);
+        assert!(runner.last().contains("headRefName: \"done\""));
+        // Past the ten-minute fleet window: the open and the empty branch
+        // are asked again, the finished one is not.
+        run_cycle(&store, &runner, &tracker, "t", NOW + 11 * 60_000);
+        let query = runner.last();
+        assert_eq!(runner.queries().len(), 2);
+        assert!(query.contains("headRefName: \"live\""), "{query}");
+        assert!(query.contains("headRefName: \"none\""), "{query}");
+        assert!(!query.contains("headRefName: \"done\""), "{query}");
+        run_cycle(&store, &runner, &tracker, "t", NOW + DAY + 1);
+        assert!(runner.last().contains("headRefName: \"done\""));
+    }
+
+    #[test]
+    fn hidden_and_archived_chats_are_not_polled() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            for (id, number) in [("hidden", 1), ("archived", 2), ("shown", 3)] {
+                add_session(&conn, id);
+                pr_store::record_pr(&conn, id, "o/r", number, Relation::Owned, "create", 1)
+                    .unwrap();
+                pr_store::record_branch(&conn, id, "o/r", &format!("b{number}"), "trace2", NOW)
+                    .unwrap();
+            }
+            conn.execute(
+                "UPDATE sessions SET sidebar_hidden = 1 WHERE id = 'hidden'",
+                [],
+            )
+            .unwrap();
+            conn.execute("UPDATE sessions SET archived = 1 WHERE id = 'archived'", [])
+                .unwrap();
+        }
+        let runner = TableRunner::new(vec![]);
+        run_cycle(&store, &runner, &Tracker::new(), "t", NOW);
+        assert_eq!(runner.queries().len(), 1);
+        let query = runner.last();
+        assert!(query.contains("pullRequest(number: 3)"));
+        assert!(query.contains("headRefName: \"b3\""));
+        for gone in [
+            "pullRequest(number: 1)",
+            "pullRequest(number: 2)",
+            "\"b1\"",
+            "\"b2\"",
+        ] {
+            assert!(!query.contains(gone), "{gone}");
+        }
+    }
+
+    #[test]
+    fn hot_interest_not_reasserted_for_ten_minutes_counts_as_fleet() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        add_session(&conn, "s1");
+        pr_store::record_branch(&conn, "s1", "o/r", "feat/a", "trace2", NOW).unwrap();
+        let tracker = Tracker::new();
+        let mut timers = tracker.timers.lock().unwrap();
+        let branch_due = |timers: &mut Timers| {
+            // Discovered two minutes ago: due on the hot tier only.
+            timers
+                .discovered
+                .insert(("o/r".into(), "feat/a".into()), NOW - 120_000);
+            !plan_cycle(&conn, timers, None, NOW)
+                .unwrap()
+                .requests
+                .is_empty()
+        };
+        // The app crashed eleven minutes after the chat went hot.
+        pr_store::set_interest(&conn, "s1", "hot", NOW - 11 * 60_000).unwrap();
+        assert!(!branch_due(&mut timers));
+        pr_store::set_interest(&conn, "s1", "hot", NOW - 9 * 60_000).unwrap();
+        assert!(branch_due(&mut timers));
+        assert_eq!(effective_interest(None, NOW), "fleet");
+        let off = ("off".to_string(), NOW - DAY);
+        assert_eq!(effective_interest(Some(&off), NOW), "off");
     }
 
     #[test]
