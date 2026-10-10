@@ -540,10 +540,10 @@ describe("TaskTree", () => {
         }),
       );
       render({ nodes: many });
-      // Open every task, last first, so each click finds its row at a known index.
-      for (let t = many.length - 1; t >= 0; t--) openRow(t);
       const started = performance.now();
-      render({ nodes: [...many] });
+      // One click per task in one batch: React renders the fully open tree once.
+      const rows = items().map((el) => el.querySelector<HTMLElement>("[data-row]")!);
+      act(() => rows.forEach((row) => row.click()));
       expect(items()).toHaveLength(50 * 41);
       const [first, second] = [items()[1], items()[2]];
       focus(first);
