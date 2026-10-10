@@ -30,6 +30,13 @@ function items(): HTMLElement[] {
   return Array.from(container.querySelectorAll<HTMLElement>("[role=treeitem]"));
 }
 
+/** Opens the row at `index` the way a user does, with a click. */
+function openRow(index: number) {
+  act(() => {
+    items()[index]?.querySelector<HTMLElement>("[data-row]")?.click();
+  });
+}
+
 function focus(el: HTMLElement) {
   act(() => el.focus());
 }
@@ -233,21 +240,6 @@ describe("TaskTree", () => {
     expect(container.querySelector("[title='A very long task title']")).not.toBeNull();
   });
 
-  it("respects controlled expansion", () => {
-    const onToggle = vi.fn();
-    render({
-      nodes: [node("a", { summary: "Details here" })],
-      expandedIds: new Set(["a"]),
-      onToggle,
-    });
-    const a = items()[0];
-    expect(a.getAttribute("aria-expanded")).toBe("true");
-    expect(container.textContent).toContain("Details here");
-    focus(a);
-    press(a, "ArrowLeft");
-    expect(onToggle).toHaveBeenCalledWith("a");
-  });
-
   it("does not swallow Escape, Tab or modified keys", () => {
     const seen: string[] = [];
     const listener = (e: KeyboardEvent) => seen.push(e.key);
@@ -281,10 +273,8 @@ describe("TaskTree", () => {
   });
 
   it("a nested treeitem key event does not run the parent handler", () => {
-    render({
-      nodes: [node("a", { children: [node("a1")] }), node("b")],
-      expandedIds: new Set(["a"]),
-    });
+    render({ nodes: [node("a", { children: [node("a1")] }), node("b")] });
+    openRow(0);
     const [a, a1] = items();
     focus(a1);
     press(a1, "ArrowDown");
@@ -304,8 +294,8 @@ describe("TaskTree", () => {
           stages: [{ kind: "implement", label: "Code written", status: "done" }],
         }),
       ],
-      expandedIds: new Set(["a"]),
     });
+    openRow(0);
     const stage = items()[1];
     expect(stage.textContent).toContain("Code written");
     focus(stage);
@@ -344,11 +334,12 @@ describe("TaskTree", () => {
 
   it("collapsing the parent of the focused child moves the tab stop and focus to the parent", () => {
     const nodes = [node("a", { children: [node("a1")] }), node("b")];
-    render({ nodes, expandedIds: new Set(["a"]) });
+    render({ nodes });
+    openRow(0);
     const a1 = items()[1];
     focus(a1);
     expect(a1.tabIndex).toBe(0);
-    render({ nodes, expandedIds: new Set() });
+    openRow(0);
     const [a, b] = items();
     expect(a.tabIndex).toBe(0);
     expect(b.tabIndex).toBe(-1);
@@ -361,7 +352,8 @@ describe("TaskTree", () => {
       node("a", { status: "running", startedAt: 0, steps: steps([true, true, false, false, false]), ...patch });
 
     it("a node with steps is expandable and lists them as leaf treeitems", () => {
-      render({ nodes: [running(), node("b")], expandedIds: new Set(["a"]) });
+      render({ nodes: [running(), node("b")] });
+      openRow(0);
       const all = items();
       expect(all[0].getAttribute("aria-expanded")).toBe("true");
       expect(all[0].querySelector("[data-chevron]")).not.toBeNull();
@@ -374,10 +366,8 @@ describe("TaskTree", () => {
     });
 
     it("steps follow the stage rows, in order, with the right glyph labels", () => {
-      render({
-        nodes: [running({ stages: [{ kind: "implement", label: "Code written", status: "done" }] })],
-        expandedIds: new Set(["a"]),
-      });
+      render({ nodes: [running({ stages: [{ kind: "implement", label: "Code written", status: "done" }] })] });
+      openRow(0);
       const texts = items().map((el) => el.querySelector("[data-row]")?.textContent ?? "");
       expect(texts[1]).toContain("Code written");
       expect(texts.slice(2).map((t) => t.replace(/\D/g, ""))).toEqual(["1", "2", "3", "4", "5"]);
@@ -392,15 +382,16 @@ describe("TaskTree", () => {
       const long = "A long step ".repeat(20).trim();
       render({
         nodes: [node("a", { status: "running", startedAt: 0, steps: [{ text: long, done: false, ticked: false }] })],
-        expandedIds: new Set(["a"]),
       });
+      openRow(0);
       const text = items()[1].querySelector(`[title='${long}']`);
       expect(text?.className).toContain("line-clamp-2");
       expect(text?.className).not.toContain("truncate");
     });
 
     it("labels the steps group and shows the caption once", () => {
-      render({ nodes: [running()], expandedIds: new Set(["a"]) });
+      render({ nodes: [running()] });
+      openRow(0);
       const group = container.querySelector("ul[role=group][aria-label]");
       expect(group?.getAttribute("aria-label")).toBe("Steps, 2 of 5 ticked");
       const caption = Array.from(group?.querySelectorAll("li") ?? []).filter((li) => li.getAttribute("role") !== "treeitem");
@@ -413,10 +404,8 @@ describe("TaskTree", () => {
     });
 
     it("keeps stage rows out of the labelled steps group", () => {
-      render({
-        nodes: [running({ stages: [{ kind: "implement", label: "Code written", status: "done" }] })],
-        expandedIds: new Set(["a"]),
-      });
+      render({ nodes: [running({ stages: [{ kind: "implement", label: "Code written", status: "done" }] })] });
+      openRow(0);
       const group = container.querySelector("ul[role=group][aria-label]");
       expect(group?.textContent).not.toContain("Code written");
     });
@@ -424,14 +413,15 @@ describe("TaskTree", () => {
     it("counts a done task's steps as all ticked", () => {
       render({
         nodes: [node("a", { startedAt: 0, endedAt: 60_000, steps: steps([true, true, true]) })],
-        expandedIds: new Set(["a"]),
       });
+      openRow(0);
       expect(container.querySelector("ul[role=group]")?.getAttribute("aria-label")).toBe("Steps, 3 of 3 ticked");
     });
 
     it("Enter on a step does nothing and click does not open", () => {
       const onOpen = vi.fn();
-      render({ nodes: [running()], expandedIds: new Set(["a"]), onOpen });
+      render({ nodes: [running()], onOpen });
+      openRow(0);
       const step = items()[1];
       focus(step);
       press(step, "Enter");
@@ -442,7 +432,8 @@ describe("TaskTree", () => {
     });
 
     it("ArrowLeft on a step goes to the task, ArrowRight on a step does nothing", () => {
-      render({ nodes: [running()], expandedIds: new Set(["a"]) });
+      render({ nodes: [running()] });
+      openRow(0);
       const [a, s1, s2] = items();
       focus(s2);
       press(s2, "ArrowRight");
@@ -456,7 +447,8 @@ describe("TaskTree", () => {
     });
 
     it("Home and End span the task and its steps", () => {
-      render({ nodes: [running(), node("b")], expandedIds: new Set(["a"]) });
+      render({ nodes: [running(), node("b")] });
+      openRow(0);
       const all = items();
       focus(all[3]);
       press(all[3], "End");
@@ -479,10 +471,10 @@ describe("TaskTree", () => {
     });
 
     it("collapsing a task with the focus on a step moves focus to the task", () => {
-      const nodes = [running()];
-      render({ nodes, expandedIds: new Set(["a"]) });
+      render({ nodes: [running()] });
+      openRow(0);
       focus(items()[2]);
-      render({ nodes, expandedIds: new Set() });
+      openRow(0);
       expect(document.activeElement).toBe(items()[0]);
     });
 
@@ -524,15 +516,17 @@ describe("TaskTree", () => {
     });
 
     it("steps carry no duration or fix tag", () => {
-      render({ nodes: [running()], expandedIds: new Set(["a"]) });
+      render({ nodes: [running()] });
+      openRow(0);
       expect(items()[1].querySelector("[data-duration]")).toBeNull();
     });
 
     it("a steps task nested under a parent task still works", () => {
       render({
         nodes: [node("p", { children: [running({ id: "k" })] })],
-        expandedIds: new Set(["p", "k"]),
       });
+      openRow(0);
+      openRow(1);
       expect(items()).toHaveLength(7);
       expect(items()[2].textContent).toContain("Step text 1");
     });
@@ -545,137 +539,17 @@ describe("TaskTree", () => {
           steps: Array.from({ length: 40 }, (_, i) => ({ text: `Step ${i}`, done: i % 2 === 0 })),
         }),
       );
-      const expandedIds = new Set(many.map((m) => m.id));
+      render({ nodes: many });
+      // Open every task, last first, so each click finds its row at a known index.
+      for (let t = many.length - 1; t >= 0; t--) openRow(t);
       const started = performance.now();
-      render({ nodes: many, expandedIds });
+      render({ nodes: [...many] });
       expect(items()).toHaveLength(50 * 41);
       const [first, second] = [items()[1], items()[2]];
       focus(first);
       press(first, "ArrowDown");
       expect(document.activeElement).toBe(second);
       expect(performance.now() - started).toBeLessThan(5_000);
-    });
-  });
-
-  describe("reveal", () => {
-    const scrollIntoView = vi.fn();
-    const stepped = (id: string) =>
-      node(id, { status: "running", startedAt: 0, steps: [{ text: `${id} one`, done: true }, { text: `${id} two`, done: false }] });
-    const tree = () => [stepped("a"), stepped("b"), node("c", { children: [stepped("c1")] })];
-
-    beforeEach(() => {
-      scrollIntoView.mockReset();
-      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, writable: true, value: scrollIntoView });
-      vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q }));
-    });
-    afterEach(() => {
-      Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
-    });
-
-    it("does nothing on first mount", () => {
-      render({ nodes: tree(), reveal: { id: "b", token: 1 } });
-      expect(scrollIntoView).not.toHaveBeenCalled();
-      expect(items()).toHaveLength(3);
-      expect(document.activeElement).not.toBe(items()[1]);
-    });
-
-    it("expands collapsed ancestors (uncontrolled), scrolls and focuses the row", () => {
-      render({ nodes: tree(), reveal: { id: "c1:step:1", token: 1 } });
-      render({ nodes: tree(), reveal: { id: "c1:step:1", token: 2 } });
-      const target = items().find((el) => el.querySelector("[data-row]")?.textContent?.includes("c1 two"));
-      expect(items()).toHaveLength(3 + 1 + 2);
-      expect(document.activeElement).toBe(target);
-      expect(target?.tabIndex).toBe(0);
-      expect(items().filter((el) => el.tabIndex === 0)).toHaveLength(1);
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
-      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", behavior: "smooth" });
-      expect(scrollIntoView.mock.contexts[0]).toBe(target?.querySelector("[data-row]"));
-    });
-
-    it("uses controlled expansion through onToggle, finding the row once the parent has opened it", () => {
-      const onToggle = vi.fn();
-      const props = { nodes: tree(), onToggle };
-      const reveal = (token: number) => ({ id: "c1:step:0", token });
-      render({ ...props, expandedIds: new Set(), reveal: reveal(1) });
-      render({ ...props, expandedIds: new Set(), reveal: reveal(2) });
-      expect(onToggle.mock.calls.map((c) => c[0]).sort()).toEqual(["c", "c1"]);
-      expect(scrollIntoView).not.toHaveBeenCalled();
-      render({ ...props, expandedIds: new Set(["c", "c1"]), reveal: reveal(2) });
-      expect(document.activeElement?.textContent).toContain("c1 one");
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
-    });
-
-    it("drops the request when the parent never opens the row", () => {
-      vi.useFakeTimers();
-      try {
-        const props = { nodes: tree(), onToggle: vi.fn(), expandedIds: new Set<string>() };
-        render({ ...props, reveal: { id: "c1:step:0", token: 1 } });
-        render({ ...props, reveal: { id: "c1:step:0", token: 2 } });
-        act(() => {
-          vi.advanceTimersByTime(1_000);
-        });
-        render({ ...props, expandedIds: new Set(["c", "c1"]), reveal: { id: "c1:step:0", token: 2 } });
-        expect(scrollIntoView).not.toHaveBeenCalled();
-        expect(document.activeElement).toBe(document.body);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it("does not toggle an ancestor that is already open and focuses at once", () => {
-      const onToggle = vi.fn();
-      const props = { nodes: tree(), onToggle, expandedIds: new Set(["a"]) };
-      render({ ...props, reveal: { id: "a:step:1", token: 1 } });
-      render({ ...props, reveal: { id: "a:step:1", token: 2 } });
-      expect(onToggle).not.toHaveBeenCalled();
-      expect(document.activeElement?.textContent).toContain("a two");
-    });
-
-    it("reveals a top-level task row", () => {
-      render({ nodes: tree(), reveal: { id: "b", token: 1 } });
-      render({ nodes: tree(), reveal: { id: "b", token: 2 } });
-      expect(document.activeElement).toBe(items()[1]);
-      expect(items()).toHaveLength(3);
-    });
-
-    it("ignores an unknown id and leaves focus alone", () => {
-      render({ nodes: tree(), reveal: { id: "nope", token: 1 } });
-      const other = items()[1];
-      focus(other);
-      render({ nodes: tree(), reveal: { id: "nope", token: 2 } });
-      expect(document.activeElement).toBe(other);
-      expect(scrollIntoView).not.toHaveBeenCalled();
-      expect(items()).toHaveLength(3);
-    });
-
-    it("a same-token rerender does not reveal again", () => {
-      render({ nodes: tree(), reveal: { id: "b", token: 1 } });
-      render({ nodes: tree(), reveal: { id: "b", token: 2 } });
-      focus(items()[0]);
-      render({ nodes: tree(), reveal: { id: "b", token: 2 } });
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
-      expect(document.activeElement).toBe(items()[0]);
-    });
-
-    it("reveals when the reveal prop first appears after mount", () => {
-      render({ nodes: tree() });
-      render({ nodes: tree(), reveal: { id: "b", token: 1 } });
-      expect(document.activeElement).toBe(items()[1]);
-    });
-
-    it("scrolls without animation under reduced motion", () => {
-      vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("reduce"), media: q }));
-      render({ nodes: tree(), reveal: { id: "b", token: 1 } });
-      render({ nodes: tree(), reveal: { id: "b", token: 2 } });
-      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", behavior: "auto" });
-    });
-
-    it("tolerates a missing scrollIntoView and matchMedia", () => {
-      Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
-      vi.stubGlobal("matchMedia", undefined);
-      render({ nodes: tree(), reveal: { id: "b", token: 1 } });
-      render({ nodes: tree(), reveal: { id: "b", token: 2 } });
-      expect(document.activeElement).toBe(items()[1]);
     });
   });
 });

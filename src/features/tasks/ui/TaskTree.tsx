@@ -3,19 +3,13 @@ import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { durationLabel } from "../model/nodeLabels";
 import type { BoardNode, BoardStage, BoardStep } from "../model/taskBoard";
 import { TaskGlyph, glyphForStatus, type GlyphKind } from "./TaskGlyph";
-import { useFocusKeptInTree, useTreeReveal, type TreeReveal } from "./treeFocus";
-
-export { durationLabel };
+import { useFocusKeptInTree } from "./treeFocus";
 
 type Props = {
   nodes: BoardNode[];
   label: string;
   now: number;
   onOpen?: (node: BoardNode) => void;
-  expandedIds?: ReadonlySet<string>;
-  onToggle?: (id: string) => void;
-  /** Panel-side request (see TasksPanel): a new `token` expands to row `id`, scrolls it into view and focuses it. */
-  reveal?: TreeReveal;
 };
 
 const STRUGGLING_FROM_ROUND = 3;
@@ -123,22 +117,18 @@ function stepsMeta(node: BoardNode): ReactElement | null {
   );
 }
 
-export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle, reveal }: Props) {
-  const [internal, setInternal] = useState<ReadonlySet<string>>(() => new Set());
+export function TaskTree({ nodes, label, now, onOpen }: Props) {
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string>();
   const refs = useRef(new Map<string, HTMLElement>());
 
-  const expanded = (id: string) => (expandedIds ?? internal).has(id);
-  const toggle = (id: string) => {
-    if (expandedIds === undefined) {
-      setInternal((prev) => {
-        const next = new Set(prev);
-        if (!next.delete(id)) next.add(id);
-        return next;
-      });
-    }
-    onToggle?.(id);
-  };
+  const expanded = (id: string) => open.has(id);
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
 
   const kidsOf = childLister();
   const roots = nodes.map((node): Child => ({ node, kind: "task" }));
@@ -163,20 +153,6 @@ export function TaskTree({ nodes, label, now, onOpen, expandedIds, onToggle, rev
     setActiveId(entry.node.id);
     refs.current.get(entry.node.id)?.focus();
   };
-
-  useTreeReveal({
-    reveal,
-    items: refs,
-    setActiveId,
-    closedAncestors: (id) => {
-      const parents = parentIndex(nodes, kidsOf);
-      if (!parents.has(id)) return undefined;
-      const closed: string[] = [];
-      for (let p = parents.get(id); p !== undefined; p = parents.get(p)) if (!expanded(p)) closed.push(p);
-      return closed;
-    },
-    toggle,
-  });
 
   const onKeyDown = (event: KeyboardEvent<HTMLLIElement>, entry: Entry) => {
     if (event.target !== event.currentTarget) return;

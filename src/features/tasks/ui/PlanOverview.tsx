@@ -9,8 +9,6 @@ type Props = {
   now: number;
   /** A problem button was activated: bring that task's row into view. */
   onReveal: (id: string) => void;
-  /** Caps the strip's width for wide hosts such as a wide sidebar. */
-  compact?: boolean;
 };
 
 // The design-system inset ring (see `focus-ring-inset` in styles/index.css), kept inside the pill. Never pair
@@ -110,7 +108,7 @@ function Problems({
  * old "3 of 6 done" line. The strip is a summary only; the counts line and the tree say the same
  * in words and glyphs.
  */
-export function PlanOverview({ section, now, onReveal, compact = false }: Props) {
+export function PlanOverview({ section, now, onReveal }: Props) {
   const overview = planOverview(section);
   const time = timeLine(section, now);
   return (
@@ -122,7 +120,7 @@ export function PlanOverview({ section, now, onReveal, compact = false }: Props)
             data-strip
             role="img"
             aria-label={stripLabel(overview)}
-            className={`flex h-1.5 gap-0.5 @min-[340px]:min-w-16 @min-[340px]:flex-1 ${compact ? "max-w-sm" : ""}`}
+            className="flex h-1.5 gap-0.5 @min-[340px]:min-w-16 @min-[340px]:flex-1"
           >
             {overview.segments.map((segment) => (
               <span
