@@ -4,19 +4,21 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TaskBoard } from "../hooks/useTaskBoard";
 import type { FlowPhase } from "../model/flow";
+import { shipReadiness } from "../model/ship";
+import { planSummaryMarkdown } from "../model/summary";
 import type { StatusCard } from "../model/statusCard";
 import type { BoardNode, BoardSection } from "../model/taskBoard";
 import { TasksPanel } from "./TasksPanel";
 
-// Records what the panel asks the tree to reveal, then renders the real tree.
+// Records what the panel asks the graph to reveal, then renders the real graph.
 const seen = vi.hoisted(() => ({ reveals: [] as unknown[] }));
-vi.mock("./TaskTree", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./TaskTree")>();
+vi.mock("./TaskGraph", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./TaskGraph")>();
   return {
     ...actual,
-    TaskTree: (props: Parameters<typeof actual.TaskTree>[0]) => {
-      seen.reveals.push((props as { reveal?: unknown }).reveal);
-      return actual.TaskTree(props);
+    TaskGraph: (props: Parameters<typeof actual.TaskGraph>[0]) => {
+      seen.reveals.push(props.reveal);
+      return actual.TaskGraph(props);
     },
   };
 });
@@ -70,6 +72,7 @@ function board(over: Partial<TaskBoard> = {}): TaskBoard {
     sections: p ? [p] : [],
     statusCard: runningCard,
     flow: [],
+    gaps: [],
     workspaces: [],
     selectWorkspace: () => {},
     loading: false,
@@ -226,76 +229,20 @@ describe("TasksPanel", () => {
     expect(container.querySelector("[data-counts]")?.textContent).toBe("3 of 5 tasks · 3 left · 7 of 19 steps");
   });
 
-  it("renders the plan tree and the last-review line while it is pending", () => {
+  it("draws the plan as one graph: tasks, the final review even while pending, then Ship", () => {
     render({ board: board({ plan: plan() }) });
     expect(text()).toContain("Alpha plan");
-    expect(container.querySelector("[role=tree]")).not.toBeNull();
-    expect(text()).toContain("Then one last review of the whole branch.");
-    render({ board: board({ plan: plan({ finalReview: { id: "final-review", title: "Last review of the whole branch", status: "running" } }) }) });
+    const tree = container.querySelector("[role=tree]");
+    expect(tree?.getAttribute("aria-label")).toBe("Plan tasks");
+    const rows = Array.from(container.querySelectorAll("[role=tree] > [role=treeitem]")).map((r) => r.getAttribute("data-row-id"));
+    expect(rows).toEqual(["task-1", "task-2", "task-3", "task-4", "task-5", "final-review", "ship"]);
     expect(text()).not.toContain("Then one last review");
-    expect(container.querySelectorAll("[role=treeitem]")).toHaveLength(6);
   });
 
-  it("Open as tab fires onOpenAsTab", () => {
-    const onOpenAsTab = vi.fn();
-    render({ board: board({ plan: plan() }), onOpenAsTab });
-    click(button("Open as tab"));
-    expect(onOpenAsTab).toHaveBeenCalledTimes(1);
-  });
-
-  it("See the open issues and Review decisions open the full tab instead of calling onAction", () => {
-    const onAction = vi.fn();
-    const onOpenAsTab = vi.fn();
-    const struggling: StatusCard = { kind: "struggling", sessionId: "s1", headline: "Task 4 is on fix round 3 of 5", actions: ["see-issues"] };
-    render({ board: board({ plan: plan(), statusCard: struggling }), onAction, onOpenAsTab });
-    click(button("See the open issues"));
-    expect(onOpenAsTab).toHaveBeenCalledTimes(1);
-
-    const done: StatusCard = { kind: "done", headline: "Plan finished", actions: ["review-decisions"] };
-    const withDecisions = plan({ decisions: [{ taskIndex: 2, text: "Keep it" }] });
-    render({ board: board({ plan: withDecisions, statusCard: done }), onAction, onOpenAsTab });
-    click(button("Review decisions"));
-    expect(onOpenAsTab).toHaveBeenCalledTimes(2);
-    expect(onAction).not.toHaveBeenCalled();
-  });
-
-  it("other card actions still reach onAction", () => {
-    const onAction = vi.fn();
-    const onOpenAsTab = vi.fn();
-    render({ board: board(), onAction, onOpenAsTab });
-    click(button("Stop after this task"));
-    expect(onAction).toHaveBeenCalledWith("stop-after-task", runningCard);
-    expect(onOpenAsTab).not.toHaveBeenCalled();
-  });
-
-  it("decisions show three then Show all", () => {
-    const decisions = Array.from({ length: 5 }, (_, i) => ({ taskIndex: i + 1, text: `Decision number ${i + 1}` }));
-    render({ board: board({ plan: plan({ decisions }) }) });
-    const header = button("Decisions made for you, 5");
-    expect(header?.getAttribute("aria-expanded")).toBe("true");
-    expect(text()).toContain("Decision number 3");
-    expect(text()).not.toContain("Decision number 4");
-    expect(text()).toContain("Task 3");
-    click(button("Show all 5"));
-    expect(text()).toContain("Decision number 5");
-    expect(button("Show all 5")).toBeUndefined();
-    click(header);
-    expect(header?.getAttribute("aria-expanded")).toBe("false");
-    expect(text()).not.toContain("Decision number 1");
-  });
-
-  it("small issues are collapsed, merge parked ones and show nothing for zero", () => {
-    render({ board: board({ plan: plan({ minors: [{ taskIndex: 2, text: "Rename helper" }], parked: [{ taskIndex: 3, text: "Cache later" }] }) }) });
-    const header = button("Small issues saved for the end, 2");
-    expect(header?.getAttribute("aria-expanded")).toBe("false");
-    expect(text()).not.toContain("Rename helper");
-    click(header);
-    expect(text()).toContain("Rename helper");
-    expect(text()).toContain("Cache later");
-    expect(text()).toContain("parked");
+  it("has no Open as tab button", () => {
     render({ board: board({ plan: plan() }) });
-    expect(text()).not.toContain("Small issues");
-    expect(text()).not.toContain("Decisions made for you");
+    expect(button("Open as tab")).toBeUndefined();
+    expect(text()).not.toContain("Open as tab");
   });
 
   it("lists other agents and other sections", () => {
@@ -326,22 +273,6 @@ describe("TasksPanel", () => {
     expect(container.querySelector("[role=status]")).toBeNull();
   });
 
-  it("legend button toggles the legend", () => {
-    render({ board: board({ plan: plan() }) });
-    const legend = button("What the symbols mean");
-    expect(legend?.getAttribute("aria-expanded")).toBe("false");
-    expect(container.querySelector("[aria-label='Symbol legend']")).toBeNull();
-    click(legend);
-    expect(legend?.getAttribute("aria-expanded")).toBe("true");
-    const list = container.querySelector("[aria-label='Symbol legend']");
-    // Safari drops list semantics from a list with list-style none unless the role is explicit.
-    expect(list?.getAttribute("role")).toBe("list");
-    for (const label of ["Done", "Not started", "Running", "Needs you", "Struggling", "Quiet", "Failed", "Review found issues"]) {
-      expect(list?.textContent).toContain(label);
-    }
-    click(legend);
-    expect(container.querySelector("[aria-label='Symbol legend']")).toBeNull();
-  });
 });
 
 describe("TasksPanel remote project", () => {
@@ -397,20 +328,26 @@ const FLOW: FlowPhase[] = [
 describe("TasksPanel flow strip", () => {
   const strip = () => container.querySelector("ol[aria-label='Superpowers flow']");
 
-  it("sits under the overview and above the legend and the tree", () => {
+  it("sits under the header, above the counts and the graph", () => {
     render({ board: board({ plan: plan(), flow: FLOW }) });
     const list = strip();
     expect(list).not.toBeNull();
-    click(button("What the symbols mean"));
-    const legend = container.querySelector("ul[aria-label='Symbol legend']");
+    const header = container.querySelector("[role=radiogroup]");
+    const counts = container.querySelector("[data-counts]");
     const tree = container.querySelector("[role=tree]");
-    const progress = container.querySelector("[data-counts]");
-    expect(progress).toBeDefined();
     const before = (a: Element | null | undefined, b: Element | null) =>
       Boolean(a && b && a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(before(progress, list)).toBe(true);
-    expect(before(list, legend)).toBe(true);
-    expect(before(list, tree)).toBe(true);
+    expect(before(header, list)).toBe(true);
+    expect(before(list, counts)).toBe(true);
+    expect(before(counts, tree)).toBe(true);
+  });
+
+  it("shows the Ship phase with its own words", () => {
+    render({ board: board({ plan: plan(), flow: [...FLOW, { id: "ship", label: "Ship", status: "attention", detail: "3 left" }] }) });
+    const ship = Array.from(strip()?.querySelectorAll("li") ?? []).at(-1);
+    expect(ship?.textContent).toContain("Ship");
+    expect(ship?.textContent).toContain("3 left");
+    expect(ship?.querySelector("[role=img]")?.getAttribute("aria-label")).toBe("not ready");
   });
 
   it("is absent without phases", () => {
@@ -452,7 +389,7 @@ describe("TasksPanel problems", () => {
     plan({
       nodes: [
         task(1),
-        task(2, { status: "blocked", endedAt: undefined, summary: "Waiting for the API key." }),
+        task(2, { status: "blocked", endedAt: undefined, summary: "Waiting for the API key.", steps: [{ text: "Ask for the key", done: false, ticked: false }] }),
         task(3, { status: "attention", fixRounds: 4, endedAt: undefined, summary: "The reviewer has sent it back 4 times." }),
         task(4, { status: "pending", startedAt: undefined, endedAt: undefined }),
       ],
@@ -487,5 +424,380 @@ describe("TasksPanel problems", () => {
   it("has no problems row for a healthy plan", () => {
     render({ board: board({ plan: plan() }) });
     expect(container.querySelector("[data-problems]")).toBeNull();
+  });
+});
+
+describe("TasksPanel header", () => {
+  it("the legend lists the symbols and the row keys", () => {
+    render({ board: board({ plan: plan() }) });
+    const legend = button("What the symbols mean");
+    expect(legend?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("[aria-label='Symbol legend']")).toBeNull();
+    click(legend);
+    expect(legend?.getAttribute("aria-expanded")).toBe("true");
+    const list = container.querySelector("[aria-label='Symbol legend']");
+    // Safari drops list semantics from a list with list-style none unless the role is explicit.
+    expect(list?.getAttribute("role")).toBe("list");
+    for (const label of ["Done", "Not started", "Running", "Needs you", "Struggling", "Quiet", "Failed", "Review found issues"]) {
+      expect(list?.textContent).toContain(label);
+    }
+    expect(list?.textContent).toContain("o opens, c copies the commit, n jumps to now");
+    click(legend);
+    expect(container.querySelector("[aria-label='Symbol legend']")).toBeNull();
+  });
+
+  it("is a container, so the strip and counts can share a row from 340 px", () => {
+    render({ board: board({ plan: plan() }) });
+    expect((container.firstElementChild as HTMLElement).className).toContain("@container");
+  });
+});
+
+describe("TasksPanel filter", () => {
+  const radio = (name: string) =>
+    Array.from(container.querySelectorAll("[role=radio]")).find((r) => r.textContent?.startsWith(name));
+  const rowIds = () => Array.from(container.querySelectorAll("[role=treeitem]")).map((r) => r.getAttribute("data-row-id"));
+
+  it("offers All, Left and Problems with their counts", () => {
+    const withGap = board({ plan: plan(), gaps: [{ kind: "no-commit", nodeId: "task-2", label: "Task 2", text: "no commit recorded" }] });
+    render({ board: withGap });
+    expect(Array.from(container.querySelectorAll("[role=radio]")).map((r) => r.textContent)).toEqual(["All 6", "Left 3", "Problems 1"]);
+    expect(radio("All")?.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("Left folds the finished tasks into one hidden row and keeps the rest", () => {
+    render({ board: board({ plan: plan() }) });
+    click(radio("Left"));
+    expect(radio("Left")?.getAttribute("aria-checked")).toBe("true");
+    expect(rowIds()).toEqual(["hidden:task-1", "task-4", "task-5", "final-review", "ship"]);
+    expect(text()).toContain("3 done hidden");
+    click(radio("All"));
+    expect(rowIds()).toContain("task-1");
+  });
+
+  it("is kept per plan for the session", () => {
+    const alpha = { workspaces: [{ slug: "alpha" }, { slug: "beta" }] as TaskBoard["workspaces"], plan: plan() };
+    render({ board: board({ ...alpha, selectedWorkspace: "alpha" }) });
+    click(radio("Left"));
+    render({ board: board({ ...alpha, selectedWorkspace: "beta" }) });
+    expect(radio("All")?.getAttribute("aria-checked")).toBe("true");
+    render({ board: board({ ...alpha, selectedWorkspace: "alpha" }) });
+    expect(radio("Left")?.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("revealing a row the filter hides switches back to All first", () => {
+    seen.reveals.length = 0;
+    const p = plan({
+      nodes: [task(1, { status: "pending", startedAt: undefined, endedAt: undefined }), task(2), task(3, { status: "blocked", endedAt: undefined })],
+      done: 1,
+      total: 3,
+    });
+    const ship = shipReadiness(p, undefined);
+    render({ board: board({ plan: p, ship }) });
+    click(radio("Problems"));
+    expect(rowIds()).toContain("task-3");
+    expect(rowIds()).not.toContain("task-1");
+    click(container.querySelector("[data-ship] button[aria-expanded]") ?? undefined);
+    click(button("2 tasks left"));
+    expect(radio("All")?.getAttribute("aria-checked")).toBe("true");
+    expect(rowIds()).toContain("task-1");
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-1", token: 1 });
+  });
+});
+
+describe("TasksPanel sticky bar", () => {
+  type Callback = (entries: { isIntersecting: boolean; target: Element }[]) => void;
+  let observers: { callback: Callback; targets: Element[]; disconnected: boolean }[];
+
+  beforeEach(() => {
+    observers = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        entry: (typeof observers)[number];
+        constructor(callback: Callback) {
+          this.entry = { callback, targets: [], disconnected: false };
+          observers.push(this.entry);
+        }
+        observe(target: Element) {
+          this.entry.targets.push(target);
+        }
+        unobserve() {}
+        disconnect() {
+          this.entry.disconnected = true;
+        }
+      },
+    );
+  });
+
+  const bar = () => container.querySelector("[data-sticky-bar]");
+  const scrollAway = (away: boolean) => {
+    const live = observers.filter((o) => !o.disconnected);
+    expect(live.length).toBeGreaterThan(0);
+    act(() => live.forEach((o) => o.callback(o.targets.map((target) => ({ isIntersecting: !away, target })))));
+  };
+
+  it("shows only once the header's sentinel leaves view", () => {
+    render({ board: board({ plan: plan() }) });
+    expect(bar()).toBeNull();
+    scrollAway(true);
+    expect(bar()).not.toBeNull();
+    expect(bar()?.className).toContain("sticky");
+    expect(bar()?.className).toContain("top-0");
+    expect(bar()?.className).toContain("h-7");
+    scrollAway(false);
+    expect(bar()).toBeNull();
+  });
+
+  it("names the current task, its meta and what is left, and Jump to now focuses its row", () => {
+    render({ board: board({ plan: plan() }) });
+    scrollAway(true);
+    expect(bar()?.textContent).toContain("Task 4 · 20m · 3 left");
+    expect(bar()?.querySelector("[role=img]")).not.toBeNull();
+    click(Array.from(bar()?.querySelectorAll("button") ?? []).find((b) => b.textContent === "Jump to now"));
+    expect(document.activeElement?.getAttribute("data-row-id")).toBe("task-4");
+  });
+
+  it("never shows where IntersectionObserver is missing", () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    render({ board: board({ plan: plan() }) });
+    expect(bar()).toBeNull();
+  });
+});
+
+describe("TasksPanel ship node", () => {
+  const allDone = () =>
+    plan({
+      nodes: [1, 2, 3].map((n) => task(n, { commits: `${n}${n}${n}${n}${n}${n}${n}` })),
+      done: 3,
+      total: 3,
+      steps: { done: 9, total: 9 },
+      finalReview: { id: "final-review", title: "Last review of the whole branch", status: "done" },
+    });
+  const shipBlock = () => container.querySelector("[data-ship]");
+  const shipToggle = () => shipBlock()?.querySelector("button[aria-expanded]");
+
+  it("sits right under the graph, collapsed while work is left", () => {
+    const p = plan();
+    render({ board: board({ plan: p, ship: shipReadiness(p, undefined) }) });
+    const tree = container.querySelector("[role=tree]")!;
+    expect(tree.compareDocumentPosition(shipBlock()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Tasks left, the final review, no test run and the done tasks' missing commits.
+    expect(shipToggle()?.textContent).toContain("4 things before ship");
+    expect(shipToggle()?.getAttribute("aria-expanded")).toBe("false");
+    // The graph's own Ship row is the same disclosure.
+    const shipRow = container.querySelector("[data-row-id=ship]");
+    expect(shipRow?.getAttribute("aria-expanded")).toBe("false");
+    click(shipRow?.querySelector("[data-row]") ?? undefined);
+    expect(shipToggle()?.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector("[data-row-id=ship]")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("an unmet item reveals its row", () => {
+    seen.reveals.length = 0;
+    const p = plan();
+    render({ board: board({ plan: p, ship: shipReadiness(p, undefined) }) });
+    click(shipToggle() ?? undefined);
+    click(button("2 tasks left"));
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-4", token: 1 });
+  });
+
+  it("opens by itself and reads Ready to ship once every task is done", () => {
+    const p = allDone();
+    const ship = shipReadiness(p, { status: "passed", command: "npx vitest run" });
+    expect(ship.ready).toBe(true);
+    render({ board: board({ plan: p, ship }) });
+    expect(shipToggle()?.getAttribute("aria-expanded")).toBe("true");
+    expect(shipToggle()?.textContent).toContain("Ready to ship");
+    expect(shipBlock()?.textContent).toContain("3 tasks · 9 steps · 3 commits");
+  });
+
+  it("Copy summary copies the plan summary and says Copied for 2 s", () => {
+    vi.useFakeTimers();
+    try {
+      const p = allDone();
+      const ship = shipReadiness(p, { status: "passed", command: "npx vitest run" });
+      const onCopy = vi.fn();
+      render({ board: board({ plan: p, ship }), onCopy });
+      click(Array.from(shipBlock()?.querySelectorAll("button") ?? []).find((b) => b.textContent === "Copy summary"));
+      expect(onCopy).toHaveBeenCalledWith(planSummaryMarkdown(p, ship, []));
+      const live = container.querySelector("[aria-live=polite]");
+      expect(live?.textContent).toBe("Copied");
+      act(() => vi.advanceTimersByTime(2000));
+      expect(live?.textContent).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("TasksPanel menu", () => {
+  const trigger = () => container.querySelector<HTMLButtonElement>("button[aria-haspopup=menu]");
+
+  it("opens an in-flow menu with Copy summary that copies the plan summary", () => {
+    const p = plan({ minors: [{ taskIndex: 2, text: "Rename helper" }] });
+    const ship = shipReadiness(p, undefined);
+    const gaps = [{ kind: "no-commit" as const, nodeId: "task-1", label: "Task 1", text: "no commit recorded" }];
+    const onCopy = vi.fn();
+    render({ board: board({ plan: p, ship, gaps }), onCopy });
+    expect(trigger()?.getAttribute("aria-label")).toBe("More plan actions");
+    expect(trigger()?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("[role=menu]")).toBeNull();
+    click(trigger() ?? undefined);
+    expect(trigger()?.getAttribute("aria-expanded")).toBe("true");
+    const item = container.querySelector<HTMLElement>("[role=menu] [role=menuitem]");
+    expect(item?.textContent).toBe("Copy summary");
+    expect(document.activeElement).toBe(item);
+    click(item ?? undefined);
+    expect(onCopy).toHaveBeenCalledWith(planSummaryMarkdown(p, ship, gaps));
+    expect(container.querySelector("[role=menu]")).toBeNull();
+    expect(container.querySelector("[aria-live=polite]")?.textContent).toBe("Copied");
+  });
+
+  it("Escape closes the menu and returns focus to its button", () => {
+    render({ board: board({ plan: plan() }) });
+    click(trigger() ?? undefined);
+    const item = container.querySelector("[role=menuitem]")!;
+    act(() => item.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    expect(container.querySelector("[role=menu]")).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it("copies with the clipboard when the host passes no onCopy", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    render({ board: board({ plan: plan() }) });
+    click(trigger() ?? undefined);
+    await act(async () => {
+      container.querySelector("[role=menuitem]")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[aria-live=polite]")?.textContent).toBe("Copied");
+  });
+});
+
+describe("TasksPanel note groups", () => {
+  const notesPlan = () =>
+    plan({
+      minors: [{ taskIndex: 2, text: "Rename helper" }],
+      parked: [{ taskIndex: 3, text: "Cache later" }],
+      decisions: [{ taskIndex: 1, text: "Use X" }],
+    });
+  const heading = (name: string) => container.querySelector<HTMLElement>(`[data-notes="${name}"]`);
+
+  it("render below the graph with counts; Decisions open while the plan is unfinished", () => {
+    const gaps = [{ kind: "no-commit" as const, nodeId: "task-2", label: "Task 2", text: "no commit recorded" }];
+    render({ board: board({ plan: notesPlan(), gaps }) });
+    expect(heading("deferred")?.textContent).toBe("Deferred · 2");
+    expect(heading("gaps")?.textContent).toBe("Gaps · 1");
+    expect(heading("decisions")?.textContent).toBe("Decisions made for you · 1");
+    expect(heading("deferred")?.getAttribute("aria-expanded")).toBe("false");
+    expect(heading("decisions")?.getAttribute("aria-expanded")).toBe("true");
+    const tree = container.querySelector("[role=tree]")!;
+    expect(tree.compareDocumentPosition(heading("deferred")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    click(heading("deferred"));
+    expect(text()).toContain("Cache later");
+  });
+
+  it("Change this hands the decision to onChangeDecision", () => {
+    const onChangeDecision = vi.fn();
+    render({ board: board({ plan: notesPlan() }), onChangeDecision });
+    click(button("Change this: Use X"));
+    expect(onChangeDecision).toHaveBeenCalledWith({ taskIndex: 1, text: "Use X" });
+  });
+
+  it("a gap reveals its row", () => {
+    seen.reveals.length = 0;
+    const gaps = [{ kind: "no-commit" as const, nodeId: "task-2", label: "Task 2", text: "no commit recorded" }];
+    render({ board: board({ plan: notesPlan(), gaps }) });
+    click(heading("gaps"));
+    click(button("Task 2: no commit recorded"));
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-2", token: 1 });
+  });
+});
+
+describe("TasksPanel status card buttons", () => {
+  let scrolled: Element[];
+  beforeEach(() => {
+    scrolled = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+  });
+
+  const notesPlan = (patch: Partial<BoardSection> = {}) =>
+    plan({ minors: [{ taskIndex: 2, text: "Rename helper" }], decisions: [{ taskIndex: 1, text: "Use X" }], ...patch });
+  const struggling: StatusCard = { kind: "struggling", sessionId: "s1", headline: "Task 4 is on fix round 3 of 5", actions: ["see-issues"] };
+
+  it("See the open issues opens Deferred, scrolls to it and focuses it when no task is struggling", () => {
+    const onAction = vi.fn();
+    render({ board: board({ plan: notesPlan(), statusCard: struggling }), onAction });
+    click(button("See the open issues"));
+    const deferred = container.querySelector('[data-notes="deferred"]');
+    expect(deferred?.getAttribute("aria-expanded")).toBe("true");
+    expect(scrolled).toContain(deferred);
+    expect(document.activeElement).toBe(deferred);
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("See the open issues reveals the struggling task when there is one", () => {
+    seen.reveals.length = 0;
+    const p = notesPlan();
+    const stuck = { ...p, nodes: p.nodes.map((n) => (n.index === 4 ? { ...n, status: "attention" as const, fixRounds: 3 } : n)) };
+    render({ board: board({ plan: stuck, statusCard: struggling }) });
+    click(button("See the open issues"));
+    expect(seen.reveals.at(-1)).toEqual({ id: "task-4", token: 1 });
+  });
+
+  it("Review decisions opens Decisions, scrolls to it and focuses it", () => {
+    const done: StatusCard = { kind: "done", headline: "Plan finished", actions: ["review-decisions"] };
+    const p = notesPlan({ done: 5, nodes: plan().nodes.map((n) => ({ ...n, status: "done" as const })) });
+    render({ board: board({ plan: p, statusCard: done }) });
+    const decisions = container.querySelector('[data-notes="decisions"]');
+    // A finished plan keeps its decisions folded until asked.
+    expect(decisions?.getAttribute("aria-expanded")).toBe("false");
+    click(button("Review decisions"));
+    expect(decisions?.getAttribute("aria-expanded")).toBe("true");
+    expect(scrolled).toContain(decisions);
+    expect(document.activeElement).toBe(decisions);
+  });
+
+  it("other card actions still reach onAction", () => {
+    const onAction = vi.fn();
+    render({ board: board(), onAction });
+    click(button("Stop after this task"));
+    expect(onAction).toHaveBeenCalledWith("stop-after-task", runningCard);
+  });
+});
+
+describe("TasksPanel commits", () => {
+  it("a commit link opens the commit through onOpenNode", () => {
+    const onOpenNode = vi.fn();
+    const p = plan({ nodes: [task(1, { commits: "abc1234def" }), ...plan().nodes.slice(1)] });
+    render({ board: board({ plan: p }), onOpenNode });
+    click(container.querySelector('[data-row-id="task-1"] [aria-label="Open commit abc1234"]') ?? undefined);
+    expect(onOpenNode).toHaveBeenCalledWith({ ...p.nodes[0], target: { kind: "commit", ref: "abc1234" } }, p);
+  });
+
+  it("a stage's commit opens through its task", () => {
+    const onOpenNode = vi.fn();
+    const first = task(1, {
+      stages: [
+        { kind: "implement", label: "Implement", status: "done", sha: "1111111" },
+        { kind: "review", label: "Review", status: "done" },
+      ],
+    });
+    const p = plan({ nodes: [first, ...plan().nodes.slice(1)] });
+    render({ board: board({ plan: p }), onOpenNode });
+    click(container.querySelector('[data-row-id="task-1"] [data-row]') ?? undefined);
+    click(container.querySelector('[data-row-id="task-1:stage:0"] [aria-label="Open commit 1111111"]') ?? undefined);
+    expect(onOpenNode).toHaveBeenCalledWith({ ...first, target: { kind: "commit", ref: "1111111" } }, p);
+  });
+
+  it("Copy copies the sha through onCopy", () => {
+    const onCopy = vi.fn();
+    const p = plan({ nodes: [task(1, { commits: "abc1234def" }), ...plan().nodes.slice(1)] });
+    render({ board: board({ plan: p }), onCopy });
+    click(container.querySelector('[data-row-id="task-1"] [aria-label="Copy abc1234"]') ?? undefined);
+    expect(onCopy).toHaveBeenCalledWith("abc1234");
   });
 });

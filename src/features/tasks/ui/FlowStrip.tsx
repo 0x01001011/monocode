@@ -1,4 +1,5 @@
 import type { FlowPhase } from "../model/flow";
+import type { BoardStatus } from "../model/taskBoard";
 import { glyphForStatus, TaskGlyph, type GlyphKind } from "./TaskGlyph";
 
 type Props = {
@@ -24,8 +25,16 @@ function glyphFor(phase: FlowPhase): GlyphKind {
   return phase.id === "build" && phase.status === "attention" ? "struggling" : glyphForStatus(phase.status);
 }
 
+/** Ship reads as ready or not; "review found issues" is the wrong words for it. */
+const SHIP_WORDS: Partial<Record<BoardStatus, string>> = {
+  done: "ready",
+  attention: "not ready",
+  failed: "tests failed",
+  pending: "not started",
+};
+
 /**
- * Where the superpowers flow stands, as one wrapping line: `Spec › Plan › Build › Check`.
+ * Where the superpowers flow stands, as one wrapping line: `Spec › Plan › Build › Check › Ship`.
  * The glyph comes first on screen but after the label in the document, so a screen reader
  * says "Build, running, 3 of 6" and the glyph's own label is the only status word.
  */
@@ -37,9 +46,12 @@ export function FlowStrip({ phases, onOpenPath }: Props) {
       {phases.map((phase, i) => {
         const here = i === current;
         const weight = here ? "font-semibold" : "";
+        const words = phase.id === "ship" ? SHIP_WORDS[phase.status] : undefined;
+        // A detail that repeats the glyph's words ("ready") is shown but said once.
+        const repeats = words !== undefined && phase.detail === words;
         const glyph = (
           <span className="order-first inline-flex">
-            <TaskGlyph kind={glyphFor(phase)} small />
+            <TaskGlyph kind={glyphFor(phase)} small {...(words !== undefined ? { label: words } : {})} />
           </span>
         );
         const path = phase.path;
@@ -64,7 +76,7 @@ export function FlowStrip({ phases, onOpenPath }: Props) {
             {/* The separator ends the detail's last line, so a wrapped detail never strands it. */}
             {phase.detail || i < phases.length - 1 ? (
               <span className="min-w-0 py-1 leading-4">
-                {phase.detail}
+                {repeats ? <span aria-hidden="true">{phase.detail}</span> : phase.detail}
                 {i < phases.length - 1 ? (
                   <span aria-hidden="true" className={phase.detail ? "ml-1.5" : ""}>
                     ›

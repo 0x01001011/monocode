@@ -18,6 +18,7 @@ const board: TaskBoard = {
   sections: [],
   statusCard: { kind: "idle", headline: "", actions: [] },
   flow: [],
+  gaps: [],
   workspaces: [],
   selectWorkspace: () => {},
   loading: false,

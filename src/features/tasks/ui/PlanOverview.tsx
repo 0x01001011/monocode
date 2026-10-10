@@ -106,7 +106,7 @@ function Problems({
 }
 
 /**
- * The plan at a glance: counts, time, a segment strip and the tasks in trouble. It replaces the
+ * The plan at a glance: a segment strip, counts, time and the tasks in trouble. It replaces the
  * old "3 of 6 done" line. The strip is a summary only; the counts line and the tree say the same
  * in words and glyphs.
  */
@@ -115,28 +115,36 @@ export function PlanOverview({ section, now, onReveal, compact = false }: Props)
   const time = timeLine(section, now);
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-0.5 tabular-nums">
-        <div data-counts className="text-[12.5px] text-muted">
-          {countsLine(overview)}
-        </div>
-        {time ? (
-          <div data-time className="text-[11.5px] text-muted">
-            {time}
+      {/* Strip and counts share a row from 340 px (the panel is the container) and stack below it. */}
+      <div className="flex flex-col gap-1.5 @min-[340px]:flex-row @min-[340px]:items-center @min-[340px]:gap-3">
+        {overview.segments.length > 0 ? (
+          <div
+            data-strip
+            role="img"
+            aria-label={stripLabel(overview)}
+            className={`flex h-1.5 gap-0.5 @min-[340px]:min-w-16 @min-[340px]:flex-1 ${compact ? "max-w-sm" : ""}`}
+          >
+            {overview.segments.map((segment) => (
+              <span
+                key={segment.id}
+                data-status={segment.status}
+                {...(segment.status === "pending" ? { "data-track": "" } : {})}
+                className={`min-w-px flex-1 rounded-full transition-colors duration-150 ease-out motion-reduce:transition-none ${SEGMENT_CLASS[segment.status]}`}
+              />
+            ))}
           </div>
         ) : null}
-      </div>
-      {overview.segments.length > 0 ? (
-        <div data-strip role="img" aria-label={stripLabel(overview)} className={`flex h-1.5 gap-0.5 ${compact ? "max-w-sm" : ""}`}>
-          {overview.segments.map((segment) => (
-            <span
-              key={segment.id}
-              data-status={segment.status}
-              {...(segment.status === "pending" ? { "data-track": "" } : {})}
-              className={`min-w-px flex-1 rounded-full transition-colors duration-150 ease-out motion-reduce:transition-none ${SEGMENT_CLASS[segment.status]}`}
-            />
-          ))}
+        <div className="flex min-w-0 flex-col gap-0.5 tabular-nums">
+          <div data-counts className="text-[12.5px] text-muted">
+            {countsLine(overview)}
+          </div>
+          {time ? (
+            <div data-time className="text-[11.5px] text-muted">
+              {time}
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
       {overview.problems.length > 0 ? <Problems section={section} problems={overview.problems} onReveal={onReveal} /> : null}
     </div>
   );

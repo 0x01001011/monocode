@@ -148,7 +148,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
       // Tests passed 5m ago (npm test ended NOW - 5m); the piped run and the commit are older/ignored.
       { label: "Check", glyph: "not started", detail: "tests passed 5m ago", current: false, button: false },
       // Four tasks and the final review are still open.
-      { label: "Ship", glyph: "review found issues", detail: "2 left", current: false, button: false },
+      { label: "Ship", glyph: "not ready", detail: "2 left", current: false, button: false },
     ]);
     expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
     expect(container.textContent).toContain("4 of 8 tasks · 5 left");
@@ -211,7 +211,7 @@ describe("Tasks flow, from the real ledger to the DOM", () => {
       { label: "Build", glyph: "done", detail: "8 of 8", current: false, button: false },
       { label: "Check", glyph: "done", detail: "final review done", current: false, button: false },
       // Every task and the final review are done, but no test run was found and a gap remains: Ship is what is next.
-      { label: "Ship", glyph: "review found issues", detail: "2 left", current: true, button: false },
+      { label: "Ship", glyph: "not ready", detail: "2 left", current: true, button: false },
     ]);
     expect(container.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
   });

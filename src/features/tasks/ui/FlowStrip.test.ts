@@ -176,6 +176,25 @@ describe("FlowStrip", () => {
     expect(names("done")).toBe("Build, done");
   });
 
+  it("gives Ship its own words instead of the review vocabulary", () => {
+    const ship = (status: FlowPhase["status"], detail: string) => {
+      render({ phases: [{ id: "ship", label: "Ship", status, detail }] });
+      return nameOf(items()[0]);
+    };
+    expect(ship("attention", "3 left")).toBe("Ship, not ready, 3 left");
+    expect(ship("failed", "2 left")).toBe("Ship, tests failed, 2 left");
+    expect(ship("pending", "4 left")).toBe("Ship, not started, 4 left");
+    // "ready" is both the glyph's word and the detail: it is said once.
+    expect(ship("done", "ready")).toBe("Ship, ready");
+    expect(items()[0]?.textContent).toContain("ready");
+  });
+
+  it("shows Ship after Check with its detail", () => {
+    render({ phases: [...FLOW, { id: "ship", label: "Ship", status: "attention", detail: "3 left" }] });
+    expect(items().map(labelOf)).toEqual(["Spec", "Plan", "Build", "Check", "Ship"]);
+    expect(items().at(-1)?.textContent).toContain("3 left");
+  });
+
   it("is a list for assistive technology even where list-style none drops the semantics", () => {
     render();
     expect(container.querySelector("ol")?.getAttribute("role")).toBe("list");

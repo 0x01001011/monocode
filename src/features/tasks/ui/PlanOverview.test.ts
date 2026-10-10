@@ -244,13 +244,23 @@ describe("PlanOverview problems", () => {
 });
 
 describe("PlanOverview layout", () => {
-  it("puts counts, time, strip and problems in that order", () => {
+  it("puts strip, counts, time and problems in that order", () => {
     render(plan(["done", "blocked", "pending"]));
-    const order = ["[data-counts]", "[data-time]", "[data-strip]", "[data-problems]"].map((s) => container.querySelector(s));
+    const order = ["[data-strip]", "[data-counts]", "[data-time]", "[data-problems]"].map((s) => container.querySelector(s));
     for (const el of order) expect(el).not.toBeNull();
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
+  });
+
+  it("shares one row between strip and counts from 340 px, two rows below", () => {
+    render(plan(["done", "running", "pending"]));
+    const row = container.querySelector("[data-strip]")?.parentElement;
+    expect(row?.contains(container.querySelector("[data-counts]"))).toBe(true);
+    // Literal container-query classes: Tailwind only builds what it finds spelled out.
+    expect(row?.className).toContain("flex-col");
+    expect(row?.className).toContain("@min-[340px]:flex-row");
+    expect(row?.className).toContain("@min-[340px]:items-center");
   });
 
   it("uses no borders, cards or em dashes", () => {

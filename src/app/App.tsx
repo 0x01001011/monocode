@@ -435,6 +435,7 @@ import {
 } from "../features/tasks/hooks/useTaskActions";
 import { buildTaskActionHost } from "../features/tasks/hooks/taskActionHost";
 import { planRootFor } from "../features/tasks/model/planRoot";
+import type { BoardNote } from "../features/tasks/model/taskBoard";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
 import {
@@ -8704,6 +8705,11 @@ function Workspace({
     projectCwd: sidebarCwd,
     activeSessionId,
   });
+  // "Change this" on a plan decision prefills the focused session's composer.
+  const onChangeTaskDecision = useCallback(
+    (note: BoardNote) => taskActions.onChangeDecision(note, activeSessionId),
+    [taskActions, activeSessionId],
+  );
 
   const onUpdatePlan = useCallback(
     (sessionId: string, blockId: string, text: string) => {
@@ -12609,6 +12615,7 @@ function Workspace({
               onOpenTasksTab={onOpenTasksTab}
               onTasksAction={taskActions.onAction}
               onOpenTaskNode={taskActions.onOpenNode}
+              onChangeTaskDecision={onChangeTaskDecision}
               filesSearchOpen={filesSearchOpen}
               onFilesSearchOpenChange={setFilesSearchOpen}
               onOpenFilesSearch={onFindInProject}
