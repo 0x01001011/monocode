@@ -7,8 +7,12 @@
 // build sees them as unused.
 #![allow(dead_code)]
 
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+
+use crate::pr_stack;
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -425,6 +429,261 @@ pub fn tracked_sessions(conn: &Connection) -> rusqlite::Result<Vec<String>> {
     rows.collect()
 }
 
+/// True when git activity of this chat was observed through trace2.
+pub fn session_has_trace2(conn: &Connection, session_id: &str) -> bool {
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM session_branches
+                        WHERE session_id = ?1 AND source = 'trace2')",
+        [session_id],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|found| found != 0)
+    .unwrap_or(false)
+}
+
+/// `(repo, branch)` the chat touched most recently.
+pub fn last_branch(conn: &Connection, session_id: &str) -> Option<(String, String)> {
+    conn.query_row(
+        "SELECT repo, branch FROM session_branches
+         WHERE session_id = ?1 ORDER BY last_seen DESC, rowid DESC LIMIT 1",
+        [session_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+/// Every stored snapshot of one repo; unreadable rows are skipped.
+fn repo_snapshots(conn: &Connection, repo: &str) -> Vec<PrSnapshot> {
+    let Ok(mut stmt) = conn.prepare("SELECT snapshot_json FROM pr_snapshots WHERE repo = ?1")
+    else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([repo], |row| row.get::<_, String>(0)) else {
+        return Vec::new();
+    };
+    rows.filter_map(Result::ok)
+        .filter_map(|json| serde_json::from_str(&json).ok())
+        .collect()
+}
+
+fn make_entry(
+    snapshot: PrSnapshot,
+    relation: Relation,
+    owner_session_id: Option<String>,
+    dismissed: bool,
+    live_branch: Option<(&str, &str)>,
+) -> PrEntry {
+    let on_live_branch = live_branch.is_some_and(|(repo, branch)| {
+        snapshot.repo.eq_ignore_ascii_case(repo) && snapshot.head_ref == branch
+    });
+    let error = crate::pr_tracker::pr_error(&snapshot.repo, snapshot.number);
+    PrEntry {
+        snapshot,
+        relation,
+        owner_session_id,
+        on_live_branch,
+        parent: None,
+        attention: Attention::None,
+        attention_reason: None,
+        dismissed,
+        error,
+    }
+}
+
+/// The chat's own PR rows that already have a snapshot, in first-seen order.
+fn own_entries(
+    conn: &Connection,
+    session_id: &str,
+    live_branch: Option<(&str, &str)>,
+) -> Vec<PrEntry> {
+    session_pr_keys(conn, session_id)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(repo, number, relation, dismissed)| {
+            let snapshot = load_snapshot(conn, &repo, number)?;
+            Some(make_entry(snapshot, relation, None, dismissed, live_branch))
+        })
+        .collect()
+}
+
+/// PR numbers connected to `seeds` by walking stack edges up and down.
+fn stack_neighbors(
+    pool: &[PrSnapshot],
+    repo: &str,
+    seeds: &[u32],
+) -> std::collections::BTreeSet<u32> {
+    let parents = pr_stack::derive_parents(pool);
+    let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
+    for ((parent_repo, child), parent) in &parents {
+        if parent_repo == repo {
+            children.entry(*parent).or_default().push(*child);
+        }
+    }
+    let mut wanted = std::collections::BTreeSet::new();
+    for &seed in seeds {
+        let mut seen = std::collections::HashSet::from([seed]);
+        let mut current = seed;
+        while let Some(&parent) = parents.get(&(repo.to_string(), current)) {
+            if !seen.insert(parent) {
+                break;
+            }
+            wanted.insert(parent);
+            current = parent;
+        }
+        let mut pending = vec![seed];
+        while let Some(number) = pending.pop() {
+            for &child in children.get(&number).into_iter().flatten() {
+                if seen.insert(child) {
+                    wanted.insert(child);
+                    pending.push(child);
+                }
+            }
+        }
+    }
+    wanted
+}
+
+/// The PRs of one chat plus their stack neighbors. `live_branch` is
+/// `(repo, branch)` of the chat's current checkout. Rows that have no
+/// snapshot yet are omitted; the caller shows a confirming state from the
+/// empty list and `status`. Storage errors degrade to a smaller list.
+pub fn build_set_view(
+    conn: &Connection,
+    session_id: &str,
+    live_branch: Option<(&str, &str)>,
+    status: TrackerStatus,
+    _now: i64,
+) -> PrSetView {
+    let mut entries = own_entries(conn, session_id, live_branch);
+
+    let own: std::collections::HashSet<(String, u32)> = entries
+        .iter()
+        .map(|e| (e.snapshot.repo.clone(), e.snapshot.number))
+        .collect();
+    let repos: std::collections::BTreeSet<String> =
+        entries.iter().map(|e| e.snapshot.repo.clone()).collect();
+    for repo in repos {
+        let pool = repo_snapshots(conn, &repo);
+        let seeds: Vec<u32> = own
+            .iter()
+            .filter(|(r, _)| *r == repo)
+            .map(|(_, n)| *n)
+            .collect();
+        for number in stack_neighbors(&pool, &repo, &seeds) {
+            if own.contains(&(repo.clone(), number)) {
+                continue;
+            }
+            let Some(snapshot) = pool.iter().find(|s| s.number == number).cloned() else {
+                continue;
+            };
+            let owner = owners_of(conn, &repo, number)
+                .unwrap_or_default()
+                .into_iter()
+                .find(|id| id != session_id);
+            entries.push(make_entry(
+                snapshot,
+                Relation::Other,
+                owner,
+                false,
+                live_branch,
+            ));
+        }
+    }
+
+    let snapshots: Vec<PrSnapshot> = entries.iter().map(|e| e.snapshot.clone()).collect();
+    let parents = pr_stack::derive_parents(&snapshots);
+    for entry in &mut entries {
+        entry.parent = parents
+            .get(&(entry.snapshot.repo.clone(), entry.snapshot.number))
+            .copied();
+    }
+    entries.sort_by(|a, b| {
+        let key = |e: &PrEntry| {
+            (
+                !e.on_live_branch,
+                e.snapshot.state != PrState::Open,
+                std::cmp::Reverse(e.snapshot.number),
+                e.snapshot.repo.clone(),
+            )
+        };
+        key(a).cmp(&key(b))
+    });
+
+    let has_branches = session_branches(conn, session_id).is_ok_and(|b| !b.is_empty());
+    PrSetView {
+        session_id: session_id.to_string(),
+        refreshed_at: entries.iter().map(|e| e.snapshot.fetched_at).max(),
+        stacks: pr_stack::group_stacks(&snapshots, &parents),
+        tracking: pr_stack::tracking_for(session_has_trace2(conn, session_id), has_branches),
+        entries,
+        status,
+    }
+}
+
+/// Primary entry for a chat: the one on its live branch, else the newest open
+/// one, else the newest. Dismissed and `Other` entries never qualify.
+pub fn pick_primary(entries: &[PrEntry]) -> Option<&PrEntry> {
+    let eligible = || {
+        entries
+            .iter()
+            .filter(|e| !e.dismissed && e.relation != Relation::Other)
+    };
+    eligible()
+        .filter(|e| e.on_live_branch)
+        .max_by_key(|e| (e.snapshot.state == PrState::Open, e.snapshot.number))
+        .or_else(|| {
+            eligible()
+                .filter(|e| e.snapshot.state == PrState::Open)
+                .max_by_key(|e| e.snapshot.number)
+        })
+        .or_else(|| eligible().max_by_key(|e| e.snapshot.number))
+}
+
+/// A summary is stale when its freshest snapshot is older than this.
+const STALE_AFTER_MS: i64 = 10 * 60 * 1000;
+
+/// One summary per chat with at least one visible snapshot-backed PR.
+pub fn build_summaries(conn: &Connection, now: i64) -> HashMap<String, PrSummary> {
+    let ids: Vec<String> = conn
+        .prepare("SELECT DISTINCT session_id FROM session_prs")
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect()
+        })
+        .unwrap_or_default();
+    let mut summaries = HashMap::new();
+    for id in ids {
+        let live = last_branch(conn, &id);
+        let entries: Vec<PrEntry> = own_entries(
+            conn,
+            &id,
+            live.as_ref()
+                .map(|(repo, branch)| (repo.as_str(), branch.as_str())),
+        )
+        .into_iter()
+        .filter(|e| !e.dismissed && e.relation != Relation::Other)
+        .collect();
+        let Some(primary) = pick_primary(&entries) else {
+            continue;
+        };
+        let freshest = entries.iter().map(|e| e.snapshot.fetched_at).max();
+        summaries.insert(
+            id,
+            PrSummary {
+                count: entries.len() as u32,
+                primary_number: primary.snapshot.number,
+                primary_state: primary.snapshot.state,
+                primary_is_draft: primary.snapshot.is_draft,
+                attention: Attention::None,
+                stale: freshest.is_some_and(|at| now - at > STALE_AFTER_MS),
+            },
+        );
+    }
+    summaries
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -623,5 +882,408 @@ mod tests {
                 ("s2".to_string(), "off".to_string())
             ]
         );
+    }
+
+    fn pr_snap(
+        repo: &str,
+        number: u32,
+        head: &str,
+        base: &str,
+        original_base: &str,
+        state: PrState,
+        fetched_at: i64,
+    ) -> PrSnapshot {
+        PrSnapshot {
+            head_ref: head.into(),
+            base_ref: base.into(),
+            original_base_ref: original_base.into(),
+            state,
+            is_draft: false,
+            checks: Checks::Passing,
+            review: Review::None,
+            mergeable: Mergeable::Mergeable,
+            behind_by: None,
+            fetched_at,
+            ..snap(repo, number)
+        }
+    }
+
+    fn put(conn: &Connection, session: &str, snapshot: &PrSnapshot, relation: Relation) {
+        upsert_snapshot(conn, snapshot).unwrap();
+        record_pr(
+            conn,
+            session,
+            &snapshot.repo,
+            snapshot.number,
+            relation,
+            "url",
+            1,
+        )
+        .unwrap();
+    }
+
+    fn numbers(view: &PrSetView) -> Vec<u32> {
+        view.entries.iter().map(|e| e.snapshot.number).collect()
+    }
+
+    #[test]
+    fn two_sessions_same_checkout_see_only_their_prs() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        // Both chats work in one checkout and both visited `shared`.
+        record_branch(&conn, "s1", "o/r", "shared", "trace2", 1).unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 2).unwrap();
+        record_branch(&conn, "s2", "o/r", "shared", "trace2", 1).unwrap();
+        record_branch(&conn, "s2", "o/r", "feat/b", "trace2", 3).unwrap();
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 1, "feat/a", "main", "main", PrState::Open, 10),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s2",
+            &pr_snap("o/r", 2, "feat/b", "main", "main", PrState::Open, 10),
+            Relation::Owned,
+        );
+
+        let v1 = build_set_view(&conn, "s1", Some(("o/r", "feat/a")), TrackerStatus::Ok, 100);
+        let v2 = build_set_view(&conn, "s2", Some(("o/r", "feat/b")), TrackerStatus::Ok, 100);
+        assert_eq!(numbers(&v1), vec![1]);
+        assert_eq!(numbers(&v2), vec![2]);
+        assert!(v1.entries[0].on_live_branch);
+        assert_eq!(v1.entries[0].relation, Relation::Owned);
+        // Unrelated PRs of the same repo are not stack neighbors.
+        assert!(v1.stacks.is_empty());
+        assert_eq!(v1.session_id, "s1");
+        let none = build_set_view(&conn, "s3", None, TrackerStatus::Idle, 100);
+        assert!(none.entries.is_empty());
+        assert_eq!(none.refreshed_at, None);
+        assert_eq!(none.status, TrackerStatus::Idle);
+    }
+
+    #[test]
+    fn branch_switch_twice_lists_both_prs_including_merged() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 1).unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/b", "trace2", 2).unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/c", "trace2", 3).unwrap();
+        // #1 merged; #2 was retargeted to main by GitHub but began on feat/a.
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 1, "feat/a", "main", "main", PrState::Merged, 10),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 2, "feat/b", "main", "feat/a", PrState::Open, 20),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 3, "feat/c", "feat/b", "feat/b", PrState::Open, 30),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s2",
+            &pr_snap("o/r", 9, "other", "main", "main", PrState::Open, 40),
+            Relation::Owned,
+        );
+
+        let view = build_set_view(&conn, "s1", Some(("o/r", "feat/c")), TrackerStatus::Ok, 100);
+        // Live branch first, then open before merged, higher number first.
+        assert_eq!(numbers(&view), vec![3, 2, 1]);
+        assert!(view.entries[0].on_live_branch);
+        assert!(!view.entries[1].on_live_branch);
+        assert_eq!(view.entries[2].snapshot.state, PrState::Merged);
+        assert_eq!(view.entries[1].parent, Some(1));
+        assert_eq!(view.entries[0].parent, Some(2));
+        assert_eq!(view.entries[2].parent, None);
+        assert_eq!(view.stacks.len(), 1);
+        assert_eq!(view.stacks[0].members, vec![1, 2, 3]);
+        assert_eq!(view.stacks[0].merged_count, 1);
+        assert_eq!(view.stacks[0].base_ref, "main");
+        assert_eq!(view.refreshed_at, Some(30));
+        assert_eq!(view.tracking, Tracking::Full);
+        assert!(view.entries.iter().all(|e| e.attention == Attention::None));
+    }
+
+    #[test]
+    fn live_branch_in_another_repo_is_not_marked_live() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 1, "feat/a", "main", "main", PrState::Open, 10),
+            Relation::Owned,
+        );
+        let view = build_set_view(
+            &conn,
+            "s1",
+            Some(("fork/r", "feat/a")),
+            TrackerStatus::Ok,
+            100,
+        );
+        assert!(!view.entries[0].on_live_branch);
+    }
+
+    #[test]
+    fn rows_without_snapshot_are_omitted_and_dismissed_are_kept() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        record_pr(&conn, "s1", "o/r", 1, Relation::Owned, "url", 1).unwrap();
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 2, "feat/b", "main", "main", PrState::Open, 10),
+            Relation::Existing,
+        );
+        set_dismissed(&conn, "s1", "o/r", 2, true).unwrap();
+        let view = build_set_view(&conn, "s1", None, TrackerStatus::Offline, 100);
+        assert_eq!(numbers(&view), vec![2]);
+        assert!(view.entries[0].dismissed);
+        assert_eq!(view.entries[0].relation, Relation::Existing);
+        assert_eq!(view.status, TrackerStatus::Offline);
+    }
+
+    #[test]
+    fn stack_neighbors_of_other_chats_are_added_as_other() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        // s1 owns the middle PR; s2 owns the merged parent; nobody owns the child.
+        put(
+            &conn,
+            "s2",
+            &pr_snap("o/r", 1, "feat/a", "main", "main", PrState::Merged, 10),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s1",
+            &pr_snap("o/r", 2, "feat/b", "main", "feat/a", PrState::Open, 20),
+            Relation::Owned,
+        );
+        upsert_snapshot(
+            &conn,
+            &pr_snap("o/r", 3, "feat/c", "feat/b", "feat/b", PrState::Open, 30),
+        )
+        .unwrap();
+        // A sibling of the parent and a stranger in another repo are not neighbors.
+        upsert_snapshot(
+            &conn,
+            &pr_snap("o/r", 4, "feat/d", "feat/a", "feat/a", PrState::Open, 30),
+        )
+        .unwrap();
+        upsert_snapshot(
+            &conn,
+            &pr_snap("x/y", 5, "feat/a", "main", "main", PrState::Open, 30),
+        )
+        .unwrap();
+
+        let view = build_set_view(&conn, "s1", None, TrackerStatus::Ok, 100);
+        assert_eq!(numbers(&view), vec![3, 2, 1]);
+        let by = |n: u32| {
+            view.entries
+                .iter()
+                .find(|e| e.snapshot.number == n)
+                .unwrap()
+        };
+        assert_eq!(by(2).relation, Relation::Owned);
+        assert_eq!(by(1).relation, Relation::Other);
+        assert_eq!(by(1).owner_session_id.as_deref(), Some("s2"));
+        assert_eq!(by(3).relation, Relation::Other);
+        assert_eq!(by(3).owner_session_id, None);
+        assert_eq!(view.stacks[0].members, vec![1, 2, 3]);
+        // s2 sees its own PR plus the child chain, owned by s1.
+        let v2 = build_set_view(&conn, "s2", None, TrackerStatus::Ok, 100);
+        let o2 = v2.entries.iter().find(|e| e.snapshot.number == 2).unwrap();
+        assert_eq!(o2.relation, Relation::Other);
+        assert_eq!(o2.owner_session_id.as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn closed_fork_pr_without_checks_builds_a_valid_entry() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let mut closed = pr_snap("o/r", 1, "patch-1", "main", "main", PrState::Closed, 10);
+        closed.checks = Checks::None;
+        closed.review = Review::None;
+        closed.mergeable = Mergeable::Unknown;
+        closed.author = None;
+        put(&conn, "s1", &closed, Relation::Existing);
+        let view = build_set_view(&conn, "s1", None, TrackerStatus::Ok, 100);
+        assert_eq!(view.entries[0].attention, Attention::None);
+        assert_eq!(view.entries[0].attention_reason, None);
+        assert_eq!(view.entries[0].error, None);
+        assert!(view.stacks.is_empty());
+    }
+
+    #[test]
+    fn tracking_is_limited_without_trace2() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/a", "save", 1).unwrap();
+        assert!(!session_has_trace2(&conn, "s1"));
+        let view = build_set_view(&conn, "s1", None, TrackerStatus::Ok, 100);
+        assert_eq!(view.tracking, Tracking::Limited);
+        record_branch(&conn, "s1", "o/r", "feat/b", "trace2", 2).unwrap();
+        assert!(session_has_trace2(&conn, "s1"));
+        assert!(!session_has_trace2(&conn, "s2"));
+        let view = build_set_view(&conn, "s1", None, TrackerStatus::Ok, 100);
+        assert_eq!(view.tracking, Tracking::Full);
+    }
+
+    #[test]
+    fn last_branch_is_the_most_recently_seen() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        assert_eq!(last_branch(&conn, "s1"), None);
+        record_branch(&conn, "s1", "o/r", "feat/a", "git", 1).unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/b", "git", 5).unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/a", "git", 3).unwrap();
+        assert_eq!(
+            last_branch(&conn, "s1"),
+            Some(("o/r".to_string(), "feat/b".to_string()))
+        );
+    }
+
+    fn entry(
+        number: u32,
+        state: PrState,
+        relation: Relation,
+        live: bool,
+        dismissed: bool,
+    ) -> PrEntry {
+        PrEntry {
+            snapshot: pr_snap("o/r", number, "h", "main", "main", state, 10),
+            relation,
+            owner_session_id: None,
+            on_live_branch: live,
+            parent: None,
+            attention: Attention::None,
+            attention_reason: None,
+            dismissed,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn pick_primary_prefers_live_then_newest_open_then_newest() {
+        let live_merged = entry(1, PrState::Merged, Relation::Owned, true, false);
+        let open_old = entry(2, PrState::Open, Relation::Owned, false, false);
+        let open_new = entry(3, PrState::Open, Relation::Owned, false, false);
+        let closed_newest = entry(4, PrState::Closed, Relation::Owned, false, false);
+        let all = [
+            live_merged.clone(),
+            open_old.clone(),
+            open_new.clone(),
+            closed_newest.clone(),
+        ];
+        assert_eq!(pick_primary(&all).unwrap().snapshot.number, 1);
+        assert_eq!(pick_primary(&all[1..]).unwrap().snapshot.number, 3);
+        assert_eq!(pick_primary(&all[3..]).unwrap().snapshot.number, 4);
+        // Dismissed and foreign entries never qualify.
+        let skipped = [
+            entry(5, PrState::Open, Relation::Owned, true, true),
+            entry(6, PrState::Open, Relation::Other, true, false),
+            open_old,
+        ];
+        assert_eq!(pick_primary(&skipped).unwrap().snapshot.number, 2);
+        assert!(pick_primary(&skipped[..2]).is_none());
+        assert!(pick_primary(&[]).is_none());
+    }
+
+    #[test]
+    fn summaries_pick_live_or_newest_open_as_primary() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let now = 10_000_000;
+        // s1: last branch is feat/a whose PR is merged; it stays primary.
+        record_branch(&conn, "s1", "o/r", "feat/b", "trace2", 1).unwrap();
+        record_branch(&conn, "s1", "o/r", "feat/a", "trace2", 2).unwrap();
+        put(
+            &conn,
+            "s1",
+            &pr_snap(
+                "o/r",
+                1,
+                "feat/a",
+                "main",
+                "main",
+                PrState::Merged,
+                now - 1000,
+            ),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s1",
+            &pr_snap(
+                "o/r",
+                2,
+                "feat/b",
+                "main",
+                "main",
+                PrState::Open,
+                now - 1000,
+            ),
+            Relation::Owned,
+        );
+        // s2: no branch on record, so the newest open PR wins; one is dismissed.
+        put(
+            &conn,
+            "s2",
+            &pr_snap("o/r", 3, "x", "main", "main", PrState::Open, now - 700_000),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s2",
+            &pr_snap(
+                "o/r",
+                4,
+                "y",
+                "main",
+                "main",
+                PrState::Closed,
+                now - 700_000,
+            ),
+            Relation::Owned,
+        );
+        put(
+            &conn,
+            "s2",
+            &pr_snap("o/r", 5, "z", "main", "main", PrState::Open, now - 700_000),
+            Relation::Owned,
+        );
+        set_dismissed(&conn, "s2", "o/r", 5, true).unwrap();
+        // s3: a row without a snapshot only; s4: only dismissed.
+        record_pr(&conn, "s3", "o/r", 6, Relation::Owned, "url", 1).unwrap();
+        put(
+            &conn,
+            "s4",
+            &pr_snap("o/r", 7, "w", "main", "main", PrState::Open, now),
+            Relation::Owned,
+        );
+        set_dismissed(&conn, "s4", "o/r", 7, true).unwrap();
+
+        let summaries = build_summaries(&conn, now);
+        assert_eq!(summaries.len(), 2);
+        let s1 = &summaries["s1"];
+        assert_eq!((s1.count, s1.primary_number), (2, 1));
+        assert_eq!(s1.primary_state, PrState::Merged);
+        assert!(!s1.stale);
+        assert_eq!(s1.attention, Attention::None);
+        let s2 = &summaries["s2"];
+        assert_eq!((s2.count, s2.primary_number), (2, 3));
+        assert_eq!(s2.primary_state, PrState::Open);
+        assert!(s2.stale);
     }
 }

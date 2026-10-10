@@ -35,6 +35,7 @@ mod notifications;
 mod pasteboard;
 mod pi_usage;
 mod pr_attribution;
+mod pr_stack;
 mod pr_store;
 mod pr_trace;
 mod pr_tracker;
@@ -516,6 +517,8 @@ pub fn run() {
             pr_attribution::pr_dismiss,
             pr_tracker::pr_set_interest,
             pr_tracker::pr_refresh,
+            pr_tracker::pr_session_set,
+            pr_tracker::pr_summaries,
             session_store::skill_usage_record,
             session_store::skill_usage_snapshot,
             session_store::skill_usage_backfill,

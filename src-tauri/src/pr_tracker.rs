@@ -21,7 +21,8 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::pr_store::{
-    self, Checks, Mergeable, PrSnapshot, PrState, Relation, Review, TrackerStatus,
+    self, Checks, Mergeable, PrSetView, PrSnapshot, PrState, PrSummary, Relation, Review,
+    TrackerStatus,
 };
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
@@ -586,13 +587,11 @@ impl Tracker {
 static TRACKER: LazyLock<Tracker> = LazyLock::new(Tracker::new);
 
 /// Process-wide tracker health, set by the polling loop.
-#[allow(dead_code)] // read by the PR set view (Task 5)
 pub fn status() -> TrackerStatus {
     TRACKER.status()
 }
 
 /// The last lookup error for a PR, if its most recent fetch failed.
-#[allow(dead_code)] // read by the PR set view (Task 5)
 pub fn pr_error(repo: &str, number: u32) -> Option<String> {
     TRACKER.error(repo, number)
 }
@@ -1073,6 +1072,43 @@ pub fn pr_refresh(session_id: String) -> Result<(), String> {
     TRACKER.force(&session_id);
     TRACKER.wake();
     Ok(())
+}
+
+/// The chat's PRs and their stack neighbors. The live branch is the chat's
+/// stored branch in the repo behind its checkout; unknown when either is
+/// missing.
+#[tauri::command(async)]
+pub fn pr_session_set(
+    store: State<'_, SessionStore>,
+    session_id: String,
+) -> Result<PrSetView, String> {
+    validate_id(&session_id, "session")?;
+    let record = {
+        let conn = store.lock_conn()?;
+        crate::session_store::get_session_metadata(&conn, &session_id).map_err(|e| e.to_string())?
+    };
+    // Resolving the repo runs git; keep it outside the database lock.
+    let live = record.and_then(|record| {
+        let branch = record.branch?;
+        let cwd = record.worktree_cwd.unwrap_or(record.cwd);
+        let repo = crate::pr_attribution::repo_slug_for(&crate::fs::expand_home(&cwd))?;
+        Some((repo, branch))
+    });
+    let conn = store.lock_conn()?;
+    Ok(pr_store::build_set_view(
+        &conn,
+        &session_id,
+        live.as_ref()
+            .map(|(repo, branch)| (repo.as_str(), branch.as_str())),
+        status(),
+        now_millis(),
+    ))
+}
+
+#[tauri::command(async)]
+pub fn pr_summaries(store: State<'_, SessionStore>) -> Result<HashMap<String, PrSummary>, String> {
+    let conn = store.lock_conn()?;
+    Ok(pr_store::build_summaries(&conn, now_millis()))
 }
 
 #[cfg(test)]
