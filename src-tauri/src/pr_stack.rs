@@ -7,7 +7,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::pr_store::{Attention, PrSnapshot, PrStackGroup, PrState, Tracking};
+use crate::pr_store::{
+    Attention, PrEntryLite, PrSnapshot, PrStackGroup, PrStackView, PrState, Relation,
+    RepoStackInputs, Tracking,
+};
 
 /// `(repo, child number) -> parent number`. When several PRs share the parent
 /// head branch name, the most recently fetched one wins (highest number on a
@@ -160,6 +163,73 @@ pub fn attention_for(inputs: &PrEntryInputs) -> (Attention, Option<String>) {
         return (Attention::Pending, Some("Checks running".into()));
     }
     (Attention::None, None)
+}
+
+/// The stack holding `number` among every stored snapshot of one repo, or
+/// `None` when the PR has no snapshot or sits in no stack of two or more.
+/// A chat owns a PR when it created it or worked on its head branch, the same
+/// rule `build_set_view` uses; a transcript mention alone does not count.
+pub fn stack_view_for(inputs: &RepoStackInputs, number: u32) -> Option<PrStackView> {
+    let prs = &inputs.snapshots;
+    let parents = derive_parents(prs);
+    let group = group_stacks(prs, &parents)
+        .into_iter()
+        .find(|group| group.members.contains(&number))?;
+    let find = |n: u32| prs.iter().find(|pr| pr.number == n);
+    let owners = |pr: &PrSnapshot| -> Vec<String> {
+        let mut ids: Vec<String> = inputs
+            .claims
+            .iter()
+            .filter(|(session, n, relation)| {
+                *n == pr.number
+                    && (*relation == Relation::Owned
+                        || inputs
+                            .branches
+                            .iter()
+                            .any(|(s, branch)| s == session && *branch == pr.head_ref))
+            })
+            .map(|(session, _, _)| session.clone())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    };
+    let viewed_owners = owners(find(number)?);
+    let entries = group
+        .members
+        .iter()
+        .filter_map(|&n| {
+            let pr = find(n)?;
+            let parent = parents
+                .get(&(pr.repo.clone(), pr.number))
+                .and_then(|&p| find(p));
+            let (attention, attention_reason) = attention_for(&PrEntryInputs {
+                snapshot: pr,
+                parent,
+                base_ref_label: pr.base_ref.clone(),
+            });
+            let owner_session_ids = owners(pr);
+            let is_neighbor = n != number
+                && !owner_session_ids
+                    .iter()
+                    .any(|id| viewed_owners.contains(id));
+            Some(PrEntryLite {
+                number: pr.number,
+                title: pr.title.clone(),
+                url: pr.url.clone(),
+                state: pr.state,
+                is_draft: pr.is_draft,
+                head_ref: pr.head_ref.clone(),
+                base_ref: pr.base_ref.clone(),
+                checks: pr.checks,
+                attention,
+                attention_reason,
+                owner_session_ids,
+                is_neighbor,
+            })
+        })
+        .collect();
+    Some(PrStackView { group, entries })
 }
 
 /// `Full` only when git activity of the chat was observed through trace2.

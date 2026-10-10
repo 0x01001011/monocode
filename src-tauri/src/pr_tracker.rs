@@ -21,8 +21,8 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::pr_store::{
-    self, Checks, Mergeable, PrSetView, PrSnapshot, PrState, PrSummary, Relation, Review,
-    TrackerStatus,
+    self, Checks, Mergeable, PrSetView, PrSnapshot, PrStackView, PrState, PrSummary, Relation,
+    Review, TrackerStatus,
 };
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
@@ -1513,6 +1513,34 @@ pub fn pr_session_set(
     ))
 }
 
+/// The stack holding `repo#number` across every stored snapshot of the repo.
+/// Rows are read under the lock; the quadratic stack derivation runs after
+/// it is released.
+pub fn stack_for(
+    store: &SessionStore,
+    repo: &str,
+    number: u32,
+) -> Result<Option<PrStackView>, String> {
+    let repo = repo.trim().to_lowercase();
+    if repo.is_empty() {
+        return Ok(None);
+    }
+    let inputs = {
+        let conn = store.lock_conn()?;
+        pr_store::repo_stack_inputs(&conn, &repo)
+    };
+    Ok(crate::pr_stack::stack_view_for(&inputs, number))
+}
+
+#[tauri::command(async)]
+pub fn pr_stack_for(
+    store: State<'_, SessionStore>,
+    repo: String,
+    number: u32,
+) -> Result<Option<PrStackView>, String> {
+    stack_for(&store, &repo, number)
+}
+
 #[tauri::command(async)]
 pub fn pr_summaries(store: State<'_, SessionStore>) -> Result<HashMap<String, PrSummary>, String> {
     let conn = store.lock_conn()?;
@@ -2603,5 +2631,155 @@ mod tests {
         pr_store::store_compare(&conn, "cli/cli", ARTIFACT_EDIT_TIP, "moved", 6).unwrap();
         write_pr(&conn, "cli/cli", &refreshed, NOW).unwrap();
         assert_eq!(load().behind_by, Some(6));
+    }
+
+    fn stack_snap(number: u32, head: &str, base: &str, state: PrState) -> PrSnapshot {
+        PrSnapshot {
+            repo: "acme/app".into(),
+            number,
+            url: format!("https://github.com/acme/app/pull/{number}"),
+            title: format!("PR {number}"),
+            state,
+            is_draft: false,
+            head_ref: head.into(),
+            base_ref: base.into(),
+            original_base_ref: base.into(),
+            head_oid: format!("oid{number}"),
+            author: None,
+            checks: Checks::Passing,
+            review: Review::None,
+            mergeable: Mergeable::Mergeable,
+            behind_by: Some(0),
+            fetched_at: NOW,
+        }
+    }
+
+    /// main <- #478 (open) <- #480 (merged) <- #482 (open, still on #480's head).
+    fn seed_stack(conn: &Connection) {
+        pr_store::upsert_snapshot(conn, &stack_snap(478, "mc/a", "main", PrState::Open)).unwrap();
+        pr_store::upsert_snapshot(conn, &stack_snap(480, "mc/b", "mc/a", PrState::Merged)).unwrap();
+        pr_store::upsert_snapshot(conn, &stack_snap(482, "mc/c", "mc/b", PrState::Open)).unwrap();
+        // Unrelated PR in the same repo and a same-numbered PR elsewhere.
+        pr_store::upsert_snapshot(conn, &stack_snap(490, "mc/z", "main", PrState::Open)).unwrap();
+        let mut other_repo = stack_snap(478, "mc/a", "main", PrState::Open);
+        other_repo.repo = "acme/other".into();
+        pr_store::upsert_snapshot(conn, &other_repo).unwrap();
+        // s1 created #482; s2 works on #480's branch; s3 merely mentioned #478.
+        pr_store::record_pr(conn, "s1", "acme/app", 482, Relation::Owned, "url", NOW).unwrap();
+        pr_store::record_branch(conn, "s2", "acme/app", "mc/b", "trace2", NOW).unwrap();
+        pr_store::record_pr(conn, "s2", "acme/app", 480, Relation::Existing, "hint", NOW).unwrap();
+        pr_store::record_pr(conn, "s3", "acme/app", 478, Relation::Existing, "hint", NOW).unwrap();
+    }
+
+    #[test]
+    fn stack_for_returns_group_containing_pr() {
+        let store = SessionStore::open_in_memory().unwrap();
+        seed_stack(&store.lock_conn().unwrap());
+
+        let view = stack_for(&store, "acme/app", 482).unwrap().expect("stack");
+        assert_eq!(view.group.members, vec![478, 480, 482]);
+        assert_eq!(view.group.base_ref, "main");
+        assert_eq!(view.group.merged_count, 1);
+        let numbers: Vec<u32> = view.entries.iter().map(|e| e.number).collect();
+        assert_eq!(numbers, vec![478, 480, 482]);
+
+        let tip = &view.entries[2];
+        assert_eq!(tip.state, PrState::Open);
+        assert_eq!(tip.head_ref, "mc/c");
+        assert_eq!(tip.base_ref, "mc/b");
+        assert_eq!(tip.attention, pr_store::Attention::Action);
+        assert_eq!(tip.attention_reason.as_deref(), Some("Needs restack"));
+        assert_eq!(tip.owner_session_ids, vec!["s1".to_string()]);
+        assert!(!tip.is_neighbor);
+
+        let middle = &view.entries[1];
+        assert_eq!(middle.state, PrState::Merged);
+        assert_eq!(middle.attention, pr_store::Attention::None);
+        assert_eq!(middle.owner_session_ids, vec!["s2".to_string()]);
+        assert!(middle.is_neighbor, "owned by another chat than #482's");
+
+        // A mention alone is not ownership.
+        let base = &view.entries[0];
+        assert!(base.owner_session_ids.is_empty());
+        assert!(base.is_neighbor);
+        assert_eq!(base.checks, Checks::Passing);
+        assert_eq!(base.url, "https://github.com/acme/app/pull/478");
+
+        // Any member resolves the same group.
+        let from_base = stack_for(&store, "acme/app", 478).unwrap().unwrap();
+        assert_eq!(from_base.group, view.group);
+    }
+
+    #[test]
+    fn stack_for_wire_shape_is_camel_case() {
+        let store = SessionStore::open_in_memory().unwrap();
+        seed_stack(&store.lock_conn().unwrap());
+        let view = stack_for(&store, "acme/app", 482).unwrap().unwrap();
+        let json = serde_json::to_value(&view).unwrap();
+        let tip = &json["entries"][2];
+        for key in [
+            "number",
+            "title",
+            "url",
+            "state",
+            "isDraft",
+            "headRef",
+            "baseRef",
+            "checks",
+            "attention",
+            "attentionReason",
+            "ownerSessionIds",
+            "isNeighbor",
+        ] {
+            assert!(tip.get(key).is_some(), "missing {key}");
+        }
+        assert_eq!(json["group"]["mergedCount"], 1);
+        assert_eq!(tip["attention"], "action");
+    }
+
+    #[test]
+    fn stack_for_is_none_outside_a_stack_or_without_snapshot() {
+        let store = SessionStore::open_in_memory().unwrap();
+        seed_stack(&store.lock_conn().unwrap());
+        assert_eq!(stack_for(&store, "acme/app", 490).unwrap(), None);
+        assert_eq!(stack_for(&store, "acme/app", 9999).unwrap(), None);
+        assert_eq!(stack_for(&store, "acme/none", 482).unwrap(), None);
+        assert_eq!(stack_for(&store, "", 482).unwrap(), None);
+    }
+
+    #[test]
+    fn stack_for_accepts_any_repo_case() {
+        let store = SessionStore::open_in_memory().unwrap();
+        seed_stack(&store.lock_conn().unwrap());
+        let view = stack_for(&store, " Acme/App ", 480)
+            .unwrap()
+            .expect("stack");
+        assert_eq!(view.group.members, vec![478, 480, 482]);
+        assert_eq!(view.group.repo, "acme/app");
+        // Viewed from #480, its own owner is not a neighbor; the others are.
+        assert!(!view.entries[1].is_neighbor);
+        assert!(view.entries[2].is_neighbor);
+    }
+
+    #[test]
+    fn stack_for_ignores_ghost_rows() {
+        let store = SessionStore::open_in_memory().unwrap();
+        {
+            let conn = store.lock_conn().unwrap();
+            seed_stack(&conn);
+            // A member the tracker never fetched and an unreadable snapshot.
+            pr_store::record_pr(&conn, "s1", "acme/app", 481, Relation::Owned, "url", NOW).unwrap();
+            conn.execute(
+                "INSERT INTO pr_snapshots (repo, number, snapshot_json, fetched_at)
+                 VALUES ('acme/app', 483, '{not json', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let view = stack_for(&store, "acme/app", 482).unwrap().expect("stack");
+        assert_eq!(view.group.members, vec![478, 480, 482]);
+        assert_eq!(view.entries.len(), 3);
+        assert_eq!(stack_for(&store, "acme/app", 481).unwrap(), None);
+        assert_eq!(stack_for(&store, "acme/app", 483).unwrap(), None);
     }
 }

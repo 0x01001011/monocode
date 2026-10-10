@@ -180,6 +180,71 @@ pub struct PrSummary {
     pub members: Vec<String>,
 }
 
+/// One member of a stack as the Inbox rail shows it.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PrEntryLite {
+    pub number: u32,
+    pub title: String,
+    pub url: String,
+    pub state: PrState,
+    pub is_draft: bool,
+    pub head_ref: String,
+    pub base_ref: String,
+    pub checks: Checks,
+    pub attention: Attention,
+    pub attention_reason: Option<String>,
+    /// Chats this PR is attributed to (created it, or worked on its head).
+    pub owner_session_ids: Vec<String>,
+    /// Not the viewed PR and shares no chat with it.
+    pub is_neighbor: bool,
+}
+
+/// The stack holding one PR, with an entry per member in `group.members` order.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PrStackView {
+    pub group: PrStackGroup,
+    pub entries: Vec<PrEntryLite>,
+}
+
+/// What `pr_stack::stack_view_for` needs from storage for one repo.
+#[derive(Default)]
+pub struct RepoStackInputs {
+    pub snapshots: Vec<PrSnapshot>,
+    /// `(session_id, number, relation)` rows of `session_prs`.
+    pub claims: Vec<(String, u32, Relation)>,
+    /// `(session_id, branch)` rows of `session_branches`.
+    pub branches: Vec<(String, String)>,
+}
+
+/// Snapshots and attribution rows of one (lowercase) repo. Cheap reads only,
+/// so the caller can release the lock before deriving stacks.
+pub fn repo_stack_inputs(conn: &Connection, repo: &str) -> RepoStackInputs {
+    let claims = conn
+        .prepare("SELECT session_id, number, relation FROM session_prs WHERE repo = ?1")
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map([repo], |row| {
+                let relation: String = row.get(2)?;
+                Ok((row.get(0)?, row.get(1)?, Relation::parse(&relation)))
+            })?;
+            rows.collect()
+        })
+        .unwrap_or_default();
+    let branches = conn
+        .prepare("SELECT session_id, branch FROM session_branches WHERE repo = ?1")
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map([repo], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            rows.collect()
+        })
+        .unwrap_or_default();
+    RepoStackInputs {
+        snapshots: repo_snapshots(conn, repo),
+        claims,
+        branches,
+    }
+}
+
 pub fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS session_branches (

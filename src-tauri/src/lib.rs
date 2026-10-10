@@ -519,6 +519,7 @@ pub fn run() {
             pr_tracker::pr_set_interest,
             pr_tracker::pr_refresh,
             pr_tracker::pr_session_set,
+            pr_tracker::pr_stack_for,
             pr_tracker::pr_summaries,
             session_store::skill_usage_record,
             session_store::skill_usage_snapshot,
